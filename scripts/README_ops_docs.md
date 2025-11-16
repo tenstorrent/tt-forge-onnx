@@ -11,7 +11,8 @@ The documentation generator creates:
 ## Files
 
 - `generate_ops_docs.py`: Main script that generates the documentation
-- `ops_data.py`: Data file containing operation definitions with descriptions, parameters, examples, etc.
+- `discover_operations.py`: Automatic operation discovery from `forge/forge/op/*.py` files
+- `ops_data.py`: Fallback data file containing manually curated operation definitions (used only if automatic discovery fails)
 
 ## Usage
 
@@ -24,63 +25,80 @@ python scripts/generate_ops_docs.py
 ```
 
 This will:
-- Load operation definitions from `scripts/ops_data.py`
+- **Automatically discover** operations from `forge/forge/op/*.py` files
+- Extract function signatures, docstrings, and parameter information
 - Generate individual operation pages in `docs/src/operations/`
 - Generate the index page at `docs/src/operations.md`
+- Fall back to `scripts/ops_data.py` only if automatic discovery fails
 
 ### Adding New Operations
 
-To add a new operation, edit `scripts/ops_data.py` and add a new `Operation` object to the `get_all_operations()` function:
+**Operations are automatically discovered** from the Python files in `forge/forge/op/`. To add a new operation to the documentation, simply:
 
-```python
-Operation(
-    name="ttir.new_op",
-    short_name="new_op",
-    category="Elementwise Operations",
-    description="Short description of the operation.",
-    detailed_description="Detailed description...",
-    operands=[
-        Operand("input", "ranked tensor of any type values", "Description of input"),
-        Operand("output", "ranked tensor of any type values", "Description of output")
-    ],
-    results=[Operand("result", "ranked tensor of any type values", "Description of result")],
-    attributes=[
-        Attribute("attr_name", "attr_type", "Description", "default_value")
-    ],
-    examples=["Example code here"],
-    notes=["Additional notes"]
-)
-```
+1. **Define your operation function** in the appropriate file (e.g., `forge/forge/op/eltwise_unary.py`):
+   ```python
+   def NewOp(name: str, operandA: Tensor) -> Tensor:
+       """
+       Short description of the operation.
+       
+       Optional detailed description can go here.
+       
+       Parameters
+       ----------
+       name: str
+           Op name, unique to the module, or leave blank to autoset
+       
+       operandA: Tensor
+           Description of the first operand
+       
+       Returns
+       -------
+       Tensor
+           Description of the return value
+       """
+       return op(OpType.NewOp, name, operandA).get_tensor()
+   ```
+
+2. **Use a proper docstring** (preferably NumPy-style with Parameters and Returns sections)
+
+3. **Run the generator**: `python scripts/generate_ops_docs.py`
+
+The generator will automatically:
+- Discover the new operation
+- Extract its name, parameters, types, and descriptions
+- Infer its category based on the file it resides in
+- Generate a new markdown page for it
+
+**Note**: The function name must start with an uppercase letter to be recognized as an operation.
 
 ### Operation Categories
 
-Operations are automatically categorized based on their names. Categories include:
-- Elementwise Operations
-- Convolution Functions
-- Pooling Functions
-- Normalization Functions
-- Tensor Manipulation
-- Reduction Operations
-- Linear Functions
-- Attention Mechanisms
-- Embedding Functions
-- Memory Operations
-- Creation Operations
-- Quantization Operations
-- Conditional Operations
-- Collective Operations
-- Other Operations
+Operations are **automatically categorized** based on the file they reside in. The category mapping is defined in `discover_operations.py`:
 
-To add a new category or change categorization, edit the `CATEGORIES` dictionary in `scripts/generate_ops_docs.py`.
+- `eltwise_unary.py`, `eltwise_binary.py`, `eltwise_nary.py` → **Elementwise Operations**
+- `convolution.py` → **Convolution Functions**
+- `pooling.py` → **Pooling Functions**
+- `reduce.py` → **Reduction Operations**
+- `matmul.py` → **Linear Functions**
+- `tm.py` → **Tensor Manipulation**
+- `nn.py` → **Normalization Functions**
+- `resize.py` → **Resize Operations**
+- `embedding.py` → **Embedding Functions**
+- `kv_cache.py` → **Memory Operations**
+- `constant.py` → **Creation Operations**
+- `misc.py` → **Other Operations**
+- `loss.py` → **Loss Functions**
+
+To add a new category or change categorization, edit the `FILE_TO_CATEGORY` dictionary in `scripts/discover_operations.py`.
 
 ## Documentation Structure
 
 Each operation page includes:
-- **Title**: Full operation name (e.g., `ttir.abs`)
-- **Description**: Short and detailed descriptions
-- **Function Signature**: Python-style function signature
-- **Parameters**: Input operands and attributes with types and descriptions
-- **Returns**: Output operands with descriptions
+- **Title**: Full operation name (e.g., `forge.op.Abs`)
+- **Description**: Short and detailed descriptions (extracted from docstring)
+- **Function Signature**: Python-style function signature (extracted from source code)
+- **Parameters**: Input operands and attributes with types and descriptions (from docstring)
+- **Returns**: Output operands with descriptions (from docstring)
 - **Mathematical Definition**: Mathematical formula (if applicable)
 - **Examples**: Code examples showing usage
 - **Notes**: Additional implementation details or warnings
@@ -92,13 +110,31 @@ The generated documentation is integrated into the mdBook documentation system:
 - Individual pages are linked from the index page
 - The documentation follows mdBook markdown conventions
 
+## How It Works
+
+1. **Discovery Phase** (`discover_operations.py`):
+   - Scans `forge/forge/op/*.py` files
+   - Uses Python AST to parse function definitions
+   - Extracts docstrings, signatures, and parameter information
+   - Infers categories from file names
+
+2. **Conversion Phase** (`generate_ops_docs.py`):
+   - Converts discovered operations to documentation format
+   - Cleans up descriptions and removes redundant type prefixes
+   - Handles edge cases (missing docstrings, incorrect descriptions)
+
+3. **Generation Phase** (`generate_ops_docs.py`):
+   - Creates individual markdown pages for each operation
+   - Generates categorized index page
+   - Formats in PyTorch-style documentation format
+
 ## Future Enhancements
 
 Potential improvements:
-1. Parse operations directly from MLIR definitions
-2. Extract examples from test files
-3. Generate parameter tables automatically
-4. Add cross-references between related operations
-5. Include performance characteristics
-6. Add version information for each operation
+1. Extract examples from test files automatically
+2. Generate parameter tables automatically
+3. Add cross-references between related operations
+4. Include performance characteristics
+5. Add version information for each operation
+6. Support for extracting mathematical definitions from docstrings
 
