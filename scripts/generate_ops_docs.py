@@ -34,7 +34,7 @@ class Attribute:
 @dataclass
 class Operation:
     """Represents a complete operation definition."""
-    name: str  # e.g., "ttir.abs"
+    name: str  # e.g., "forge.op.Abs"
     short_name: str  # e.g., "abs"
     category: str
     description: str
@@ -47,6 +47,7 @@ class Operation:
     attributes: List[Attribute] = field(default_factory=list)
     examples: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    signature: str = ""  # Python function signature
 
 
 # Operation categories mapping
@@ -157,28 +158,33 @@ def generate_operation_page(op: Operation, output_dir: Path) -> None:
         # Function signature (PyTorch-style)
         f.write("## Function Signature\n\n")
         f.write("```python\n")
-        f.write(f"{op.name}(")
-        params = []
-        
-        # Add operands first (required parameters)
-        for operand in op.operands:
-            if operand.name != "output":  # output is typically the last parameter
-                params.append(operand.name)
-        
-        # Add attributes (optional parameters)
-        for attr in op.attributes:
-            param_str = f"{attr.name}"
-            if attr.default:
-                param_str += f"={attr.default}"
-            params.append(param_str)
-        
-        # Add output operand last if present
-        for operand in op.operands:
-            if operand.name == "output":
-                params.append(operand.name)
-        
-        f.write(", ".join(params) if params else "")
-        f.write(")\n")
+        if op.signature:
+            # Use the actual signature from the source code
+            f.write(f"{op.signature}\n")
+        else:
+            # Fallback: construct signature from operands and attributes
+            f.write(f"{op.name}(")
+            params = []
+            
+            # Add operands first (required parameters)
+            for operand in op.operands:
+                if operand.name != "output":  # output is typically the last parameter
+                    params.append(operand.name)
+            
+            # Add attributes (optional parameters)
+            for attr in op.attributes:
+                param_str = f"{attr.name}"
+                if attr.default:
+                    param_str += f"={attr.default}"
+                params.append(param_str)
+            
+            # Add output operand last if present
+            for operand in op.operands:
+                if operand.name == "output":
+                    params.append(operand.name)
+            
+            f.write(", ".join(params) if params else "")
+            f.write(")\n")
         f.write("```\n\n")
         
         # Parameters (PyTorch-style)
@@ -188,20 +194,38 @@ def generate_operation_page(op: Operation, output_dir: Path) -> None:
             if op.operands:
                 for operand in op.operands:
                     if operand.name != "output":  # Output is shown separately
-                        f.write(f"- **{operand.name}** ({operand.type}): {operand.description}\n")
-                f.write("\n")
+                        type_str = operand.type if operand.type else "Tensor"
+                        f.write(f"- **{operand.name}** ({type_str}): {operand.description}\n")
+                if op.attributes:  # Only add blank line if there are attributes too
+                    f.write("\n")
             
             if op.attributes:
                 for attr in op.attributes:
                     default_str = f" (default: {attr.default})" if attr.default else ""
-                    f.write(f"- **{attr.name}** ({attr.mlir_type}){default_str}: {attr.description}\n")
+                    type_str = attr.mlir_type if attr.mlir_type else "Any"
+                    f.write(f"- **{attr.name}** ({type_str}){default_str}: {attr.description}\n")
                 f.write("\n")
         
         # Returns (PyTorch-style)
         if op.results:
             f.write("## Returns\n\n")
             for result in op.results:
-                f.write(f"- **{result.name}** ({result.type}): {result.description}\n")
+                type_str = result.type if result.type else "Tensor"
+                # Clean up return description (remove redundant "Output tensor: Tensor" patterns)
+                desc = result.description
+                if desc:
+                    # Remove patterns like "Output tensor: Tensor" or "Forge tensor"
+                    if ":" in desc:
+                        parts = desc.split(":", 1)
+                        if parts[0].strip().lower() in ["output tensor", "tensor", "forge tensor"]:
+                            desc = parts[1].strip() if len(parts) > 1 else ""
+                    # Remove standalone type words at the start
+                    if desc.split()[0] in ["Tensor", "Output", "Forge"]:
+                        desc_words = desc.split()
+                        if len(desc_words) > 1:
+                            desc = ' '.join(desc_words[1:])
+                desc = desc or "Output tensor"
+                f.write(f"- **{result.name}** ({type_str}): {desc}\n")
             f.write("\n")
         
         # Mathematical definition
@@ -263,10 +287,172 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
         f.write("*This documentation is automatically generated from operation definitions.*\n")
 
 
-def load_operations_from_data() -> List[Operation]:
+def convert_discovered_to_operation(discovered) -> Operation:
+    """Convert a DiscoveredOperation to an Operation."""
+    # Extract short description from docstring (first line before Parameters/Returns)
+    docstring = discovered.docstring.strip()
+    
+    # Find the first meaningful line (skip empty lines, get text before Parameters/Returns)
+    lines = docstring.split('\n')
+    short_desc = discovered.name  # Default
+    detailed_desc = ""
+    
+    # Collect all description lines before Parameters/Returns
+    desc_lines = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Stop at Parameters or Returns section
+        if stripped.startswith("Parameters") or stripped.startswith("Returns"):
+            break
+        if stripped and not stripped.startswith("---"):
+            desc_lines.append(stripped)
+    
+    # Use first line as short description, rest as detailed
+    if desc_lines:
+        short_desc = desc_lines[0]
+        if len(desc_lines) > 1:
+            detailed_desc = "\n\n".join(desc_lines[1:])
+    
+    # Clean up descriptions
+    short_desc = short_desc.strip()
+    detailed_desc = detailed_desc.strip()
+    
+    # If description is too short or seems wrong, try to infer from function name
+    if len(short_desc) < 3 or short_desc.lower() in ["sigmoid", "tm", "op"]:
+        # Try to create a better description from function name
+        op_name_lower = discovered.name.lower()
+        if op_name_lower == "abs":
+            short_desc = "Elementwise absolute value operation"
+        elif op_name_lower in ["add", "subtract", "multiply", "divide"]:
+            short_desc = f"Elementwise {op_name_lower} of two tensors"
+        elif op_name_lower == "relu":
+            short_desc = "Rectified Linear Unit (ReLU) activation"
+        elif op_name_lower == "sigmoid":
+            short_desc = "Sigmoid activation function"
+        elif op_name_lower == "conv2d":
+            short_desc = "2D convolution operation"
+        elif op_name_lower == "matmul":
+            short_desc = "Matrix multiplication operation"
+        # Keep the original if we couldn't improve it
+    
+    # Convert parameters to operands and attributes
+    operands = []
+    attributes = []
+    
+    for param in discovered.parameters:
+        # Skip 'name' parameter (it's for op naming, not a tensor)
+        if param["name"] == "name":
+            continue
+        
+        # Determine if it's an operand (Tensor) or attribute
+        param_type = param.get("type", "").lower()
+        is_tensor = "tensor" in param_type or "parameter" in param_type
+        
+        # Clean up description (remove extra whitespace, newlines, and redundant type prefixes)
+        desc = param.get("description", "").strip()
+        desc = ' '.join(desc.split())  # Normalize whitespace
+        
+        # Remove redundant type prefixes from description (e.g., "Tensor First operand" -> "First operand")
+        type_words = ["Tensor", "Parameter", "Optional", "Union", "List", "Tuple", "int", "float", "bool", "str", "Tenor"]
+        desc_words = desc.split()
+        if desc_words and desc_words[0] in type_words:
+            # Check if first word is a type (possibly followed by comma or colon)
+            first_word = desc_words[0].rstrip(',:')
+            if first_word in type_words and len(desc_words) > 1:
+                # Remove the type word
+                desc = ' '.join(desc_words[1:])
+        
+        # Remove redundant phrases like "optional Optional" or "Tensor Tensor"
+        desc = desc.replace("optional Optional", "Optional").replace("Tensor Tensor", "Tensor")
+        desc = desc.replace("Tenor, optional", "").replace("Tenor, Optional", "Optional").replace("Tenor,", "").strip()
+        if desc.startswith(", "):
+            desc = desc[2:]
+        desc = desc.strip()
+        
+        if is_tensor:
+            operands.append(Operand(
+                name=param["name"],
+                type=param.get("type", "Tensor"),
+                description=desc or f"{param['name']} tensor"
+            ))
+        else:
+            attributes.append(Attribute(
+                name=param["name"],
+                mlir_type=param.get("type", "Any"),
+                description=desc or f"{param['name']} parameter",
+                default=param.get("default")
+            ))
+    
+    # Add output operand
+    if discovered.return_type:
+        operands.append(Operand(
+            name="output",
+            type=discovered.return_type,
+            description=discovered.return_description or "Output tensor"
+        ))
+    
+    # Convert name to ttir format (lowercase with underscores)
+    short_name = discovered.name.lower()
+    full_name = f"forge.op.{discovered.name}"
+    
+    return Operation(
+        name=full_name,
+        short_name=short_name,
+        category=discovered.category,
+        description=short_desc,
+        detailed_description=detailed_desc,
+        operands=operands,
+        results=[Operand("result", discovered.return_type or "Tensor", "Output tensor")],
+        attributes=attributes,
+        examples=[],  # Could be extracted from docstring examples if present
+        signature=discovered.signature  # Store the actual Python signature
+    )
+
+
+def load_operations_from_codebase(project_root: Path) -> List[Operation]:
     """
-    Load operations from a structured data source.
-    This imports from ops_data.py which contains all operation definitions.
+    Automatically discover operations from forge/forge/op/*.py files.
+    This is the primary method - operations are discovered automatically.
+    """
+    try:
+        import sys
+        script_dir = Path(__file__).parent
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+        
+        from discover_operations import discover_operations, DiscoveredOperation
+        
+        print("Discovering operations from codebase...")
+        discovered_ops = discover_operations(project_root)
+        
+        if not discovered_ops:
+            print("Warning: No operations discovered. Falling back to manual data.")
+            return load_operations_from_data(project_root)
+        
+        print(f"Discovered {len(discovered_ops)} operations from codebase")
+        
+        # Convert to Operation format
+        operations = []
+        for discovered in discovered_ops:
+            try:
+                op = convert_discovered_to_operation(discovered)
+                operations.append(op)
+            except Exception as e:
+                print(f"Warning: Failed to convert {discovered.name}: {e}")
+                continue
+        
+        return operations
+        
+    except ImportError as e:
+        print(f"Warning: Could not import operation discoverer: {e}")
+        print("Falling back to manual operation data.")
+        return load_operations_from_data(project_root)
+
+
+def load_operations_from_data(project_root: Path) -> List[Operation]:
+    """
+    Load operations from a structured data source (fallback method).
+    This imports from ops_data.py which contains manually curated operation definitions.
     """
     import sys
     import importlib.util
@@ -290,15 +476,15 @@ def load_operations_from_data() -> List[Operation]:
         # Fallback to minimal examples
         return [
             Operation(
-                name="ttir.abs",
+                name="forge.op.Abs",
                 short_name="abs",
                 category="Elementwise Operations",
                 description="Elementwise absolute value operation.",
                 operands=[
-                    Operand("input", "ranked tensor of any type values", "The input tensor"),
-                    Operand("output", "ranked tensor of any type values", "The output tensor")
+                    Operand("operandA", "Tensor", "The input tensor"),
+                    Operand("output", "Tensor", "The output tensor")
                 ],
-                results=[Operand("result", "ranked tensor of any type values", "The result tensor")]
+                results=[Operand("result", "Tensor", "The result tensor")]
             )
         ]
 
@@ -314,9 +500,9 @@ def main():
     # Create operations directory if it doesn't exist
     ops_docs_dir.mkdir(parents=True, exist_ok=True)
     
-    # Load operations
+    # Load operations - try automatic discovery first, fall back to manual data
     print("Loading operations...")
-    operations = load_operations_from_data()
+    operations = load_operations_from_codebase(project_root)
     print(f"Loaded {len(operations)} operations")
     
     # Generate individual operation pages
