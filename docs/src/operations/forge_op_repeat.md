@@ -1,8 +1,8 @@
 # forge.op.Repeat
 
-Repeats this tensor along the specified dimensions.
+## Overview
 
->>> x = torch.tensor([1, 2, 3])
+Repeats this tensor along the specified dimensions. >>> x = torch.tensor([1, 2, 3])
 
 >>> x.repeat(4, 2)
 
@@ -26,11 +26,17 @@ forge.op.Repeat(name: str, operandA: Tensor, repeats: List[int]) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **repeats** (List[int]): repeats parameter
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **repeats** (`List[int]`): repeats parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

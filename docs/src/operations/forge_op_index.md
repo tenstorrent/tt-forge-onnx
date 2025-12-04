@@ -1,6 +1,8 @@
 # forge.op.Index
 
-TM
+## Overview
+
+Index tensor manipulation operation
 
 ## Function Signature
 
@@ -10,14 +12,20 @@ forge.op.Index(name: str, operandA: Tensor, dim: int, start: int, stop: int, str
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): Dimension to slice
-- **start** (int): Starting slice index (inclusive)
-- **stop** (int) (default: None): Stopping slice index (exclusive)
-- **stride** (int) (default: 1): Stride amount along that dimension
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **dim** (`int`): Dimension to slice
+- **start** (`int`): Starting slice index (inclusive)
+- **stop** (`int`, default: `None`): Stopping slice index (exclusive)
+- **stride** (`int`, default: `1`): Stride amount along that dimension
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

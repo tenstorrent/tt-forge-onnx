@@ -1,5 +1,7 @@
 # forge.op.Clip
 
+## Overview
+
 Clips tensor values between min and max
 
 ## Function Signature
@@ -10,12 +12,18 @@ forge.op.Clip(name: str, operandA: Tensor, min: float, max: float) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **min** (float): Minimum value
-- **max** (float): Maximum value
+- **operandA** (`Tensor`): First operand
+
+- **min** (`float`): Minimum value
+- **max** (`float`): Maximum value
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

@@ -1,5 +1,7 @@
 # forge.op.CumSum
 
+## Overview
+
 Cumulative sum operation.
 
 ## Function Signature
@@ -10,11 +12,17 @@ forge.op.CumSum(name: str, operandA: Tensor, dim: int) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): dim parameter
+- **operandA** (`Tensor`): First operand
+
+- **dim** (`int`): dim parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

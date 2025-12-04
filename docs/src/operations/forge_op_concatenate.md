@@ -1,5 +1,7 @@
 # forge.op.Concatenate
 
+## Overview
+
 Concatenate tensors along axis
 
 ## Function Signature
@@ -10,7 +12,13 @@ forge.op.Concatenate(name: str) -> Tensor
 
 ## Parameters
 
+- **name** (`str`): Name identifier for this operation in the computation graph.
+
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

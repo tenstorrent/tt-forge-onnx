@@ -1,5 +1,7 @@
 # forge.op.LeakyRelu
 
+## Overview
+
 Leaky ReLU
 
 ## Function Signature
@@ -10,11 +12,17 @@ forge.op.LeakyRelu(name: str, operandA: Tensor, alpha: float) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **alpha** (float): Controls the angle of the negative slope
+- **operandA** (`Tensor`): First operand
+
+- **alpha** (`float`): Controls the angle of the negative slope
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

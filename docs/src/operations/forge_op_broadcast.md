@@ -1,6 +1,8 @@
 # forge.op.Broadcast
 
-TM
+## Overview
+
+Broadcast tensor manipulation operation
 
 ## Function Signature
 
@@ -10,12 +12,18 @@ forge.op.Broadcast(name: str, operandA: Tensor, dim: int, shape: int) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): Dimension to broadcast
-- **shape** (int): Output length of dim
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **dim** (`int`): Dimension to broadcast
+- **shape** (`int`): Output length of dim
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 
