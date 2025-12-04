@@ -1,6 +1,8 @@
 # forge.op.Unsqueeze
 
-TM
+## Overview
+
+Unsqueeze tensor manipulation operation
 
 ## Function Signature
 
@@ -10,11 +12,21 @@ forge.op.Unsqueeze(name: str, operandA: Tensor, dim: int) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): Dimension to broadcast
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **dim** (`int`): Dimension to broadcast
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+- [forge.op.Reshape](./forge_op_reshape.md): Reshape tensor manipulation operation
+- [forge.op.Transpose](./forge_op_transpose.md): Transpose tensor manipulation operation
+- [forge.op.Squeeze](./forge_op_squeeze.md): Squeeze tensor manipulation operation
+- [forge.op.Select](./forge_op_select.md): Select tensor manipulation operation
+- [forge.op.Index](./forge_op_index.md): Index tensor manipulation operation
 

@@ -1,6 +1,8 @@
 # forge.op.Select
 
-TM
+## Overview
+
+Select tensor manipulation operation
 
 ## Function Signature
 
@@ -10,13 +12,19 @@ forge.op.Select(name: str, operandA: Tensor, dim: int, index: Union[int, Tuple[i
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): Dimension to slice
-- **index** (Union[int, Tuple[int, int]]): int: Index to select from that dimension [start: int, length: int]: Index range to select from that dimension
-- **stride** (int) (default: 0): Stride amount along that dimension
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **dim** (`int`): Dimension to slice
+- **index** (`Union[int, Tuple[int, int]]`): int: Index to select from that dimension [start: int, length: int]: Index range to select from that dimension
+- **stride** (`int`, default: `0`): Stride amount along that dimension
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

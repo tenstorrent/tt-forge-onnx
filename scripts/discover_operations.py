@@ -49,23 +49,28 @@ class OperationDiscoverer:
         else:
             return str(node)
     
-    # Map file names to categories
+    # Map file names to categories (matching manager's requirements)
     FILE_TO_CATEGORY = {
         "eltwise_unary.py": "Elementwise Operations",
         "eltwise_binary.py": "Elementwise Operations",
         "eltwise_nary.py": "Elementwise Operations",
-        "convolution.py": "Convolution Functions",
-        "pooling.py": "Pooling Functions",
+        "convolution.py": "Convolution Operations",
+        "pooling.py": "Pooling Operations",
         "reduce.py": "Reduction Operations",
-        "matmul.py": "Linear Functions",
+        "matmul.py": "Linear Operations",
         "tm.py": "Tensor Manipulation",
-        "nn.py": "Normalization Functions",
+        "nn.py": "Normalization Operations",
         "resize.py": "Resize Operations",
         "embedding.py": "Embedding Functions",
         "kv_cache.py": "Memory Operations",
         "constant.py": "Creation Operations",
         "misc.py": "Other Operations",
         "loss.py": "Loss Functions",
+    }
+    
+    # Activation functions that should be in separate category
+    ACTIVATION_FUNCTIONS = {
+        "Relu", "LeakyRelu", "Sigmoid", "Tanh", "Gelu", "Silu", "HardSigmoid"
     }
     
     def __init__(self, project_root: Path):
@@ -138,6 +143,10 @@ class OperationDiscoverer:
         
         # Get module path
         module_path = f"forge.forge.op.{file_path.stem}"
+        
+        # Override category for activation functions
+        if func_node.name in self.ACTIVATION_FUNCTIONS:
+            category = "Activation Functions"
         
         return DiscoveredOperation(
             name=func_node.name,

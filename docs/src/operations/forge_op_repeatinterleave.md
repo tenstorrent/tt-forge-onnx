@@ -1,8 +1,8 @@
 # forge.op.RepeatInterleave
 
-Repeat elements of a tensor.
+## Overview
 
->>> x = torch.tensor([1, 2, 3])
+Repeat elements of a tensor. >>> x = torch.tensor([1, 2, 3])
 
 >>> x.repeat_interleave(2)
 
@@ -20,12 +20,18 @@ forge.op.RepeatInterleave(name: str, operandA: Tensor, repeats: int, dim: int) -
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **repeats** (int): The number of repetitions for each element.
-- **dim** (int): The dimension along which to repeat values.
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **repeats** (`int`): The number of repetitions for each element.
+- **dim** (`int`): The dimension along which to repeat values.
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

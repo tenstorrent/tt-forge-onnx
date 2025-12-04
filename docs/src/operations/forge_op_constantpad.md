@@ -1,6 +1,8 @@
 # forge.op.ConstantPad
 
-TM - Direct TTIR constant padding operation.
+## Overview
+
+Applies constant padding to the input tensor. This is a low-level padding operation that directly specifies padding values for each dimension in Forge format.
 
 ## Function Signature
 
@@ -10,12 +12,18 @@ forge.op.ConstantPad(name: str, operandA: Tensor, padding: List[int], value: flo
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A to which padding will be applied.
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **padding** (List[int]): List[int] Padding values in TTIR format: [dim0_low, dim0_high, dim1_low, dim1_high, ...] Length must be 2 * rank of input tensor.
-- **value** (float) (default: 0.0): float, optional The constant value to use for padding. Default is 0.0.
+- **operandA** (`Tensor`): Input operand A to which padding will be applied.
+
+- **padding** (`List[int]`): Padding values in Forge format: `[dim0_low, dim0_high, dim1_low, dim1_high, ...]`. Length must be 2 * rank of input tensor. Each dimension has a low and high padding value.
+- **value** (`float`, default: `0.0`): float, optional The constant value to use for padding. Default is 0.0.
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 
