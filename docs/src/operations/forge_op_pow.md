@@ -1,8 +1,8 @@
 # forge.op.Pow
 
-Pow operation: `operandA` to the power of `exponent`
+## Overview
 
-yi = pow(xi, exponent) for all xi in operandA tensor
+Pow operation: `operandA` to the power of `exponent`. yi = pow(xi, exponent) for all xi in operandA tensor
 
 ## Function Signature
 
@@ -12,11 +12,17 @@ forge.op.Pow(name: str, operandA: Tensor, exponent: Union[int, float]) -> Tensor
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **exponent** (Union[int, float]): exponent parameter
+- **operandA** (`Tensor`): First operand
+
+- **exponent** (`Union[int, float]`): exponent parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

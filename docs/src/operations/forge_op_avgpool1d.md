@@ -1,5 +1,7 @@
 # forge.op.AvgPool1d
 
+## Overview
+
 Avgpool1d transformation on input activations
 
 ## Function Signature
@@ -10,15 +12,21 @@ forge.op.AvgPool1d(name: str, activations: Tensor, kernel_size: Union[int, Tuple
 
 ## Parameters
 
-- **activations** (Tensor): Input activations of shape (N, Cin, iW)
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **kernel_size** (Union[int, Tuple[int, int]]): Size of pooling region
-- **stride** (int) (default: 1): stride parameter
-- **padding** (Union[int, str]) (default: 'same'): padding parameter
-- **ceil_mode** (bool) (default: False): ceil_mode parameter
-- **count_include_pad** (bool) (default: True): count_include_pad parameter
+- **activations** (`Tensor`): Input activations of shape (N, Cin, iW)
+
+- **kernel_size** (`Union[int, Tuple[int, int]]`): Size of pooling region
+- **stride** (`int`, default: `1`): stride parameter
+- **padding** (`Union[int, str]`, default: `'same'`): padding parameter
+- **ceil_mode** (`bool`, default: `False`): ceil_mode parameter
+- **count_include_pad** (`bool`, default: `True`): count_include_pad parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

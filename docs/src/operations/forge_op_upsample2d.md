@@ -1,5 +1,7 @@
 # forge.op.Upsample2d
 
+## Overview
+
 Upsample 2D operation
 
 ## Function Signature
@@ -10,13 +12,19 @@ forge.op.Upsample2d(name: str, operandA: Tensor, scale_factor: Union[int, List[i
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand A
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **scale_factor** (Union[int, List[int], Tuple[int, int]]): Union[int, List[int], Tuple[int, int]] multiplier for spatial size.
-- **mode** (str) (default: 'nearest'): the upsampling algorithm
-- **channel_last** (bool) (default: False): channel_last parameter
+- **operandA** (`Tensor`): Input tensor. Shape and data type depend on the specific operation requirements.
+
+- **scale_factor** (`Union[int, List[int], Tuple[int, int]]`): Union[int, List[int], Tuple[int, int]] multiplier for spatial size.
+- **mode** (`str`, default: `'nearest'`): the upsampling algorithm
+- **channel_last** (`bool`, default: `False`): If `True`, the input tensor is in channel-last format `(N, H, W, C)`. If `False`, the input tensor is in channel-first format `(N, C, H, W)`.
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

@@ -1,5 +1,7 @@
 # forge.op.Identity
 
+## Overview
+
 Identity operation.
 
 ## Function Signature
@@ -10,12 +12,18 @@ forge.op.Identity(name: str, operandA: Tensor, unsqueeze: str, unsqueeze_dim: in
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **unsqueeze** (str) (default: None): If set, the operation returns a new tensor with a dimension of size one inserted at the specified position.
-- **unsqueeze_dim** (int) (default: None): The index at where singleton dimenion can be inserted
+- **operandA** (`Tensor`): First operand
+
+- **unsqueeze** (`str`, default: `None`): If set, the operation returns a new tensor with a dimension of size one inserted at the specified position.
+- **unsqueeze_dim** (`int`, default: `None`): The index at where singleton dimenion can be inserted
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 
