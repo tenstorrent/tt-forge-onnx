@@ -1,5 +1,7 @@
 # forge.op.AdvIndex
 
+## Overview
+
 TM
 
 ## Function Signature
@@ -10,12 +12,18 @@ forge.op.AdvIndex(name: str, operandA: Tensor, operandB: Tensor, dim: int) -> Te
 
 ## Parameters
 
-- **operandA** (Tensor): Input operand B - indices
-- **operandB** (Tensor): operandB tensor
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int) (default: 0): Dimension to fetch indices over
+- **operandA** (`Tensor`): Input operand B - indices
+- **operandB** (`Tensor`): operandB tensor
+
+- **dim** (`int`, default: `0`): Dimension to fetch indices over
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

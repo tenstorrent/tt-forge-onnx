@@ -1,5 +1,7 @@
 # forge.op.MaxPool2d
 
+## Overview
+
 Maxpool2d transformation on input activations
 
 ## Function Signature
@@ -10,19 +12,25 @@ forge.op.MaxPool2d(name: str, activations: Tensor, kernel_size: Union[int, Tuple
 
 ## Parameters
 
-- **activations** (Tensor): Input activations of shape (N, Cin, iH, iW)
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **kernel_size** (Union[int, Tuple[int, int]]): Size of pooling region
-- **stride** (int) (default: 1): stride parameter
-- **padding** (Union[int, str]) (default: 'same'): padding parameter
-- **dilation** (int) (default: 1): dilation parameter
-- **ceil_mode** (bool) (default: False): ceil_mode parameter
-- **return_indices** (bool) (default: False): return_indices parameter
-- **max_pool_add_sub_surround** (bool) (default: False): max_pool_add_sub_surround parameter
-- **max_pool_add_sub_surround_value** (float) (default: 1.0): max_pool_add_sub_surround_value parameter
-- **channel_last** (bool) (default: False): channel_last parameter
+- **activations** (`Tensor`): Input activations of shape (N, Cin, iH, iW)
+
+- **kernel_size** (`Union[int, Tuple[int, int]]`): Size of pooling region
+- **stride** (`int`, default: `1`): stride parameter
+- **padding** (`Union[int, str]`, default: `'same'`): padding parameter
+- **dilation** (`int`, default: `1`): dilation parameter
+- **ceil_mode** (`bool`, default: `False`): ceil_mode parameter
+- **return_indices** (`bool`, default: `False`): return_indices parameter
+- **max_pool_add_sub_surround** (`bool`, default: `False`): max_pool_add_sub_surround parameter
+- **max_pool_add_sub_surround_value** (`float`, default: `1.0`): max_pool_add_sub_surround_value parameter
+- **channel_last** (`bool`, default: `False`): If `True`, the input tensor is in channel-last format `(N, H, W, C)`. If `False`, the input tensor is in channel-first format `(N, C, H, W)`.
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

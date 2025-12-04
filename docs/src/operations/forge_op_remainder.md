@@ -1,5 +1,7 @@
 # forge.op.Remainder
 
+## Overview
+
 Remainder
 
 ## Function Signature
@@ -10,9 +12,15 @@ forge.op.Remainder(name: str, operandA: Tensor, operandB: Union[Tensor, Paramete
 
 ## Parameters
 
-- **operandA** (Tensor): operandA tensor
-- **operandB** (Union[Tensor, Parameter]): operandB tensor
+- **name** (`str`): name parameter
+
+- **operandA** (`Tensor`): operandA tensor
+- **operandB** (`Union[Tensor, Parameter]`): operandB tensor
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

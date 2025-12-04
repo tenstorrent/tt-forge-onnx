@@ -1,5 +1,7 @@
 # forge.op.Layernorm
 
+## Overview
+
 Layer normalization.
 
 ## Function Signature
@@ -10,14 +12,20 @@ forge.op.Layernorm(name: str, operandA: Tensor, weights: Union[Tensor, Parameter
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
-- **weights** (Union[Tensor, Parameter]): weights tensor
-- **bias** (Union[Tensor, Parameter]): bias tensor
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int) (default: -1): dim parameter
-- **epsilon** (float) (default: 1e-05): epsilon parameter
+- **operandA** (`Tensor`): First operand
+- **weights** (`Union[Tensor, Parameter]`): weights tensor
+- **bias** (`Union[Tensor, Parameter]`): bias tensor
+
+- **dim** (`int`, default: `-1`): dim parameter
+- **epsilon** (`float`, default: `1e-05`): epsilon parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

@@ -1,5 +1,7 @@
 # forge.op.Batchnorm
 
+## Overview
+
 Batch normalization.
 
 ## Function Signature
@@ -10,15 +12,21 @@ forge.op.Batchnorm(name: str, operandA: Tensor, weights: Union[Tensor, Parameter
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
-- **weights** (Union[Tensor, Parameter]): weights tensor
-- **bias** (Union[Tensor, Parameter]): bias tensor
-- **running_mean** (Union[Tensor, Parameter]): running_mean tensor
-- **running_var** (Union[Tensor, Parameter]): running_var tensor
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **epsilon** (float) (default: 1e-05): epsilon parameter
+- **operandA** (`Tensor`): First operand
+- **weights** (`Union[Tensor, Parameter]`): weights tensor
+- **bias** (`Union[Tensor, Parameter]`): bias tensor
+- **running_mean** (`Union[Tensor, Parameter]`): running_mean tensor
+- **running_var** (`Union[Tensor, Parameter]`): running_var tensor
+
+- **epsilon** (`float`, default: `1e-05`): epsilon parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

@@ -1,5 +1,7 @@
 # forge.op.LessEqual
 
+## Overview
+
 Elementwise less or equal of two tensors
 
 ## Function Signature
@@ -10,9 +12,15 @@ forge.op.LessEqual(name: str, operandA: Tensor, operandB: Union[Tensor, Paramete
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
-- **operandB** (Union[Tensor, Parameter]): Second operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
+
+- **operandA** (`Tensor`): First operand
+- **operandB** (`Union[Tensor, Parameter]`): Second input tensor. Must be broadcastable with operandA.
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

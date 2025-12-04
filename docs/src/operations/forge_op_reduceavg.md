@@ -1,5 +1,7 @@
 # forge.op.ReduceAvg
 
+## Overview
+
 Reduce by averaging along the given dimension
 
 ## Function Signature
@@ -10,12 +12,18 @@ forge.op.ReduceAvg(name: str, operandA: Tensor, dim: int, keep_dim: bool) -> Ten
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **dim** (int): Dimension along which to reduce. A positive number 0 - 3 or negative from -1 to -4.
-- **keep_dim** (bool) (default: True): keep_dim parameter
+- **operandA** (`Tensor`): First operand
+
+- **dim** (`int`): Dimension along which to reduce. A positive number 0 - 3 or negative from -1 to -4.
+- **keep_dim** (`bool`, default: `True`): keep_dim parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 

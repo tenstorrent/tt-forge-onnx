@@ -1,5 +1,7 @@
 # forge.op.PixelShuffle
 
+## Overview
+
 Pixel shuffle operation.
 
 ## Function Signature
@@ -10,11 +12,17 @@ forge.op.PixelShuffle(name: str, operandA: Tensor, upscale_factor: int) -> Tenso
 
 ## Parameters
 
-- **operandA** (Tensor): First operand
+- **name** (`str`): Name identifier for this operation in the computation graph.
 
-- **upscale_factor** (int): upscale_factor parameter
+- **operandA** (`Tensor`): First operand
+
+- **upscale_factor** (`int`): upscale_factor parameter
 
 ## Returns
 
-- **result** (Output tensor): Tensor
+- **result** (`Tensor`): Tensor
+
+## Related Operations
+
+*Related operations will be automatically linked here in future updates.*
 
