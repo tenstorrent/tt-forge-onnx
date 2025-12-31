@@ -624,7 +624,12 @@ def generate_initial_graph(context: CompileContext) -> CompileDepth:
     """
 
     modules_ = []
-    if context.compiler_cfg.compile_tvm_to_python and context.graph is None:
+    # Check if we should convert to Forge module (either TVM or transpiler path)
+    should_convert = (
+        context.compiler_cfg.compile_tvm_to_python or context.compiler_cfg.compile_transpiler_to_python
+    ) and context.graph is None
+
+    if should_convert:
         logger.info("Converting framework modules to Forge modules")
         module_inputs = context.inputs
         for module in context.modules:
@@ -998,12 +1003,14 @@ def convert_to_forge_module(
     """
     Converts given module to a Forge module, along with the module_inputs (which will be converted to Forge tensors).
 
+    Supports two paths:
+    1. TVM Path: Framework Model → TVM Relay IR  → Forge Module
+    2. TIR Path: Framework Model →   TIRGraph    → Forge Module
+
     Returns
     -------
     ForgeModule, Tuple[Tensor, ...]
     """
-
-    from .tvm_to_python import generate_forge_module
 
     prev_state = state_changed()
 
@@ -1011,13 +1018,44 @@ def convert_to_forge_module(
         logger.error("No inputs provided for module {}", module.name)
         assert False
 
-    forge_module, dev_types, module_inputs = generate_forge_module(
-        module,
-        to_pt_tensors(module_inputs),
-        compiler_cfg,
-        module.name,
-        verify_cfg,
-    )
+    # Determine which path to use
+    # Default to TVM path, but if transpiler is enabled, use it instead
+    use_transpiler_path = compiler_cfg.compile_transpiler_to_python
+    use_tvm_path = compiler_cfg.compile_tvm_to_python and not use_transpiler_path
+
+    module_inputs = to_pt_tensors(module_inputs)
+
+    if use_transpiler_path:
+        # Transpiler Path: Framework Model → TIRGraph → Forge Module
+        from .transpiler.codegen.transpiler_to_forge import generate_forge_module_from_transpiler
+
+        # Generate Forge module from transpiler (all logic is inside this function)
+        forge_module, module_inputs = generate_forge_module_from_transpiler(
+            framework_mod=module,
+            module_inputs=module_inputs,
+            compiler_cfg=compiler_cfg,
+            graph_name=module.name,
+            verify_cfg=verify_cfg,
+        )
+
+    elif use_tvm_path:
+        # TVM Path: Framework Model → TVM Relay IR → Forge Module (existing)
+        from .tvm_to_python import generate_forge_module
+
+        forge_module, dev_types, module_inputs = generate_forge_module(
+            module,
+            to_pt_tensors(module_inputs),
+            compiler_cfg,
+            module.name,
+            verify_cfg,
+        )
+    else:
+        raise ValueError(
+            "Either compile_tvm_to_python or compile_transpiler_to_python must be True. "
+            f"Current config: compile_tvm_to_python={compiler_cfg.compile_tvm_to_python}, "
+            f"compile_transpiler_to_python={compiler_cfg.compile_transpiler_to_python}"
+        )
+
     assert len(forge_module) == 1, "Attemping to load split model onto single devices"
 
     if not (prev_state):

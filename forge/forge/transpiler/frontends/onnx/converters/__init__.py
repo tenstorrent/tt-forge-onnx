@@ -1,31 +1,33 @@
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
 """
-ONNX conversion utilities.
+ONNX operation converters.
+
+This package contains all operation-specific converters for converting ONNX operations
+to TIR nodes. Each converter handles the conversion from ONNX NodeProto to TIRNode(s)
+or ConstantResult, with support for different ONNX opset versions.
+
+Converters follow a consistent pattern:
+- Inherit from OnnxOpConverter base class
+- Implement convert() classmethod with opset version support
+- Return ConverterResult (either List[TIRNode] or ConstantResult)
+- Handle opset-specific differences using the opset parameter
+
+For utilities and helper functions, see frontends.onnx.utils.
 """
-from forge.transpiler.frontends.onnx.converters.attributes import extract_attributes, extract_attr_value, AttributeParsingError
-from forge.transpiler.frontends.onnx.converters.utils import (
-    remove_initializers_from_input,
-    get_inputs_names,
-    get_outputs_names,
-    torch_dtype_to_onnx_dtype,
-)
-from forge.transpiler.frontends.onnx.converters.validation import (
-    ValidationError,
-    validate_attributes,
-    validate_constant_input,
-    handle_validation_error,
+from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
+from forge.transpiler.frontends.onnx.converters.converter_result import (
+    ConverterResult,
+    ConstantResult,
+    is_constant_result,
+    is_tir_nodes_result,
 )
 
 __all__ = [
-    'extract_attributes',
-    'extract_attr_value',
-    'AttributeParsingError',
-    'remove_initializers_from_input',
-    'get_inputs_names',
-    'get_outputs_names',
-    'torch_dtype_to_onnx_dtype',
-    'ValidationError',
-    'validate_attributes',
-    'validate_constant_input',
-    'handle_validation_error',
+    "OnnxOpConverter",
+    "ConverterResult",
+    "ConstantResult",
+    "is_constant_result",
+    "is_tir_nodes_result",
 ]
-
