@@ -1,21 +1,19 @@
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
 """
 Forge Transpiler Package
 
 A multi-frontend transpiler for converting ML framework models to Forge intermediate representation.
-Supports ONNX, with PaddlePaddle and TensorFlow coming soon.
+Supports ONNX, with PaddlePaddle coming soon.
 """
 
-# Configure logging using loguru
-from loguru import logger
-
 # Import operations to register them (must be imported first)
-from forge.transpiler.ir.operations import *
-
-# Public API - IR (common across all frontends)
-from forge.transpiler.ir.types import TensorInfo, onnx_dtype_to_torch_dtype
-from forge.transpiler.ir.nodes import TIRNode
+from forge.transpiler.operations import *
 
 # Public API - Core
+from forge.transpiler.core.types import TensorInfo, onnx_dtype_to_torch_dtype
+from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.graph import TIRGraph
 
 # Public API - Code Generation
@@ -23,8 +21,8 @@ from forge.transpiler.codegen.transpiler_generator import TranspilerCodeGenerato
 from forge.transpiler.codegen.transpiler_to_forge import generate_forge_module_from_transpiler
 
 # Public API - ONNX Frontend
-from forge.transpiler.frontends.onnx import ONNXToForgeTranspiler
-from forge.transpiler.frontends.onnx.converters import (
+from forge.transpiler.frontends.onnx import ONNXToForgeTranspiler, UnsupportedOperationError, ONNXModelValidationError
+from forge.transpiler.frontends.onnx.utils import (
     extract_attributes,
     extract_attr_value,
     remove_initializers_from_input,
@@ -33,39 +31,29 @@ from forge.transpiler.frontends.onnx.converters import (
 )
 from forge.transpiler.frontends.onnx.debug import debug_node_output, get_activation_value
 
-# Public API - Common Utils
-from forge.transpiler.utils import (
-    is_constant,
-    is_symmetric_padding,
-    extract_padding_for_conv,
-    get_selection,
-)
 
 __all__ = [
     # Types (IR)
-    'TensorInfo',
-    'onnx_dtype_to_torch_dtype',
+    "TensorInfo",
+    "onnx_dtype_to_torch_dtype",
     # Nodes (IR)
-    'TIRNode',
+    "TIRNode",
     # Graph (Core)
-    'TIRGraph',
+    "TIRGraph",
     # Code Generation
-    'TranspilerCodeGenerator',
-    'generate_forge_module_from_transpiler',
+    "TranspilerCodeGenerator",
+    "generate_forge_module_from_transpiler",
     # ONNX Frontend
-    'ONNXToForgeTranspiler',
+    "ONNXToForgeTranspiler",
+    "UnsupportedOperationError",
+    "ONNXModelValidationError",
     # ONNX Converters
-    'extract_attributes',
-    'extract_attr_value',
-    'remove_initializers_from_input',
-    'get_inputs_names',
-    'get_outputs_names',
+    "extract_attributes",
+    "extract_attr_value",
+    "remove_initializers_from_input",
+    "get_inputs_names",
+    "get_outputs_names",
     # ONNX Debug
-    'debug_node_output',
-    'get_activation_value',
-    # Common Utils
-    'is_constant',
-    'is_symmetric_padding',
-    'extract_padding_for_conv',
-    'get_selection',
+    "debug_node_output",
+    "get_activation_value",
 ]
