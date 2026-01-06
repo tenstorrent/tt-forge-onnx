@@ -7,12 +7,15 @@ all operations and extract their documentation.
 """
 
 import ast
-import inspect
-import importlib.util
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
 import sys
+from pathlib import Path
+from typing import List, Dict, Optional
 from dataclasses import dataclass
+
+
+class OperationDiscoveryError(Exception):
+    """Raised when operation discovery fails."""
+    pass
 
 
 @dataclass
@@ -32,24 +35,7 @@ class DiscoveredOperation:
 class OperationDiscoverer:
     """Discovers operations from forge/forge/op/*.py files."""
     
-    def _ast_to_string(self, node):
-        """Convert AST node to string (fallback for Python < 3.9)."""
-        if isinstance(node, ast.Name):
-            return node.id
-        elif isinstance(node, ast.Constant):
-            return repr(node.value)
-        elif isinstance(node, ast.Attribute):
-            return f"{self._ast_to_string(node.value)}.{node.attr}"
-        elif isinstance(node, ast.Subscript):
-            return f"{self._ast_to_string(node.value)}[{self._ast_to_string(node.slice)}]"
-        elif isinstance(node, ast.Union):
-            return "Union[" + ", ".join(self._ast_to_string(x) for x in node.elts) + "]"
-        elif isinstance(node, ast.Tuple):
-            return "(" + ", ".join(self._ast_to_string(x) for x in node.elts) + ")"
-        else:
-            return str(node)
-    
-    # Map file names to categories (matching manager's requirements)
+    # Map file names to categories
     FILE_TO_CATEGORY = {
         "eltwise_unary.py": "Elementwise Operations",
         "eltwise_binary.py": "Elementwise Operations",
@@ -60,15 +46,15 @@ class OperationDiscoverer:
         "matmul.py": "Linear Operations",
         "tm.py": "Tensor Manipulation",
         "nn.py": "Normalization Operations",
-        "resize.py": "Resize Operations",
-        "embedding.py": "Embedding Functions",
+        "resize.py": "Tensor Manipulation",
+        "embedding.py": "Other Operations",
         "kv_cache.py": "Memory Operations",
-        "constant.py": "Creation Operations",
+        "constant.py": "Other Operations",
         "misc.py": "Other Operations",
-        "loss.py": "Loss Functions",
+        "loss.py": "Other Operations",
     }
     
-    # Activation functions that should be in separate category
+    # Activation functions - override category
     ACTIVATION_FUNCTIONS = {
         "Relu", "LeakyRelu", "Sigmoid", "Tanh", "Gelu", "Silu", "HardSigmoid"
     }
@@ -77,24 +63,83 @@ class OperationDiscoverer:
         self.project_root = project_root
         self.op_dir = project_root / "forge" / "forge" / "op"
     
+    def _ast_to_string(self, node) -> str:
+        """Convert AST node to string."""
+        if isinstance(node, ast.Name):
+            return node.id
+        elif isinstance(node, ast.Constant):
+            return repr(node.value)
+        elif isinstance(node, ast.Attribute):
+            return f"{self._ast_to_string(node.value)}.{node.attr}"
+        elif isinstance(node, ast.Subscript):
+            return f"{self._ast_to_string(node.value)}[{self._ast_to_string(node.slice)}]"
+        elif isinstance(node, ast.Tuple):
+            return "(" + ", ".join(self._ast_to_string(x) for x in node.elts) + ")"
+        elif hasattr(ast, 'unparse'):
+            return ast.unparse(node)
+        else:
+            return str(node)
+    
     def discover_all_operations(self) -> List[DiscoveredOperation]:
-        """Discover all operations from the op directory."""
-        operations = []
+        """
+        Discover all operations from the op directory.
         
+        Raises
+        ------
+        OperationDiscoveryError
+            If the operation directory does not exist or no operations are found.
+        """
+        # VALIDATION: Fail fast if directory doesn't exist
         if not self.op_dir.exists():
-            print(f"Warning: Operation directory not found: {self.op_dir}")
-            return operations
+            raise OperationDiscoveryError(
+                f"Operation directory not found: {self.op_dir}\n"
+                f"Expected forge operations at: forge/forge/op/"
+            )
         
-        # Get all Python files in op directory (except __init__.py)
-        op_files = [f for f in self.op_dir.glob("*.py") if f.name != "__init__.py"]
+        operations = []
+        parse_errors = []
+        
+        # Get all Python files in op directory (except __init__.py and common.py)
+        op_files = [
+            f for f in self.op_dir.glob("*.py") 
+            if f.name not in ("__init__.py", "common.py")
+        ]
+        
+        if not op_files:
+            raise OperationDiscoveryError(
+                f"No operation files found in: {self.op_dir}\n"
+                f"Expected Python files defining Forge operations."
+            )
+        
+        print(f"Found {len(op_files)} operation files to parse")
         
         for op_file in op_files:
             try:
                 file_ops = self._parse_file(op_file)
                 operations.extend(file_ops)
+                print(f"  [OK] {op_file.name}: {len(file_ops)} operations")
+            except SyntaxError as e:
+                error_msg = f"Syntax error in {op_file.name}: {e}"
+                parse_errors.append(error_msg)
+                print(f"  [FAIL] {op_file.name}: SYNTAX ERROR - {e}")
             except Exception as e:
-                print(f"Warning: Failed to parse {op_file.name}: {e}")
-                continue
+                error_msg = f"Failed to parse {op_file.name}: {e}"
+                parse_errors.append(error_msg)
+                print(f"  [FAIL] {op_file.name}: ERROR - {e}")
+        
+        # VALIDATION: Report all parse errors
+        if parse_errors:
+            print(f"\nWarning: {len(parse_errors)} file(s) had parsing errors:")
+            for err in parse_errors:
+                print(f"  - {err}")
+        
+        # VALIDATION: Fail if no operations discovered
+        if not operations:
+            raise OperationDiscoveryError(
+                f"No operations discovered from {len(op_files)} files.\n"
+                f"Parse errors: {len(parse_errors)}\n"
+                f"Ensure operation functions start with uppercase letters."
+            )
         
         return operations
     
@@ -102,15 +147,10 @@ class OperationDiscoverer:
         """Parse a single Python file to extract operations."""
         operations = []
         
-        # Read and parse the file
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        try:
-            tree = ast.parse(content)
-        except SyntaxError as e:
-            print(f"Warning: Syntax error in {file_path.name}: {e}")
-            return operations
+        tree = ast.parse(content)  # Let SyntaxError propagate
         
         # Determine category from file name
         category = self.FILE_TO_CATEGORY.get(file_path.name, "Other Operations")
@@ -119,7 +159,7 @@ class OperationDiscoverer:
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
                 # Only process functions that start with uppercase (operation functions)
-                if node.name[0].isupper():
+                if node.name and node.name[0].isupper():
                     op = self._parse_function(node, file_path, category)
                     if op:
                         operations.append(op)
@@ -130,6 +170,9 @@ class OperationDiscoverer:
         """Parse a function node to extract operation information."""
         # Get docstring
         docstring = ast.get_docstring(func_node) or ""
+        
+        if not docstring:
+            print(f"    Warning: {func_node.name} has no docstring")
         
         # Parse signature
         sig = self._get_function_signature(func_node)
@@ -163,58 +206,45 @@ class OperationDiscoverer:
     def _get_function_signature(self, func_node: ast.FunctionDef) -> str:
         """Get function signature as string."""
         args = []
-        for arg in func_node.args.args:
+        defaults_start = len(func_node.args.args) - len(func_node.args.defaults)
+        
+        for i, arg in enumerate(func_node.args.args):
             arg_str = arg.arg
-            # Try to get annotation if available
+            
+            # Get annotation
             if arg.annotation:
                 try:
-                    if hasattr(ast, 'unparse'):
-                        annotation = ast.unparse(arg.annotation)
-                    else:
-                        # Fallback for Python < 3.9
-                        annotation = self._ast_to_string(arg.annotation)
+                    annotation = self._ast_to_string(arg.annotation)
                     arg_str += f": {annotation}"
                 except:
                     pass
-            args.append(arg_str)
-        
-        # Add defaults
-        defaults_start = len(func_node.args.args) - len(func_node.args.defaults)
-        for i, default in enumerate(func_node.args.defaults):
+            
+            # Get default value
             if i >= defaults_start:
-                try:
-                    default_idx = i - defaults_start
-                    if default_idx < len(func_node.args.defaults):
+                default_idx = i - defaults_start
+                if default_idx < len(func_node.args.defaults):
+                    try:
                         default = func_node.args.defaults[default_idx]
-                        if hasattr(ast, 'unparse'):
-                            default_str = ast.unparse(default)
-                        elif isinstance(default, ast.Constant):
-                            default_str = repr(default.value)
-                        else:
-                            default_str = repr(default)
-                        args[i] += f"={default_str}"
-                except:
-                    pass
+                        default_str = self._ast_to_string(default)
+                        arg_str += f" = {default_str}"
+                    except:
+                        pass
+            
+            args.append(arg_str)
         
         # Get return type
         return_annotation = ""
         if func_node.returns:
             try:
-                if hasattr(ast, 'unparse'):
-                    return_annotation = f" -> {ast.unparse(func_node.returns)}"
-                else:
-                    return_annotation = f" -> {self._ast_to_string(func_node.returns)}"
+                return_annotation = f" -> {self._ast_to_string(func_node.returns)}"
             except:
                 pass
         
-        # Use forge.op. prefix for consistency with documentation
         return f"forge.op.{func_node.name}({', '.join(args)}){return_annotation}"
     
     def _parse_parameters(self, func_node: ast.FunctionDef, docstring: str) -> List[Dict[str, str]]:
         """Parse function parameters from signature and docstring."""
         params = []
-        
-        # Extract parameter descriptions from docstring
         param_descriptions = self._extract_parameter_descriptions(docstring)
         
         defaults_start = len(func_node.args.args) - len(func_node.args.defaults)
@@ -230,10 +260,7 @@ class OperationDiscoverer:
             # Get type annotation
             if arg.annotation:
                 try:
-                    if hasattr(ast, 'unparse'):
-                        param_info["type"] = ast.unparse(arg.annotation)
-                    else:
-                        param_info["type"] = self._ast_to_string(arg.annotation)
+                    param_info["type"] = self._ast_to_string(arg.annotation)
                 except:
                     pass
             
@@ -243,12 +270,7 @@ class OperationDiscoverer:
                 if default_idx < len(func_node.args.defaults):
                     try:
                         default = func_node.args.defaults[default_idx]
-                        if hasattr(ast, 'unparse'):
-                            param_info["default"] = ast.unparse(default)
-                        elif isinstance(default, ast.Constant):
-                            param_info["default"] = repr(default.value)
-                        else:
-                            param_info["default"] = repr(default)
+                        param_info["default"] = self._ast_to_string(default)
                     except:
                         pass
             
@@ -263,7 +285,6 @@ class OperationDiscoverer:
         if "Parameters" not in docstring:
             return descriptions
         
-        # Find Parameters section
         lines = docstring.split('\n')
         in_params = False
         current_param = None
@@ -272,54 +293,39 @@ class OperationDiscoverer:
         for i, line in enumerate(lines):
             stripped = line.strip()
             
-            # Check for Parameters section start
             if stripped.startswith("Parameters"):
                 in_params = True
-                # Skip the "----------" line that usually follows
                 continue
             
-            # Check for section end markers
-            if in_params and (stripped.startswith("---") or 
-                             (stripped.startswith("Returns") and i > 0 and lines[i-1].strip() == "")):
+            if in_params and (stripped.startswith("---") or stripped.startswith("Returns") or 
+                             stripped.startswith("Mathematical") or stripped.startswith("See Also") or
+                             stripped.startswith("Notes") or stripped.startswith("Examples")):
                 if current_param:
                     descriptions[current_param] = ' '.join(current_desc).strip()
-                if stripped.startswith("Returns"):
+                if not stripped.startswith("---"):
                     break
                 continue
             
             if in_params:
-                # Check if this is a parameter name line
-                # Format: "name : type" or just "name:" at start of line (not indented)
+                # Check for parameter line (not indented, contains ':')
                 if stripped and not line.startswith(' ') and not line.startswith('\t'):
-                    # This might be a parameter name
                     if ':' in stripped:
-                        # Save previous parameter
                         if current_param:
                             descriptions[current_param] = ' '.join(current_desc).strip()
                         
-                        # Start new parameter
                         parts = stripped.split(':', 1)
                         param_name = parts[0].strip()
-                        # Only treat as parameter if it looks like a name (not a section header)
                         if param_name and not param_name.isupper() and len(param_name) < 50:
                             current_param = param_name
                             current_desc = [parts[1].strip()] if len(parts) > 1 and parts[1].strip() else []
                         else:
                             current_param = None
                     elif current_param is None:
-                        # Might be a section header, skip
                         continue
                 elif current_param and stripped:
-                    # Continuation of description (indented)
                     if line.startswith(' ') or line.startswith('\t'):
                         current_desc.append(stripped)
-                    elif stripped.startswith("Returns"):
-                        # End of Parameters section
-                        if current_param:
-                            descriptions[current_param] = ' '.join(current_desc).strip()
-                        break
         
-        # Save last parameter
         if current_param:
             descriptions[current_param] = ' '.join(current_desc).strip()
         
@@ -335,14 +341,19 @@ class OperationDiscoverer:
         return_lines = []
         
         for line in lines:
-            if line.strip().startswith("Returns"):
+            stripped = line.strip()
+            if stripped.startswith("Returns"):
                 in_returns = True
                 continue
             if in_returns:
-                if line.strip().startswith("---") or (line.strip() and not line.startswith(' ')):
-                    break
-                if line.strip():
-                    return_lines.append(line.strip())
+                if stripped.startswith("---"):
+                    continue
+                if stripped and not line.startswith(' ') and not line.startswith('\t'):
+                    # New section
+                    if stripped.startswith(("Mathematical", "See Also", "Notes", "Examples")):
+                        break
+                if stripped:
+                    return_lines.append(stripped)
         
         return ' '.join(return_lines).strip()
     
@@ -350,10 +361,7 @@ class OperationDiscoverer:
         """Get return type annotation."""
         if func_node.returns:
             try:
-                if hasattr(ast, 'unparse'):
-                    return ast.unparse(func_node.returns)
-                else:
-                    return self._ast_to_string(func_node.returns)
+                return self._ast_to_string(func_node.returns)
             except:
                 return ""
         return ""
@@ -368,17 +376,33 @@ def discover_operations(project_root: Path) -> List[DiscoveredOperation]:
         
     Returns:
         List of discovered operations
+        
+    Raises:
+        OperationDiscoveryError: If discovery fails
     """
     discoverer = OperationDiscoverer(project_root)
     return discoverer.discover_all_operations()
 
 
 if __name__ == "__main__":
-    # Test the discoverer
     project_root = Path(__file__).parent.parent
-    operations = discover_operations(project_root)
     
-    print(f"Discovered {len(operations)} operations:")
-    for op in operations:
-        print(f"  - {op.name} ({op.category}) from {op.file_name}")
-
+    try:
+        operations = discover_operations(project_root)
+        print(f"\nDiscovered {len(operations)} operations:")
+        
+        # Group by category
+        by_category = {}
+        for op in operations:
+            if op.category not in by_category:
+                by_category[op.category] = []
+            by_category[op.category].append(op)
+        
+        for category in sorted(by_category.keys()):
+            print(f"\n{category}:")
+            for op in sorted(by_category[category], key=lambda x: x.name):
+                print(f"  - {op.name}")
+    
+    except OperationDiscoveryError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

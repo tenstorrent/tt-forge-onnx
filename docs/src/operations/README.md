@@ -1,45 +1,47 @@
-# Operations Documentation
+# Forge Operations Documentation
 
-This directory contains automatically generated documentation for all supported operations.
+This directory contains automatically generated documentation for all Forge operations.
 
-## Structure
+## File Naming Convention
 
-Each operation has its own markdown file with:
-- Function signature (extracted from Python source code)
-- Parameter descriptions (from docstrings)
-- Return value descriptions
-- Mathematical definitions (where applicable)
-- Code examples
-- Implementation details
+Each operation has its own markdown file named after the operation:
+- `abs.md` - Abs operation
+- `relu.md` - Relu operation
+- `conv2d.md` - Conv2d operation
+- etc.
 
-## Automatic Discovery
+## Regenerating Documentation
 
-Operations are **automatically discovered** from Python files in `forge/forge/op/*.py`. The documentation generator:
-
-1. Scans all Python files in `forge/forge/op/` directory
-2. Identifies operation functions (functions starting with uppercase letters)
-3. Extracts function signatures, docstrings, and parameter information
-4. Infers operation categories from file names
-5. Generates documentation pages in PyTorch-style format
-
-**No manual entry is required** for basic operations - simply define your operation function with a proper docstring in the appropriate file.
-
-## Generating Documentation
-
-To regenerate the documentation after adding or updating operations:
+To regenerate all documentation:
 
 ```bash
 python scripts/generate_ops_docs.py
 ```
 
-This will:
-- Automatically discover all operations from `forge/forge/op/*.py`
-- Generate individual operation pages in `docs/src/operations/`
-- Generate the index page at `docs/src/operations.md`
+## Adding New Operations
 
-See `scripts/README_ops_docs.md` for more details on how the discovery system works and how to add new operations.
+When you add a new operation to `forge/forge/op/*.py`:
 
-## Index
+1. Ensure your function name starts with an uppercase letter
+2. Add a proper NumPy-style docstring (see `docs/FORGE_DOCSTRING_STANDARD.md`)
+3. Run the documentation generator
 
-The main operations index is available at [../operations.md](../operations.md).
+The documentation will be automatically created.
 
+## Documentation Structure
+
+Each operation page includes:
+- **Overview**: What the operation does
+- **Function Signature**: Python API with type hints
+- **Parameters**: Detailed parameter descriptions
+- **Returns**: Return value description
+- **Mathematical Definition**: Formula (when applicable)
+- **Related Operations**: Links to related ops
+
+## Source of Truth
+
+All documentation is sourced from:
+1. Operation function docstrings in `forge/forge/op/*.py`
+2. Enhancement data in `scripts/operation_enhancements.json`
+
+The docstrings are the primary source. The enhancement file provides supplementary information that cannot be easily extracted from code.
