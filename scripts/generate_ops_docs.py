@@ -293,7 +293,6 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
         
         # Category sections
         for category in sorted_categories:
-            anchor = category.lower().replace(" ", "-")
             f.write(f"## {category}\n\n")
             
             desc = category_descriptions.get(category, "")
@@ -457,19 +456,19 @@ def main():
     print("Forge Operations Documentation Generator")
     print("=" * 60)
     
+    sys.path.insert(0, str(script_dir))
     try:
-        sys.path.insert(0, str(script_dir))
         from discover_operations import discover_operations, OperationDiscoveryError
-        
-        print("\n[1/4] Discovering operations from forge/forge/op/*.py...")
-        discovered_ops = discover_operations(project_root)
-        print(f"      Discovered {len(discovered_ops)} operations")
-        
-    except OperationDiscoveryError as e:
-        print(f"\nERROR: Operation discovery failed:\n{e}", file=sys.stderr)
-        sys.exit(1)
     except ImportError as e:
         print(f"\nERROR: Could not import discover_operations: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    print("\n[1/4] Discovering operations from forge/forge/op/*.py...")
+    try:
+        discovered_ops = discover_operations(project_root)
+        print(f"      Discovered {len(discovered_ops)} operations")
+    except OperationDiscoveryError as e:
+        print(f"\nERROR: Operation discovery failed:\n{e}", file=sys.stderr)
         sys.exit(1)
     
     # Load enhancements
