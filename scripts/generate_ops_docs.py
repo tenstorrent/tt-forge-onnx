@@ -457,17 +457,16 @@ def main():
     print("=" * 60)
     
     sys.path.insert(0, str(script_dir))
-    try:
-        from discover_operations import discover_operations, OperationDiscoveryError
-    except ImportError as e:
-        print(f"\nERROR: Could not import discover_operations: {e}", file=sys.stderr)
-        sys.exit(1)
     
     print("\n[1/4] Discovering operations from forge/forge/op/*.py...")
     try:
+        from discover_operations import discover_operations, OperationDiscoveryError
         discovered_ops = discover_operations(project_root)
         print(f"      Discovered {len(discovered_ops)} operations")
-    except OperationDiscoveryError as e:
+    except ImportError as e:
+        print(f"\nERROR: Could not import discover_operations: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
         print(f"\nERROR: Operation discovery failed:\n{e}", file=sys.stderr)
         sys.exit(1)
     
