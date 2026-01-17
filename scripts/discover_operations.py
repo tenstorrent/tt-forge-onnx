@@ -216,7 +216,7 @@ class OperationDiscoverer:
                 try:
                     annotation = self._ast_to_string(arg.annotation)
                     arg_str += f": {annotation}"
-                except:
+                except Exception:
                     pass
             
             # Get default value
@@ -227,7 +227,7 @@ class OperationDiscoverer:
                         default = func_node.args.defaults[default_idx]
                         default_str = self._ast_to_string(default)
                         arg_str += f" = {default_str}"
-                    except:
+                    except Exception:
                         pass
             
             args.append(arg_str)
@@ -237,7 +237,7 @@ class OperationDiscoverer:
         if func_node.returns:
             try:
                 return_annotation = f" -> {self._ast_to_string(func_node.returns)}"
-            except:
+            except Exception: 
                 pass
         
         return f"forge.op.{func_node.name}({', '.join(args)}){return_annotation}"
@@ -261,7 +261,7 @@ class OperationDiscoverer:
             if arg.annotation:
                 try:
                     param_info["type"] = self._ast_to_string(arg.annotation)
-                except:
+                except Exception: 
                     pass
             
             # Get default value
@@ -271,7 +271,7 @@ class OperationDiscoverer:
                     try:
                         default = func_node.args.defaults[default_idx]
                         param_info["default"] = self._ast_to_string(default)
-                    except:
+                    except Exception: 
                         pass
             
             params.append(param_info)
@@ -362,7 +362,7 @@ class OperationDiscoverer:
         if func_node.returns:
             try:
                 return self._ast_to_string(func_node.returns)
-            except:
+            except Exception: 
                 return ""
         return ""
 
