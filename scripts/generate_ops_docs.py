@@ -7,16 +7,28 @@ This script:
 2. Parses docstrings to extract documentation
 3. Generates markdown documentation pages
 4. Creates an index page with operations grouped by category
+5. Cleans up stale documentation files for removed operations
 
 All operation information is sourced from the actual Python source files.
 Enhanced descriptions (e.g., mathematical definitions) are loaded from
 scripts/operation_enhancements.json.
+
+Usage:
+    python scripts/generate_ops_docs.py [options]
+
+Options:
+    --op-dir PATH        Source directory for operations (default: forge/forge/op/)
+    --output-dir PATH    Output directory for operation docs (default: docs/src/operations/)
+    --index-file PATH    Output path for index page (default: docs/src/operations.md)
+    --enhancements PATH  Path to enhancements JSON file (default: scripts/operation_enhancements.json)
+    --no-cleanup         Skip cleanup of stale documentation files
 """
 
+import argparse
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 from pathlib import Path
 
 
@@ -73,13 +85,19 @@ def sanitize_filename(name: str) -> str:
     return name.lower()
 
 
-def load_enhancements(script_dir: Path) -> Dict:
-    """Load operation enhancements from JSON file."""
-    enhancements_file = script_dir / "operation_enhancements.json"
+def load_enhancements(enhancements_path: Path) -> Dict:
+    """
+    Load operation enhancements from JSON file.
     
-    if enhancements_file.exists():
+    The enhancements file supports the following fields per operation:
+    - description: Override/supplement the operation overview
+    - parameters: Dict mapping parameter names to enhanced descriptions
+    - mathematical_definition: Mathematical formula for the operation
+    - related_operations: List of related operations with descriptions
+    """
+    if enhancements_path.exists():
         try:
-            with open(enhancements_file, 'r', encoding='utf-8') as f:
+            with open(enhancements_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data.get("operations", {})
         except (json.JSONDecodeError, KeyError) as e:
@@ -95,6 +113,7 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
     
     # Get enhancements for this operation
     op_enhancements = enhancements.get(op.short_name, {})
+    param_enhancements = op_enhancements.get("parameters", {})
     
     with open(filepath, 'w', encoding='utf-8') as f:
         # Title
@@ -102,11 +121,15 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
         
         # Overview section
         f.write("## Overview\n\n")
-        overview = op.description
-        if op.detailed_description:
-            if overview and not overview.endswith('.'):
-                overview += "."
-            overview += "\n\n" + op.detailed_description
+        # Use enhanced description if available, otherwise use docstring description
+        if op_enhancements.get("description"):
+            overview = op_enhancements["description"]
+        else:
+            overview = op.description
+            if op.detailed_description:
+                if overview and not overview.endswith('.'):
+                    overview += "."
+                overview += "\n\n" + op.detailed_description
         f.write(f"{overview}\n\n")
         
         # Function signature
@@ -129,14 +152,16 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
             # Write name parameter first
             name_attr = next((a for a in op.attributes if a.name == "name"), None)
             if name_attr:
-                desc = name_attr.description or "Name identifier for this operation in the computation graph."
+                # Check for enhanced description first
+                desc = param_enhancements.get("name") or name_attr.description or "Name identifier for this operation in the computation graph."
                 f.write(f"- **name** (`str`): {desc}\n\n")
             
             # Write operands (tensor inputs)
             for operand in op.operands:
                 if operand.name not in ("output", "result"):
                     type_str = operand.type or "Tensor"
-                    desc = operand.description or f"{operand.name} tensor"
+                    # Check for enhanced description first
+                    desc = param_enhancements.get(operand.name) or operand.description or f"{operand.name} tensor"
                     f.write(f"- **{operand.name}** (`{type_str}`): {desc}\n\n")
             
             # Write other attributes
@@ -144,7 +169,8 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
                 if attr.name != "name":
                     type_str = attr.mlir_type or "Any"
                     default_str = f", default: `{attr.default}`" if attr.default else ""
-                    desc = attr.description or f"{attr.name} parameter"
+                    # Check for enhanced description first
+                    desc = param_enhancements.get(attr.name) or attr.description or f"{attr.name} parameter"
                     f.write(f"- **{attr.name}** (`{type_str}`{default_str}): {desc}\n\n")
         
         # Returns section
@@ -324,6 +350,42 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
         f.write("*This documentation is automatically generated from operation definitions in `forge/forge/op/*.py`. For the most up-to-date information, refer to the source code.*\n")
 
 
+def cleanup_stale_files(output_dir: Path, valid_operations: Set[str]) -> int:
+    """
+    Remove documentation files for operations that no longer exist.
+    
+    Args:
+        output_dir: Directory containing operation markdown files
+        valid_operations: Set of valid operation short names (lowercase)
+        
+    Returns:
+        Number of stale files removed
+    """
+    removed_count = 0
+    
+    if not output_dir.exists():
+        return removed_count
+    
+    for md_file in output_dir.glob("*.md"):
+        # Extract operation name from filename (e.g., "abs.md" -> "abs")
+        op_name = md_file.stem.lower()
+        
+        # Skip non-operation files
+        if op_name in ("readme", "index", "operations"):
+            continue
+        
+        # Check if this operation still exists
+        if op_name not in valid_operations:
+            try:
+                md_file.unlink()
+                print(f"      Removed stale file: {md_file.name}")
+                removed_count += 1
+            except OSError as e:
+                print(f"      Warning: Could not remove {md_file.name}: {e}")
+    
+    return removed_count
+
+
 def convert_discovered_to_operation(discovered) -> Operation:
     """Convert a DiscoveredOperation to an Operation."""
     docstring = discovered.docstring.strip()
@@ -441,12 +503,70 @@ def convert_discovered_to_operation(discovered) -> Operation:
     )
 
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Generate documentation for Forge operations from source files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s
+      Generate documentation with default paths.
+      
+  %(prog)s --op-dir forge/forge/op --output-dir docs/src/operations
+      Generate documentation with custom paths.
+      
+  %(prog)s --no-cleanup
+      Generate documentation without removing stale files.
+"""
+    )
+    
+    parser.add_argument(
+        "--op-dir",
+        type=Path,
+        default=None,
+        help="Source directory for operations (default: forge/forge/op/)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory for operation docs (default: docs/src/operations/)"
+    )
+    parser.add_argument(
+        "--index-file",
+        type=Path,
+        default=None,
+        help="Output path for index page (default: docs/src/operations.md)"
+    )
+    parser.add_argument(
+        "--enhancements",
+        type=Path,
+        default=None,
+        help="Path to enhancements JSON file (default: scripts/operation_enhancements.json)"
+    )
+    parser.add_argument(
+        "--no-cleanup",
+        action="store_true",
+        help="Skip cleanup of stale documentation files"
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Main function to generate all documentation."""
+    args = parse_args()
+    
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
-    docs_dir = project_root / "docs" / "src"
-    ops_docs_dir = docs_dir / "operations"
+    
+    # Set paths from args or use defaults
+    op_dir = args.op_dir or (project_root / "forge" / "forge" / "op")
+    ops_docs_dir = args.output_dir or (project_root / "docs" / "src" / "operations")
+    index_file = args.index_file or (project_root / "docs" / "src" / "operations.md")
+    enhancements_path = args.enhancements or (script_dir / "operation_enhancements.json")
+    do_cleanup = not args.no_cleanup
     
     # Create output directory
     ops_docs_dir.mkdir(parents=True, exist_ok=True)
@@ -458,10 +578,10 @@ def main():
     
     sys.path.insert(0, str(script_dir))
     
-    print("\n[1/4] Discovering operations from forge/forge/op/*.py...")
+    print(f"\n[1/5] Discovering operations from {op_dir}...")
     try:
-        from discover_operations import discover_operations, OperationDiscoveryError
-        discovered_ops = discover_operations(project_root)
+        from discover_operations import discover_operations
+        discovered_ops = discover_operations(project_root, op_dir)
         print(f"      Discovered {len(discovered_ops)} operations")
     except ImportError as e:
         print(f"\nERROR: Could not import discover_operations: {e}", file=sys.stderr)
@@ -471,12 +591,12 @@ def main():
         sys.exit(1)
     
     # Load enhancements
-    print("\n[2/4] Loading operation enhancements...")
-    enhancements = load_enhancements(script_dir)
+    print(f"\n[2/5] Loading operation enhancements from {enhancements_path.name}...")
+    enhancements = load_enhancements(enhancements_path)
     print(f"      Loaded enhancements for {len(enhancements)} operations")
     
     # Convert discovered operations
-    print("\n[3/4] Converting and generating operation pages...")
+    print("\n[3/5] Converting and generating operation pages...")
     operations = []
     errors = []
     
@@ -493,17 +613,29 @@ def main():
     if errors:
         print(f"\n      Warning: {len(errors)} operation(s) had conversion errors")
     
+    # Cleanup stale files
+    if do_cleanup:
+        print("\n[4/5] Cleaning up stale documentation files...")
+        valid_ops = {sanitize_filename(op.name) for op in operations}
+        removed = cleanup_stale_files(ops_docs_dir, valid_ops)
+        if removed > 0:
+            print(f"      Removed {removed} stale file(s)")
+        else:
+            print("      No stale files found")
+    else:
+        print("\n[4/5] Skipping cleanup (--no-cleanup specified)")
+    
     # Generate index page
-    print("\n[4/4] Generating index page...")
-    generate_index_page(operations, docs_dir)
-    print("      [OK] operations.md")
+    print("\n[5/5] Generating index page...")
+    generate_index_page(operations, index_file.parent)
+    print(f"      [OK] {index_file.name}")
     
     # Summary
     print("\n" + "=" * 60)
     print("Documentation generation complete!")
     print(f"  Total operations: {len(operations)}")
     print(f"  Output directory: {ops_docs_dir}")
-    print(f"  Index page: {docs_dir / 'operations.md'}")
+    print(f"  Index page: {index_file}")
     
     if errors:
         print(f"\n  Errors: {len(errors)}")

@@ -28,7 +28,7 @@ forge.op.Conv2d(
 
 - **weights** (`Union[(Tensor, Parameter)]`): Tensor Input weights of shape (Cout, Cin / groups, kH, kW) [Tensor] Internal Use pre-split Optional Input weights list of shape [(weight_grouping, Cin / groups, Cout)] of length: (K*K // weight_grouping)
 
-- **bias** (`Optional[Union[(Tensor, Parameter)]]`): Tenor, optional Optional bias tensor of shape (Cout)
+- **bias** (`Optional[Union[(Tensor, Parameter)]]`): Optional bias tensor of shape `(C_out,)`. Added to each output channel.
 
 - **stride** (`Union[(int, List[int])]`, default: `1`): stride parameter
 
