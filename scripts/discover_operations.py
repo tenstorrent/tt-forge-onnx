@@ -4,8 +4,15 @@ Automatic operation discovery from forge/forge/op/*.py files.
 
 This module parses Python operation files to automatically discover
 all operations and extract their documentation.
+
+Usage:
+    python scripts/discover_operations.py [options]
+
+Options:
+    --op-dir PATH    Source directory for operations (default: forge/forge/op/)
 """
 
+import argparse
 import ast
 import sys
 from pathlib import Path
@@ -59,9 +66,9 @@ class OperationDiscoverer:
         "Relu", "LeakyRelu", "Sigmoid", "Tanh", "Gelu", "Silu", "HardSigmoid"
     }
     
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, op_dir: Optional[Path] = None):
         self.project_root = project_root
-        self.op_dir = project_root / "forge" / "forge" / "op"
+        self.op_dir = op_dir or (project_root / "forge" / "forge" / "op")
     
     def _ast_to_string(self, node) -> str:
         """Convert AST node to string."""
@@ -367,12 +374,13 @@ class OperationDiscoverer:
         return ""
 
 
-def discover_operations(project_root: Path) -> List[DiscoveredOperation]:
+def discover_operations(project_root: Path, op_dir: Optional[Path] = None) -> List[DiscoveredOperation]:
     """
     Discover all operations from the codebase.
     
     Args:
         project_root: Path to the project root directory
+        op_dir: Optional path to the operations directory (default: forge/forge/op/)
         
     Returns:
         List of discovered operations
@@ -380,15 +388,33 @@ def discover_operations(project_root: Path) -> List[DiscoveredOperation]:
     Raises:
         OperationDiscoveryError: If discovery fails
     """
-    discoverer = OperationDiscoverer(project_root)
+    discoverer = OperationDiscoverer(project_root, op_dir)
     return discoverer.discover_all_operations()
 
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Discover Forge operations from source files.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        "--op-dir",
+        type=Path,
+        default=None,
+        help="Source directory for operations (default: forge/forge/op/)"
+    )
+    
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
     project_root = Path(__file__).parent.parent
     
     try:
-        operations = discover_operations(project_root)
+        operations = discover_operations(project_root, args.op_dir)
         print(f"\nDiscovered {len(operations)} operations:")
         
         # Group by category
