@@ -113,3 +113,150 @@ python scripts/export_models_ops_correlation.py
 ```sh
 python scripts/export_models_ops_correlation.py --compile_depth GENERATE_INITIAL_GRAPH --pytest_directory_path forge/test/model_demos/high_prio/nlp/pytorch
 ```
+
+## Operations Documentation Generator
+
+The operations documentation generator automatically creates documentation for all Forge operations by parsing the source files in `forge/forge/op/*.py`.
+
+### Quick Start
+
+```sh
+# Generate all operation documentation
+python scripts/generate_ops_docs.py
+```
+
+### How It Works
+
+1. **Automatic Discovery**: The generator scans `forge/forge/op/*.py` files to discover all operations (functions starting with uppercase letters).
+
+2. **Docstring Parsing**: It parses NumPy-style docstrings to extract:
+   - Operation overview/description
+   - Parameter descriptions with types
+   - Return value descriptions
+   - Mathematical definitions
+   - Related operations
+
+3. **Enhancement Layer**: Additional documentation (e.g., mathematical formulas, related ops) can be added via `scripts/operation_enhancements.json`.
+
+4. **Markdown Generation**: Creates clean markdown files for each operation and an index page.
+
+### Command-Line Options
+
+The generator supports the following command-line arguments:
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--op-dir` | Source directory for operations | `forge/forge/op/` |
+| `--output-dir` | Output directory for operation docs | `docs/src/operations/` |
+| `--index-file` | Output path for index page | `docs/src/operations.md` |
+| `--enhancements` | Path to enhancements JSON file | `scripts/operation_enhancements.json` |
+| `--no-cleanup` | Skip cleanup of stale documentation files | (cleanup enabled by default) |
+
+Example with custom paths:
+
+```sh
+python scripts/generate_ops_docs.py --op-dir forge/forge/op --output-dir docs/src/operations
+```
+
+### Adding New Operations
+
+**No manual documentation needed!** Simply:
+
+1. Add your operation function to `forge/forge/op/*.py`
+2. Write a proper docstring following the standard format (see `docs/FORGE_DOCSTRING_STANDARD.md`)
+3. Run `python scripts/generate_ops_docs.py`
+
+The documentation will be automatically generated.
+
+### Docstring Standard
+
+See `docs/FORGE_DOCSTRING_STANDARD.md` for the complete docstring format. Here's a quick example:
+
+```python
+def MyOperation(
+    name: str,
+    operandA: Tensor,
+    param: int = 1,
+) -> Tensor:
+    """
+    Brief one-line description of the operation.
+
+    Detailed description with more context about the operation,
+    its use cases, and important behavior notes.
+
+    Parameters
+    ----------
+    name : str
+        Name identifier for this operation in the computation graph.
+
+    operandA : Tensor
+        Input tensor of shape `(N, C, H, W)`.
+
+    param : int, optional
+        Description of the parameter.
+        Default: `1`
+
+    Returns
+    -------
+    Tensor
+        Output tensor with description of shape and meaning.
+
+    Mathematical Definition
+    -----------------------
+    output[i] = f(input[i])
+
+    See Also
+    --------
+    forge.op.RelatedOp : Description of related operation
+    """
+```
+
+### Output Files
+
+The generator creates:
+- `docs/src/operations.md` - Index page with all operations by category
+- `docs/src/operations/*.md` - Individual operation documentation pages
+
+### Stale File Cleanup
+
+The generator automatically removes documentation files for operations that no longer exist in the source code. This ensures the documentation stays in sync with the codebase. To disable this behavior, use the `--no-cleanup` flag.
+
+### Enhancements File
+
+The `scripts/operation_enhancements.json` file allows adding extra documentation that can't be extracted from docstrings:
+
+```json
+{
+  "operations": {
+    "Abs": {
+      "description": "Enhanced description for the operation overview",
+      "mathematical_definition": "abs(x) = |x|",
+      "parameters": {
+        "operandA": "Enhanced description for operandA parameter"
+      },
+      "related_operations": [
+        {"name": "Relu", "description": "ReLU activation"}
+      ]
+    }
+  }
+}
+```
+
+Supported enhancement types:
+- `description`: Override or supplement the operation overview
+- `parameters`: Object mapping parameter names to enhanced descriptions
+- `mathematical_definition`: Mathematical formula for the operation
+- `related_operations`: List of related operations with descriptions
+
+**Note**: The goal is to migrate all documentation to source docstrings. Use this file only when necessary.
+
+### Error Handling
+
+The generator will **fail fast** if:
+- The operation directory doesn't exist
+- No operations are discovered
+- Critical parsing errors occur
+
+Warnings are issued for:
+- Missing docstrings
+- Non-critical parsing issues

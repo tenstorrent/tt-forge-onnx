@@ -2,13 +2,7 @@
 
 ## Overview
 
-Resizes the spatial dimensions of a 2D input tensor using interpolation.
-
-The Resize2d operation resizes the height and width dimensions of a 4D
-
-input tensor to specified target sizes. This operation is commonly used
-
-in computer vision tasks for image resizing, upsampling, and downsampling.
+Resizes the spatial dimensions (height and width) of a 2D input tensor using interpolation. This operation is commonly used in computer vision tasks for image resizing, upsampling, and downsampling.
 
 ## Function Signature
 
@@ -27,15 +21,15 @@ forge.op.Resize2d(
 
 - **name** (`str`): str Name identifier for this operation in the computation graph. Use empty string to auto-generate.
 
-- **operandA** (`Tensor`): Tensor Input tensor of shape `(N, C, H, W)` (channel-first) or `(N, H, W, C)` (channel-last) where: - `N` is the batch size - `C` is the number of channels - `H` is the input height - `W` is the input width
+- **operandA** (`Tensor`): Input tensor of shape `(N, C, H, W)` for channel-first or `(N, H, W, C)` for channel-last format.
 
-- **sizes** (`Union[(List[int], Tuple[(int, int)])]`): Union[List[int], Tuple[int, int]] Target output spatial dimensions as `[height, width]` or `(height, width)`. The output tensor will have these exact height and width values.
+- **sizes** (`Union[(List[int], Tuple[(int, int)])]`): Target output spatial dimensions as `[height, width]`. The output tensor will have these exact height and width values.
 
-- **mode** (`str`, default: `'nearest'`): str, optional Interpolation mode. Supported values: - `'nearest'`: Nearest neighbor interpolation (fast, may produce aliasing) - `'bilinear'`: Bilinear interpolation (smoother, better for upsampling) Default: `'nearest'`
+- **mode** (`str`, default: `'nearest'`): Interpolation mode: `'nearest'` for nearest neighbor (fast) or `'bilinear'` for bilinear interpolation (smoother).
 
-- **align_corners** (`bool`, default: `False`): bool, optional If True, align corner pixels of input and output tensors. Only affects bilinear mode. When False, pixels are aligned by centers. Default: `False`
+- **align_corners** (`bool`, default: `False`): If `True`, corner pixels are aligned. Only affects bilinear mode.
 
-- **channel_last** (`bool`, default: `False`): bool, optional If True, input is in channel-last format `(N, H, W, C)`. If False, input is in channel-first format `(N, C, H, W)`. Default: `False`
+- **channel_last** (`bool`, default: `False`): If `True`, input is `(N, H, W, C)` format; if `False`, input is `(N, C, H, W)` format.
 
 ## Returns
 
