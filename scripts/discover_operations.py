@@ -15,6 +15,7 @@ Options:
 import argparse
 import ast
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -218,34 +219,25 @@ class OperationDiscoverer:
         for i, arg in enumerate(func_node.args.args):
             arg_str = arg.arg
             
-            # Get annotation
             if arg.annotation:
-                try:
+                with suppress(Exception):
                     annotation = self._ast_to_string(arg.annotation)
                     arg_str += f": {annotation}"
-                except Exception:
-                    pass
             
-            # Get default value
             if i >= defaults_start:
                 default_idx = i - defaults_start
                 if default_idx < len(func_node.args.defaults):
-                    try:
+                    with suppress(Exception):
                         default = func_node.args.defaults[default_idx]
                         default_str = self._ast_to_string(default)
                         arg_str += f" = {default_str}"
-                    except Exception:
-                        pass
             
             args.append(arg_str)
         
-        # Get return type
         return_annotation = ""
         if func_node.returns:
-            try:
+            with suppress(Exception):
                 return_annotation = f" -> {self._ast_to_string(func_node.returns)}"
-            except Exception: 
-                pass
         
         return f"forge.op.{func_node.name}({', '.join(args)}){return_annotation}"
     
@@ -264,22 +256,16 @@ class OperationDiscoverer:
                 "description": param_descriptions.get(arg.arg, "")
             }
             
-            # Get type annotation
             if arg.annotation:
-                try:
+                with suppress(Exception):
                     param_info["type"] = self._ast_to_string(arg.annotation)
-                except Exception: 
-                    pass
             
-            # Get default value
             if i >= defaults_start:
                 default_idx = i - defaults_start
                 if default_idx < len(func_node.args.defaults):
-                    try:
+                    with suppress(Exception):
                         default = func_node.args.defaults[default_idx]
                         param_info["default"] = self._ast_to_string(default)
-                    except Exception: 
-                        pass
             
             params.append(param_info)
         
@@ -367,10 +353,8 @@ class OperationDiscoverer:
     def _get_return_type(self, func_node: ast.FunctionDef) -> str:
         """Get return type annotation."""
         if func_node.returns:
-            try:
+            with suppress(Exception):
                 return self._ast_to_string(func_node.returns)
-            except Exception: 
-                return ""
         return ""
 
 
