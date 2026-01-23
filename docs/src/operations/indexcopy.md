@@ -31,4 +31,3 @@ forge.op.IndexCopy(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

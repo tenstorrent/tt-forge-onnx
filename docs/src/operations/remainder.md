@@ -25,4 +25,3 @@ forge.op.Remainder(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-

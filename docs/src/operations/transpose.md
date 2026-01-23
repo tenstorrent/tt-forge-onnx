@@ -23,4 +23,3 @@ forge.op.Transpose(name: str, operandA: Tensor, dim0: int, dim1: int) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -25,4 +25,3 @@ forge.op.Embedding(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-

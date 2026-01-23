@@ -25,4 +25,3 @@ forge.op.Heaviside(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

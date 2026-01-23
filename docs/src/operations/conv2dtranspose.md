@@ -46,4 +46,3 @@ forge.op.Conv2dTranspose(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-

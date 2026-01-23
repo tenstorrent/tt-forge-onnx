@@ -31,4 +31,3 @@ forge.op.Upsample2d(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -21,4 +21,3 @@ forge.op.LeakyRelu(name: str, operandA: Tensor, alpha: float) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

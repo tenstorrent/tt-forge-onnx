@@ -39,4 +39,3 @@ forge.op.Resize1d(
 
 - [forge.op.Resize2d](./resize2d.md): Resize 2D tensors
 - [forge.op.Upsample2d](./upsample2d.md): Upsample operation
-

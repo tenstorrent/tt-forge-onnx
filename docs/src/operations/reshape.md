@@ -25,4 +25,3 @@ forge.op.Reshape(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

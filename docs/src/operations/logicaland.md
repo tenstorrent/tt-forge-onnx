@@ -25,4 +25,3 @@ forge.op.LogicalAnd(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

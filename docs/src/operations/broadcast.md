@@ -23,4 +23,3 @@ forge.op.Broadcast(name: str, operandA: Tensor, dim: int, shape: int) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -23,4 +23,3 @@ forge.op.Clip(name: str, operandA: Tensor, min: float, max: float) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

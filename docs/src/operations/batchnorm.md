@@ -37,4 +37,3 @@ forge.op.Batchnorm(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

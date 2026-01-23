@@ -31,4 +31,3 @@ forge.op.Dropout(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-
