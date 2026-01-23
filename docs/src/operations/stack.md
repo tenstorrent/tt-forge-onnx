@@ -17,4 +17,3 @@ forge.op.Stack(name: str) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

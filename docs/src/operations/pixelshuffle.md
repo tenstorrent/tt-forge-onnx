@@ -25,4 +25,3 @@ forge.op.PixelShuffle(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

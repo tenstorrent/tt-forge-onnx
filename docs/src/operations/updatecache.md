@@ -31,4 +31,3 @@ forge.op.UpdateCache(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-

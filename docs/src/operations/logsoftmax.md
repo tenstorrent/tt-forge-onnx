@@ -19,4 +19,3 @@ forge.op.LogSoftmax(name: str, operandA: Tensor) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

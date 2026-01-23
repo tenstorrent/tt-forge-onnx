@@ -38,4 +38,3 @@ forge.op.RepeatInterleave(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

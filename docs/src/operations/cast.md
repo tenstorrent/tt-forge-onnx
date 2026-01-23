@@ -25,4 +25,3 @@ forge.op.Cast(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

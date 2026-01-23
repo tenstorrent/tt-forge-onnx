@@ -27,4 +27,3 @@ forge.op.Pow(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

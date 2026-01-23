@@ -28,4 +28,3 @@ forge.op.AdvIndex(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

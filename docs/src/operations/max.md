@@ -25,4 +25,3 @@ forge.op.Max(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-
