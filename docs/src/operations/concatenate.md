@@ -17,4 +17,3 @@ forge.op.Concatenate(name: str) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

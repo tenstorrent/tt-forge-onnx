@@ -21,4 +21,3 @@ forge.op.Subtract(name: str, operandA: Tensor, operandB: Tensor) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -17,4 +17,3 @@ forge.op.Constant(name: str) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

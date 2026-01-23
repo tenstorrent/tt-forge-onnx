@@ -25,4 +25,3 @@ forge.op.Power(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

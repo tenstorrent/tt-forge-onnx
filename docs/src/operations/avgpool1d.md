@@ -37,4 +37,3 @@ forge.op.AvgPool1d(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-

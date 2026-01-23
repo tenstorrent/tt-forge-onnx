@@ -19,4 +19,3 @@ forge.op.LogicalNot(name: str, operandA: Tensor) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

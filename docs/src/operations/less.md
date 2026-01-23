@@ -25,4 +25,3 @@ forge.op.Less(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

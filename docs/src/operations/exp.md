@@ -19,4 +19,3 @@ forge.op.Exp(name: str, operandA: Tensor) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -25,4 +25,3 @@ forge.op.Add(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

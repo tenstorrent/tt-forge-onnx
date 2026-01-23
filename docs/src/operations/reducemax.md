@@ -28,4 +28,3 @@ forge.op.ReduceMax(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

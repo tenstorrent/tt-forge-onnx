@@ -28,4 +28,3 @@ forge.op.ReduceAvg(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

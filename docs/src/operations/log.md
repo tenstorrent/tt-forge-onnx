@@ -21,4 +21,3 @@ forge.op.Log(name: str, operandA: Tensor) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

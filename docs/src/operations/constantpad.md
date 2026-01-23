@@ -28,4 +28,3 @@ forge.op.ConstantPad(
 ## Returns
 
 - **result** (`Tensor`): Tensor A tensor with the specified constant padding applied to the input tensor.
-

@@ -40,4 +40,3 @@ relu(x) = max(0, x) = { x if x > 0, 0 if x ≤ 0 }
 - [forge.op.Gelu](./gelu.md): Gaussian Error Linear Unit
 - [forge.op.Sigmoid](./sigmoid.md): Sigmoid activation function
 - [forge.op.Tanh](./tanh.md): Hyperbolic tangent activation
-

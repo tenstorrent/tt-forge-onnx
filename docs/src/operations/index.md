@@ -34,4 +34,3 @@ forge.op.Index(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

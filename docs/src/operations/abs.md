@@ -36,4 +36,3 @@ abs(x) = |x| = { x if x ≥ 0, -x if x < 0 }
 
 - [forge.op.Relu](./relu.md): ReLU activation (sets negatives to zero)
 - [forge.op.Sigmoid](./sigmoid.md): Sigmoid activation function
-

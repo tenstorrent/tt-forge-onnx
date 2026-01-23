@@ -25,4 +25,3 @@ forge.op.Multiply(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

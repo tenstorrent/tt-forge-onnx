@@ -25,4 +25,3 @@ forge.op.GreaterEqual(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-
