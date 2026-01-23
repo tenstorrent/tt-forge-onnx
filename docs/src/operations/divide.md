@@ -25,4 +25,3 @@ forge.op.Divide(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

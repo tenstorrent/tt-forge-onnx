@@ -61,4 +61,3 @@ The weights are computed based on the distance from the output pixel to the surr
 - [forge.op.Upsample2d](./upsample2d.md): Upsample using scale factors instead of target sizes
 - [forge.op.Downsample2d](./downsample2d.md): Downsample operation
 - [forge.op.Transpose](./transpose.md): Rearrange tensor dimensions
-

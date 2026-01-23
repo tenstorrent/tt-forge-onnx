@@ -28,4 +28,3 @@ forge.op.Identity(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

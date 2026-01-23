@@ -37,4 +37,3 @@ forge.op.Repeat(name: str, operandA: Tensor, repeats: List[int]) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

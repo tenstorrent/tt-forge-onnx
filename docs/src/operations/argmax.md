@@ -28,4 +28,3 @@ forge.op.Argmax(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

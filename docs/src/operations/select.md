@@ -31,4 +31,3 @@ forge.op.Select(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -39,4 +39,3 @@ gelu(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
 
 - [forge.op.Relu](./relu.md): ReLU activation function
 - [forge.op.Sigmoid](./sigmoid.md): Sigmoid activation function
-

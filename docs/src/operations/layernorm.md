@@ -34,4 +34,3 @@ forge.op.Layernorm(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

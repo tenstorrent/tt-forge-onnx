@@ -33,4 +33,3 @@ The output is always in the range (0, 1).
 - [forge.op.Relu](./relu.md): ReLU activation function
 - [forge.op.Tanh](./tanh.md): Hyperbolic tangent activation
 - [forge.op.Gelu](./gelu.md): Gaussian Error Linear Unit
-

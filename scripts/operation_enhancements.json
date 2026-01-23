@@ -7,7 +7,7 @@
     "mathematical_definition": "Mathematical formula for the operation",
     "related_operations": "List of related operations with descriptions"
   },
-  
+
   "operations": {
     "Resize2d": {
       "description": "Resizes the spatial dimensions (height and width) of a 2D input tensor using interpolation. This operation is commonly used in computer vision tasks for image resizing, upsampling, and downsampling.",
@@ -91,4 +91,3 @@
     }
   }
 }
-

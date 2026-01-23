@@ -32,4 +32,3 @@ The output is always in the range (-1, 1).
 
 - [forge.op.Sigmoid](./sigmoid.md): Sigmoid activation function
 - [forge.op.Relu](./relu.md): ReLU activation function
-

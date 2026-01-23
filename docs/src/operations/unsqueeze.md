@@ -21,4 +21,3 @@ forge.op.Unsqueeze(name: str, operandA: Tensor, dim: int) -> Tensor
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

@@ -59,4 +59,3 @@ Where `s` is stride and `d` is dilation.
 - [forge.op.Conv2dTranspose](./conv2dtranspose.md): Transposed 2D convolution
 - [forge.op.AvgPool2d](./avgpool2d.md): 2D average pooling
 - [forge.op.MaxPool2d](./maxpool2d.md): 2D max pooling
-

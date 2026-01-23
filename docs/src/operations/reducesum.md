@@ -28,4 +28,3 @@ forge.op.ReduceSum(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

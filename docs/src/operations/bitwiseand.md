@@ -25,4 +25,3 @@ forge.op.BitwiseAnd(
 ## Returns
 
 - **result** (`Tensor`): Tensor Forge tensor
-

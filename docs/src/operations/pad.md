@@ -34,4 +34,3 @@ forge.op.Pad(
 ## Returns
 
 - **result** (`Tensor`): Tensor A tensor with the specified padding applied to the input tensor.
-

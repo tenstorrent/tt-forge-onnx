@@ -43,4 +43,3 @@ For batched inputs, the operation is applied to the last two dimensions.
 
 - [forge.op.Add](./add.md): Elementwise addition (for bias)
 - [forge.op.Transpose](./transpose.md): Transpose dimensions before matmul
-

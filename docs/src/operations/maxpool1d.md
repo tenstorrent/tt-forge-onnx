@@ -40,4 +40,3 @@ forge.op.MaxPool1d(
 ## Returns
 
 - **result** (`Tensor`): Output tensor
-
