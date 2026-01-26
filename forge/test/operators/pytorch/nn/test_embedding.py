@@ -10,7 +10,6 @@
 from functools import reduce
 import math
 import random
-import pytest
 
 from typing import List, Dict, Type
 
@@ -258,7 +257,7 @@ class TestCollectionData:
         input_sources=TestCollectionCommon.single.input_sources,
         input_shapes=TestCollectionCommon.single.input_shapes,
         dev_data_formats=[
-            pytest.param(torch.int32, id="int32"),  # TODO check this
+            torch.int32,
         ],
         math_fidelities=TestCollectionCommon.single.math_fidelities,
     )

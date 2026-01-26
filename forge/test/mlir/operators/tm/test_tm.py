@@ -8,7 +8,9 @@ from torch import nn
 
 import forge
 from forge.tensor import to_forge_tensors
+from forge.verify.config import VerifyConfig
 from forge.verify.verify import verify
+from forge.verify.value_checkers import AllCloseValueChecker
 
 # @pytest.mark.xfail(reason="RuntimeError: Input must be UINT32 or BFLOAT16")
 @pytest.mark.parametrize(
@@ -480,6 +482,38 @@ def test_reshape_pytorch():
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
 
     verify(inputs, framework_model, compiled_model)
+
+
+@pytest.mark.parametrize(
+    "input_shape, target_shape",
+    [
+        ((1, 4), (4, 1, 1)),
+        ((1, 100), (10, 10)),
+        ((1, 3, 4), (6, 2)),
+    ],
+)
+def test_reshape_accuracy(input_shape, target_shape):
+    class ModelDirect(nn.Module):
+        def __init__(self, operator, kwargs):
+            super().__init__()
+            self.testname = "Element_wise_unary_operators_test_op_src_from_host"
+            self.operator = operator
+            self.kwargs = kwargs
+
+        def forward(self, x):
+            return self.operator(x, **self.kwargs)
+
+    inputs = [torch.ones(input_shape) - 0.1]  # value: 0.9000
+
+    pytorch_model = ModelDirect(torch.reshape, {"shape": target_shape})
+    compiled_model = forge.compile(pytorch_model, sample_inputs=inputs)
+
+    verify(
+        inputs,
+        pytorch_model,
+        compiled_model,
+        verify_cfg=VerifyConfig(value_checker=AllCloseValueChecker()),
+    )
 
 
 @pytest.mark.push
