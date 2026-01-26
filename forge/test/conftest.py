@@ -2,6 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 import os
+import shutil
 from typing import List, Dict, Tuple
 from loguru import logger
 import subprocess
@@ -137,6 +138,40 @@ def reset_device():
         # Reset device between tests
         # For this to work, pytest must be called with --forked
         subprocess.check_call(["device/bin/silicon/reset.sh"], cwd=os.environ["FORGE_HOME"])
+
+
+@pytest.fixture(autouse=True, scope="function")
+def cleanup_tt_metal_cache():
+    """
+    Cleanup fixture that removes tt-metal kernel cache after each test.
+    This helps prevent linker errors from corrupted cached kernels.
+    
+    Checks cache paths in the following order:
+    1. /github/home/.cache/tt-metal-cache/ (for CI environments)
+    2. ~/.cache/tt-metal-cache/ (for local environments)
+    3. /tmp/tt-metal-cache/ (fallback)
+    Removes the first cache path that exists.
+    """
+    # Run the test first
+    yield
+    
+    # Cleanup after test completes
+    # Check cache paths in priority order
+    cache_paths = [
+        "/github/home/.cache/tt-metal-cache",  # CI environment
+        os.path.join(os.path.expanduser("~"), ".cache", "tt-metal-cache"),  # Local environment
+        "/tmp/tt-metal-cache",  
+    ]
+    
+    # Find and remove the first existing cache path
+    for cache_path in cache_paths:
+        if os.path.exists(cache_path):
+            try:
+                shutil.rmtree(cache_path)
+                logger.info(f"Removed tt-metal cache directory: {cache_path}")
+                break  # Only remove the first existing cache
+            except Exception as e:
+                logger.warning(f"Failed to remove tt-metal cache directory {cache_path}: {e}")
 
 
 def run_command(cmd: List[str]) -> str:
