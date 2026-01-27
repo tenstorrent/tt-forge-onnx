@@ -123,18 +123,12 @@ class AttributeMapper
         add_op_mapping("avg_pool2d", "dilation", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
 
         // conv2d_transpose
-        add_op_mapping("conv2d_transpose", "dilation", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
-        add_op_mapping("conv2d_transpose", "groups", AttributeRemap(std::nullopt, TargetType::I32Attr));
-        add_op_mapping(
-            "conv2d_transpose", "output_padding", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
-        add_op_mapping("conv2d_transpose", "padding", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
-        add_op_mapping("conv2d_transpose", "stride", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
+        add_op_mapping("conv2d_transpose", "groups", AttributeRemap("feature_group_count", TargetType::I64Attr));
+        add_op_mapping("conv2d_transpose", "stride", AttributeRemap("window_strides", TargetType::DenseI64ArrayAttr));
 
         // conv2d
-        add_op_mapping("conv2d", "dilation", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
-        add_op_mapping("conv2d", "groups", AttributeRemap(std::nullopt, TargetType::I32Attr));
-        add_op_mapping("conv2d", "padding", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
-        add_op_mapping("conv2d", "stride", AttributeRemap(std::nullopt, TargetType::DenseI32ArrayAttr));
+        add_op_mapping("conv2d", "groups", AttributeRemap("feature_group_count", TargetType::I64Attr));
+        add_op_mapping("conv2d", "stride", AttributeRemap("window_strides", TargetType::DenseI64ArrayAttr));
 
         // cumsum
         add_op_mapping("cumsum", "dim", AttributeRemap(std::nullopt, TargetType::I64Attr));
@@ -550,6 +544,144 @@ class MLIRGenerator
         return op.getOperation()->getResult(0);
     }
 
+    mlir::Value emit_mlir_ttforge_convolution_op(tt::graphlib::Graph *graph, tt::graphlib::OpNode *op_node)
+    {
+        // Get Return Type
+        llvm::SmallVector<mlir::Type> return_types = get_mlir_type_range(op_node);
+
+        // Get Operands (Input, Weight, Bias)
+        auto all_operands = graph->data_operands(op_node);
+
+        llvm::SmallVector<mlir::Value> operands;
+        operands.push_back(symbolTable_.at(all_operands[0]->name()).first);  // Input
+        operands.push_back(symbolTable_.at(all_operands[1]->name()).first);  // Weight
+
+        // Handle Bias
+        bool has_bias = (all_operands.size() == 3);
+        if (has_bias)
+        {
+            operands.push_back(symbolTable_.at(all_operands[2]->name()).first);
+        }
+
+        // Attributes
+        llvm::SmallVector<mlir::NamedAttribute> mlir_attributes;
+        const auto &op_attrs = op_node->op().attrs();
+
+        int32_t bias_segment = has_bias ? 1 : 0;
+        mlir_attributes.push_back(
+            builder_.getNamedAttr("operand_segment_sizes", builder_.getDenseI32ArrayAttr({1, 1, bias_segment})));
+
+        // is_transpose
+        bool is_transpose = op_node->op_as_string() == "conv2d_transpose";
+        mlir_attributes.push_back(builder_.getNamedAttr("is_transpose", builder_.getBoolAttr(is_transpose)));
+
+        // Convolution Layout
+        auto layout_attr = mlir::tt::ttir::ConvolutionLayoutAttr::get(
+            builder_.getContext(),
+            /*inputBatchDimension=*/0,
+            /*inputFeatureDimension=*/3,
+            /*inputSpatialDimensions=*/llvm::ArrayRef<int64_t>({1, 2}),
+            /*kernelOutputFeatures=*/0,
+            /*kernelInputFeatures=*/1,
+            /*kernelSpatialDimensions=*/llvm::ArrayRef<int64_t>({2, 3}),
+            /*outputBatchDimension=*/0,
+            /*outputFeatureDimension=*/3,
+            /*outputSpatialDimensions=*/llvm::ArrayRef<int64_t>({1, 2}));
+        mlir_attributes.push_back(builder_.getNamedAttr("convolution_layout", layout_attr));
+
+        // Group Counts
+        mlir_attributes.push_back(builder_.getNamedAttr("batch_group_count", builder_.getI64IntegerAttr(1)));
+
+        // Handle mapped groups -> feature_group_count
+        if (op_attrs.find("groups") == op_attrs.end())
+        {
+            mlir_attributes.push_back(builder_.getNamedAttr("feature_group_count", builder_.getI64IntegerAttr(1)));
+        }
+
+        // Mapped Attributes
+        std::set<std::string> skip_attrs = {"padding", "dilation"};
+        if (is_transpose)
+            skip_attrs.insert("output_padding");
+
+        for (const auto &[name, value] : op_attrs)
+        {
+            if (skip_attrs.count(name))
+                continue;
+
+            if (name == "stride")
+            {
+                auto stride_vec = std::get<std::vector<int>>(value);
+                std::vector<int64_t> mlir_strides(stride_vec.begin(), stride_vec.end());
+                mlir_attributes.push_back(
+                    builder_.getNamedAttr("window_strides", builder_.getDenseI64ArrayAttr(mlir_strides)));
+                continue;
+            }
+
+            auto [mapped_name, target_type] = attr_mapper_.get_mapped_name_and_type(op_node->op_as_string(), name);
+            mlir_attributes.push_back(
+                builder_.getNamedAttr(mapped_name, convert_to_mlir_attribute(value, target_type)));
+        }
+
+        // Padding
+        auto padding_it = op_attrs.find("padding");
+        if (padding_it != op_attrs.end())
+        {
+            auto padding_vec = std::get<std::vector<int>>(padding_it->second);
+            std::vector<int64_t> mlir_padding;
+
+            if (padding_vec.size() == 2)
+            {
+                mlir_padding = {padding_vec[0], padding_vec[0], padding_vec[1], padding_vec[1]};
+            }
+            else if (padding_vec.size() == 4)
+            {
+                mlir_padding = {padding_vec[0], padding_vec[2], padding_vec[1], padding_vec[3]};
+            }
+            else
+            {
+                mlir_padding.assign(padding_vec.begin(), padding_vec.end());
+            }
+            mlir_attributes.push_back(builder_.getNamedAttr("padding", builder_.getDenseI64ArrayAttr(mlir_padding)));
+        }
+
+        // Dilation
+        auto dilation_it = op_attrs.find("dilation");
+        if (dilation_it != op_attrs.end())
+        {
+            auto dilation_vec = std::get<std::vector<int>>(dilation_it->second);
+            std::vector<int64_t> d(dilation_vec.begin(), dilation_vec.end());
+            mlir_attributes.push_back(builder_.getNamedAttr("input_dilation", builder_.getDenseI64ArrayAttr(d)));
+        }
+        else
+        {
+            mlir_attributes.push_back(builder_.getNamedAttr("input_dilation", builder_.getDenseI64ArrayAttr({1, 1})));
+        }
+
+        // Weight Dilation
+        mlir_attributes.push_back(builder_.getNamedAttr("weight_dilation", builder_.getDenseI64ArrayAttr({1, 1})));
+
+        mlir_attributes.push_back(
+            builder_.getNamedAttr("window_reversal", builder_.getDenseBoolArrayAttr({false, false})));
+
+        // Output Padding
+        if (is_transpose)
+        {
+            auto out_pad_it = op_attrs.find("output_padding");
+            if (out_pad_it != op_attrs.end())
+            {
+                auto out_pad_vec = std::get<std::vector<int>>(out_pad_it->second);
+                std::vector<int64_t> opad(out_pad_vec.begin(), out_pad_vec.end());
+                mlir_attributes.push_back(builder_.getNamedAttr("output_padding", builder_.getDenseI64ArrayAttr(opad)));
+            }
+        }
+
+        // Create Op
+        return builder_
+            .create<mlir::tt::ttir::ConvolutionOp>(
+                get_tt_forge_operation_location(graph, op_node), return_types, operands, mlir_attributes)
+            .getResult();
+    }
+
     // Get the TT-MLIR type for a TTForge operation.
     llvm::SmallVector<mlir::Type> get_mlir_type_range(tt::graphlib::OpNode *op_node)
     {
@@ -786,7 +918,7 @@ class MLIRGenerator
         lowering_handler_map["clip"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::ClampScalarOp>;
         lowering_handler_map["concatenate"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::ConcatOp>;
         lowering_handler_map["constant_pad"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::PadOp>;
-        lowering_handler_map["conv2d"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::Conv2dOp>;
+        lowering_handler_map["conv2d"] = &MLIRGenerator::emit_mlir_ttforge_convolution_op;
         lowering_handler_map["cosine"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::CosOp>;
         lowering_handler_map["cumsum"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::CumSumOp>;
         lowering_handler_map["divide"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::DivOp>;
@@ -821,8 +953,7 @@ class MLIRGenerator
         lowering_handler_map["repeat_interleave"] =
             &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::RepeatInterleaveOp>;
         lowering_handler_map["repeat"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::RepeatOp>;
-        lowering_handler_map["conv2d_transpose"] =
-            &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::ConvTranspose2dOp>;
+        lowering_handler_map["conv2d_transpose"] = &MLIRGenerator::emit_mlir_ttforge_convolution_op;
         lowering_handler_map["reshape"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::ReshapeOp>;
         lowering_handler_map["select"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::IndexSelectOp>;
         lowering_handler_map["sigmoid"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::SigmoidOp>;
