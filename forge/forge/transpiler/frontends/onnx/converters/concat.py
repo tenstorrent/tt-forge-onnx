@@ -97,12 +97,12 @@ class ConcatConverter(OnnxOpConverter):
                 raise ValueError(
                     f"Concat node '{node_proto.name or node_proto.op_type}': "
                     f"Negative axis {axis} not supported in opset version {opset_version}. "
-                    f"Valid range is [0, {input_rank-1}]"
+                    f"Valid range is [0, {input_rank - 1}]"
                 )
             if not (0 <= axis < input_rank):
                 raise ValueError(
                     f"Concat node '{node_proto.name or node_proto.op_type}': "
-                    f"axis {axis} is out of range [0, {input_rank-1}] "
+                    f"axis {axis} is out of range [0, {input_rank - 1}] "
                     f"(input rank is {input_rank})"
                 )
         # v4+: supports negative indices [-rank, rank-1]
@@ -110,7 +110,7 @@ class ConcatConverter(OnnxOpConverter):
             if not (-input_rank <= axis < input_rank):
                 raise ValueError(
                     f"Concat node '{node_proto.name or node_proto.op_type}': "
-                    f"axis {axis} is out of range [-{input_rank}, {input_rank-1}] "
+                    f"axis {axis} is out of range [-{input_rank}, {input_rank - 1}] "
                     f"(input rank is {input_rank})"
                 )
 
@@ -121,7 +121,7 @@ class ConcatConverter(OnnxOpConverter):
         if not (0 <= normalized_axis < input_rank):
             raise ValueError(
                 f"Concat node '{node_proto.name or node_proto.op_type}': "
-                f"axis {axis} normalized to {normalized_axis} is out of range [0, {input_rank-1}] "
+                f"axis {axis} normalized to {normalized_axis} is out of range [0, {input_rank - 1}] "
                 f"(input rank is {input_rank})"
             )
 
@@ -252,6 +252,7 @@ class ConcatConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Concat converter - single method handles all versions using opset parameter.

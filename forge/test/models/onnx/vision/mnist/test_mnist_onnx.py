@@ -87,7 +87,6 @@ def test_mnist(forge_tmp_path, use_transpiler):
         compiler_cfg=compiler_cfg,
         verify_cfg=verify_cfg,
     )
-    
 
     # Model verification and inference
     fw_out, co_out = verify(

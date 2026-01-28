@@ -106,6 +106,9 @@ def _create_maxpool2d_model(
             attrs["pads"] = [padding, padding, padding, padding]
         elif isinstance(padding, (list, tuple)) and len(padding) == 4:
             attrs["pads"] = list(padding)
+        elif isinstance(padding, (list, tuple)) and len(padding) == 2:
+            # Symmetric 2D: [pad_h, pad_w] → [pad_h, pad_w, pad_h, pad_w]
+            attrs["pads"] = [padding[0], padding[1], padding[0], padding[1]]
         else:
             attrs["pads"] = [0, 0, 0, 0]
 
@@ -166,6 +169,9 @@ def _create_maxpool3d_model(
             attrs["pads"] = [padding, padding, padding, padding, padding, padding]
         elif isinstance(padding, (list, tuple)) and len(padding) == 6:
             attrs["pads"] = list(padding)
+        elif isinstance(padding, (list, tuple)) and len(padding) == 3:
+            # Symmetric 3D: [pad_d, pad_h, pad_w] → [pad_d, pad_h, pad_w, pad_d, pad_h, pad_w]
+            attrs["pads"] = [padding[0], padding[1], padding[2], padding[0], padding[1], padding[2]]
         else:
             attrs["pads"] = [0, 0, 0, 0, 0, 0]
 
@@ -347,9 +353,6 @@ class TestMaxPool1d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_maxpool1d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test MaxPool1d with different auto_pad modes."""
-        if opset_version < 10:
-            pytest.skip(f"ceil_mode not available in opset {opset_version}")
-
         onnx_model = _create_maxpool1d_model(
             opset_version=opset_version,
             input_shape=input_shape,
@@ -645,9 +648,6 @@ class TestMaxPool2d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_maxpool2d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test MaxPool2d with different auto_pad modes."""
-        if opset_version < 10:
-            pytest.skip(f"ceil_mode not available in opset {opset_version}")
-
         onnx_model = _create_maxpool2d_model(
             opset_version=opset_version,
             input_shape=input_shape,
@@ -1166,9 +1166,6 @@ class TestMaxPool3d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_maxpool3d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test MaxPool3d with different auto_pad modes."""
-        if opset_version < 10:
-            pytest.skip(f"ceil_mode not available in opset {opset_version}")
-
         onnx_model = _create_maxpool3d_model(
             opset_version=opset_version,
             input_shape=input_shape,

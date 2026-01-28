@@ -228,8 +228,7 @@ class TestAveragePool1d:
     def test_avgpool1d_basic(self, opset_version, input_shape, kernel_shape, stride, padding):
         """Test basic AveragePool1d with different kernel sizes, strides, and padding."""
         if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
+            pytest.skip("ONNX Runtime does not implement AveragePool opset 1")
         if isinstance(padding, int):
             pad_w = padding
         elif isinstance(padding, (list, tuple)):
@@ -302,9 +301,6 @@ class TestAveragePool1d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_avgpool1d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test AveragePool1d with different auto_pad modes."""
-        if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
         onnx_model = _create_avgpool1d_model(
             opset_version=opset_version,
             input_shape=input_shape,
@@ -546,8 +542,7 @@ class TestAveragePool2d:
     def test_avgpool2d_basic(self, opset_version, input_shape, kernel_shape, stride, padding):
         """Test basic AveragePool2d with different kernel sizes, strides, and padding."""
         if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
+            pytest.skip("ONNX Runtime does not implement AveragePool opset 1")
         if isinstance(padding, int):
             pad_h, pad_w = padding, padding
         elif isinstance(padding, (list, tuple)):
@@ -621,9 +616,6 @@ class TestAveragePool2d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_avgpool2d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test AveragePool2d with different auto_pad modes."""
-        if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
         onnx_model = _create_avgpool2d_model(
             opset_version=opset_version,
             input_shape=input_shape,
@@ -859,8 +851,7 @@ class TestAveragePool3d:
     def test_avgpool3d_basic(self, opset_version, input_shape, kernel_shape, stride, padding):
         """Test basic AveragePool3d with different kernel sizes, strides, and padding."""
         if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
+            pytest.skip("ONNX Runtime does not implement AveragePool opset 1")
         if isinstance(padding, int):
             pad_d = pad_h = pad_w = padding
         elif isinstance(padding, (list, tuple)):
@@ -937,9 +928,6 @@ class TestAveragePool3d:
     @pytest.mark.parametrize("ceil_mode", [True, False])
     def test_avgpool3d_auto_pad(self, opset_version, input_shape, kernel_shape, auto_pad, stride, ceil_mode):
         """Test AveragePool3d with different auto_pad modes."""
-        if opset_version == 1:
-            pytest.skip(f"ONNX Runtime doesn't support AveragePool(1)")
-
         onnx_model = _create_avgpool3d_model(
             opset_version=opset_version,
             input_shape=input_shape,

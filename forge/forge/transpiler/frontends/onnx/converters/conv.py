@@ -90,6 +90,7 @@ class ConvConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Conv converter - single method handles all versions using opset parameter.

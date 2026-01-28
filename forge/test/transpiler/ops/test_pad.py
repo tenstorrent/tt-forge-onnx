@@ -28,7 +28,16 @@ class TestPad:
         opset_version, input_shape, pads, mode="constant", constant_value=0.0, axes=None, dtype=onnx.TensorProto.FLOAT
     ):
         """Helper to create Pad ONNX model with proper opset-specific structure."""
-        np_dtype = np.float32 if dtype == onnx.TensorProto.FLOAT else np.int64
+        np_dtype = {
+            onnx.TensorProto.FLOAT: np.float32,
+            onnx.TensorProto.DOUBLE: np.float64,
+            onnx.TensorProto.FLOAT16: np.float16,
+            onnx.TensorProto.INT8: np.int8,
+            onnx.TensorProto.INT16: np.int16,
+            onnx.TensorProto.INT32: np.int32,
+            onnx.TensorProto.INT64: np.int64,
+            onnx.TensorProto.UINT8: np.uint8,
+        }.get(dtype, np.float32)
         attrs = {"mode": mode}
         initializers = {}
         input_names = ["data"]

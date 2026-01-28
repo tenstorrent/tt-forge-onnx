@@ -8,7 +8,6 @@ Tests different input shapes, dtypes, opset versions, axis values, and edge case
 import pytest
 import numpy as np
 import onnx
-import torch
 
 from forge.transpiler.frontends.onnx.engine import ONNXToForgeTranspiler
 from test.transpiler.test_utils import (
@@ -52,9 +51,6 @@ class TestSoftmax:
     def test_softmax_basic(self, opset_version, input_shape, dtype):
         """Test basic Softmax operations across opset versions."""
         # Skip opset 24 and 25 - ONNXRuntime doesn't support them yet
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip float16 for opset < 13 (may not be fully supported)
         if opset_version < 13 and dtype == onnx.TensorProto.FLOAT16:
             pytest.skip(f"Float16 may not be fully supported in opset {opset_version}")
@@ -143,9 +139,9 @@ class TestSoftmax:
                 rtol_val, atol_val = 1e-2, 1e-2
             else:
                 rtol_val, atol_val = 1e-5, 1e-4
-        elif opset_version in [10, 13, 14]:
-            # For opset 10 and 14, use more lenient tolerance for higher dimensional tensors
-            if opset_version in [10, 14] and len(input_shape) >= 2:
+        elif opset_version in [13, 14]:
+            # For opset 14, use more lenient tolerance for higher dimensional tensors
+            if opset_version == 14 and len(input_shape) >= 2:
                 rtol_val, atol_val = 1e-3, 1e-3
             else:
                 rtol_val, atol_val = 1e-4, 1e-5
@@ -177,9 +173,6 @@ class TestSoftmax:
     @pytest.mark.parametrize("axis", [0, 1, -1, -2])
     def test_softmax_different_axes(self, opset_version, axis):
         """Test Softmax with different axis values."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (3, 4, 5)
         dtype = onnx.TensorProto.FLOAT
 
@@ -240,9 +233,6 @@ class TestSoftmax:
     @pytest.mark.parametrize("opset_version", [1, 11, 13, 14])
     def test_softmax_all_equal_values(self, opset_version):
         """Test Softmax with all equal values along axis (should output uniform distribution)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (2, 5)
         dtype = onnx.TensorProto.FLOAT
 
@@ -292,9 +282,6 @@ class TestSoftmax:
     @pytest.mark.parametrize("opset_version", [1, 11, 13, 14])
     def test_softmax_extreme_values(self, opset_version):
         """Test Softmax with extreme values (very large differences)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (2, 4)
         dtype = onnx.TensorProto.FLOAT
 
@@ -355,9 +342,6 @@ class TestSoftmax:
     @pytest.mark.parametrize("opset_version", [1, 11, 13, 14])
     def test_softmax_single_element(self, opset_version):
         """Test Softmax with single element tensor (edge case)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (1,)
         dtype = onnx.TensorProto.FLOAT
 
@@ -399,9 +383,6 @@ class TestSoftmax:
     @pytest.mark.parametrize("opset_version", [1, 11, 13, 14])
     def test_softmax_edge_values(self, opset_version):
         """Test Softmax with edge values (zeros, equal values, extreme values, very small values)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (2, 4)
         dtype = onnx.TensorProto.FLOAT
 

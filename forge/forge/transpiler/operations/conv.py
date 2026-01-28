@@ -7,16 +7,15 @@ Convolution operations: Conv1d, Conv2d, Conv3d
 import torch
 import torch.nn.functional as F
 from collections import OrderedDict
-from typing import Dict, List, Union, Tuple
+from typing import Dict, Union, Tuple
 
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import ConvShape
 
 
-def _normalize_conv_attr(
-    value: Union[int, Tuple[int, ...], List[int]], ndim: int, name: str, node_name: str
-) -> Tuple[int, ...]:
+def _normalize_conv_attr(value, ndim: int, name: str, node_name: str):
     """
     Normalize convolution attribute (stride/dilation) to tuple format.
 
@@ -47,8 +46,10 @@ def _normalize_conv_attr(
         )
 
 
-class Conv1dNode(TIRNode):
+class Conv1dNode(ConvShape, TIRNode):
     """PyTorch-like Conv1d operation."""
+
+    _ndim = 1
 
     @staticmethod
     def create(
@@ -101,8 +102,10 @@ class Conv1dNode(TIRNode):
         return {self.output_names[0]: output}
 
 
-class Conv2dNode(TIRNode):
+class Conv2dNode(ConvShape, TIRNode):
     """PyTorch-like Conv2d operation."""
+
+    _ndim = 2
 
     @staticmethod
     def create(
@@ -151,8 +154,10 @@ class Conv2dNode(TIRNode):
         return {self.output_names[0]: output}
 
 
-class Conv3dNode(TIRNode):
+class Conv3dNode(ConvShape, TIRNode):
     """PyTorch-like Conv3d operation."""
+
+    _ndim = 3
 
     @staticmethod
     def create(

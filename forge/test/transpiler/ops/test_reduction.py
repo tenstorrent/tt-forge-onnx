@@ -113,7 +113,7 @@ class TestReduceSum:
             if keepdims:
                 expected_shape = tuple([1] * len(input_shape))
             else:
-                expected_shape = (1,)
+                expected_shape = ()  # scalar: all dims reduced, none kept
         else:
             # Reduce specified axes
             output_shape = list(input_shape)
@@ -126,7 +126,7 @@ class TestReduceSum:
                         output_shape[normalized_axis] = None  # Mark for removal
             if not keepdims:
                 output_shape = [d for d in output_shape if d is not None]
-            expected_shape = tuple(output_shape) if output_shape else (1,)
+            expected_shape = tuple(output_shape)  # () for fully reduced, non-empty tuple otherwise
 
         # Map ONNX dtype to numpy dtype for test data generation
         dtype_map = {
@@ -162,16 +162,18 @@ class TestReduceSum:
         expected_op_types = ["ReduceSum"]
         structure = verify_tir_graph_structure(tir_graph, onnx_model, expected_op_types=expected_op_types)
 
-        # Verify we have exactly one node (no Reshape needed)
+        # When multiple axes are provided, the converter creates one ReduceSum node per axis
+        num_axes = len(axes) if axes is not None else 1
         assert (
-            len(tir_graph.nodes) == 1
-        ), f"Expected 1 node (ReduceSum), got {len(tir_graph.nodes)}. Nodes: {[n.op_type for n in tir_graph.nodes]}"
+            len(tir_graph.nodes) == num_axes
+        ), f"Expected {num_axes} node(s) (ReduceSum), got {len(tir_graph.nodes)}. Nodes: {[n.op_type for n in tir_graph.nodes]}"
 
-        # Verify the node is ReduceSum
-        assert tir_graph.nodes[0].op_type == "ReduceSum", "Expected ReduceSum node"
+        # Verify all nodes are ReduceSum
+        for node in tir_graph.nodes:
+            assert node.op_type == "ReduceSum", f"Expected ReduceSum node, got {node.op_type}"
 
-        # Verify the ReduceSum node has correct attributes
-        reduce_node = tir_graph.nodes[0]
+        # Verify the last ReduceSum node has correct keepdim attribute
+        reduce_node = tir_graph.nodes[-1]
         node_keepdim = bool(reduce_node.attrs.get("keepdim", False))
         assert node_keepdim == keepdims, f"Expected keepdim={keepdims}, got {node_keepdim} in node attributes"
 
@@ -185,13 +187,8 @@ class TestReduceSum:
         else:
             # For float types, use random values
             input_data = {"input_0": np.random.randn(*input_shape).astype(np_dtype)}
-            # Use relaxed tolerance for opset 13 due to numerical precision differences
-            if opset_version == 13:
-                rtol = 1e-4
-                atol = 1e-5
-            else:
-                rtol = 1e-5
-                atol = 1e-6
+            rtol = 1e-5
+            atol = 1e-6
 
         # Compare outputs
         comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=rtol, atol=atol)
@@ -242,7 +239,7 @@ class TestReduceSum:
                 if keepdims:
                     expected_shape = tuple([1] * len(input_shape))
                 else:
-                    expected_shape = (1,)
+                    expected_shape = ()  # scalar: all dims reduced, none kept
             else:
                 output_shape = list(input_shape)
                 for axis in axes:
@@ -254,7 +251,7 @@ class TestReduceSum:
                             output_shape[normalized_axis] = None
                 if not keepdims:
                     output_shape = [d for d in output_shape if d is not None]
-                expected_shape = tuple(output_shape) if output_shape else (1,)
+                expected_shape = tuple(output_shape)  # () for fully reduced, non-empty tuple otherwise
 
             # Create ONNX model
             attrs = {}
@@ -277,9 +274,13 @@ class TestReduceSum:
             transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
             tir_graph = transpiler.transpile(onnx_model)
 
-            # Verify structure
-            assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)} for {description}"
-            assert tir_graph.nodes[0].op_type == "ReduceSum", f"Expected ReduceSum node for {description}"
+            # Verify structure — multi-axis reduction creates one ReduceSum node per axis
+            num_axes = len(axes) if axes is not None else 1
+            assert (
+                len(tir_graph.nodes) == num_axes
+            ), f"Expected {num_axes} node(s), got {len(tir_graph.nodes)} for {description}"
+            for node in tir_graph.nodes:
+                assert node.op_type == "ReduceSum", f"Expected ReduceSum node for {description}, got {node.op_type}"
 
             # Create test input
             input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
@@ -315,7 +316,7 @@ class TestReduceSum:
             if 0 <= normalized_axis < len(output_shape):
                 output_shape[normalized_axis] = None
         output_shape = [d for d in output_shape if d is not None]
-        expected_shape = tuple(output_shape) if output_shape else (1,)
+        expected_shape = tuple(output_shape)  # () for fully reduced, non-empty tuple otherwise
 
         # Map ONNX dtype to numpy dtype
         dtype_map = {
@@ -343,9 +344,10 @@ class TestReduceSum:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
         tir_graph = transpiler.transpile(onnx_model)
 
-        # Verify structure
-        assert len(tir_graph.nodes) == 1
-        assert tir_graph.nodes[0].op_type == "ReduceSum"
+        # axes=[1, 2] → 2 ReduceSum nodes (one per axis)
+        assert len(tir_graph.nodes) == len(axes)
+        for node in tir_graph.nodes:
+            assert node.op_type == "ReduceSum"
 
         # Create test input
         if dtype in [onnx.TensorProto.INT32, onnx.TensorProto.INT64]:
@@ -405,7 +407,7 @@ class TestReduceSum:
         node_dim = reduce_node.attrs.get("dim", None)
         node_keepdim = bool(reduce_node.attrs.get("keepdim", False))
         assert node_dim is None, f"Expected dim=None, got {node_dim}"
-        assert node_keepdim == True, f"Expected keepdim=True, got {node_keepdim}"
+        assert node_keepdim, f"Expected keepdim=True, got {node_keepdim}"
 
         # Create test input
         input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
@@ -533,7 +535,7 @@ class TestReduceSum:
             if keepdims:
                 expected_shape = tuple([1] * len(input_shape))
             else:
-                expected_shape = (1,)
+                expected_shape = ()  # scalar: all dims reduced, none kept
         else:
             output_shape = list(input_shape)
             for axis in axes:
@@ -545,7 +547,7 @@ class TestReduceSum:
                         output_shape[normalized_axis] = None
             if not keepdims:
                 output_shape = [d for d in output_shape if d is not None]
-            expected_shape = tuple(output_shape) if output_shape else (1,)
+            expected_shape = tuple(output_shape)  # () for fully reduced, non-empty tuple otherwise
 
         # For opset 13, axes is an optional input tensor, NOT an attribute
         # Only attributes are: keepdims and noop_with_empty_axes
@@ -578,11 +580,13 @@ class TestReduceSum:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
         tir_graph = transpiler.transpile(onnx_model)
 
-        # Verify structure
+        # Verify structure — multi-axis reduction creates one ReduceSum node per axis
+        num_axes = len(axes) if axes is not None else 1
         assert (
-            len(tir_graph.nodes) == 1
-        ), f"Expected 1 node, got {len(tir_graph.nodes)}. Nodes: {[n.op_type for n in tir_graph.nodes]}"
-        assert tir_graph.nodes[0].op_type == "ReduceSum", "Expected ReduceSum node"
+            len(tir_graph.nodes) == num_axes
+        ), f"Expected {num_axes} node(s), got {len(tir_graph.nodes)}. Nodes: {[n.op_type for n in tir_graph.nodes]}"
+        for node in tir_graph.nodes:
+            assert node.op_type == "ReduceSum", f"Expected ReduceSum node, got {node.op_type}"
 
         # Create test input
         input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
@@ -754,7 +758,7 @@ class TestReduceSum:
                     output_shape[normalized_axis] = None
         if not keepdims:
             output_shape = [d for d in output_shape if d is not None]
-        expected_shape = tuple(output_shape) if output_shape else (1,)
+        expected_shape = tuple(output_shape)  # () for fully reduced, non-empty tuple otherwise
 
         # For opset 13, axes is an input tensor, NOT an attribute
         # Only attributes are: keepdims and noop_with_empty_axes
@@ -782,9 +786,12 @@ class TestReduceSum:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
         tir_graph = transpiler.transpile(onnx_model)
 
-        # Verify structure
-        assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)}"
-        assert tir_graph.nodes[0].op_type == "ReduceSum", "Expected ReduceSum node"
+        # Verify structure — multi-axis reduction creates one ReduceSum node per axis
+        assert len(tir_graph.nodes) == len(
+            axes_input
+        ), f"Expected {len(axes_input)} node(s), got {len(tir_graph.nodes)}"
+        for node in tir_graph.nodes:
+            assert node.op_type == "ReduceSum", f"Expected ReduceSum node, got {node.op_type}"
 
         # Create test input
         input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
@@ -888,7 +895,7 @@ class TestReduceMax:
             if keepdims:
                 expected_shape = tuple([1] * len(input_shape))
             else:
-                expected_shape = (1,)
+                expected_shape = ()  # scalar: all dims reduced, none kept
         else:
             output_shape = list(input_shape)
             for axis in axes:
@@ -900,7 +907,7 @@ class TestReduceMax:
                         output_shape[normalized_axis] = None
             if not keepdims:
                 output_shape = [d for d in output_shape if d is not None]
-            expected_shape = tuple(output_shape) if output_shape else (1,)
+            expected_shape = tuple(output_shape) if output_shape else ()
 
         # Map ONNX dtype to numpy dtype
         dtype_map = {
@@ -1160,7 +1167,7 @@ class TestReduceMax:
             if 0 <= normalized_axis < len(output_shape):
                 output_shape[normalized_axis] = None
         output_shape = [d for d in output_shape if d is not None]
-        expected_shape = tuple(output_shape) if output_shape else (1,)
+        expected_shape = tuple(output_shape) if output_shape else ()
 
         # Map ONNX dtype to numpy dtype
         dtype_map = {
@@ -1305,7 +1312,7 @@ class TestReduceMean:
             if keepdims:
                 expected_shape = tuple([1] * len(input_shape))
             else:
-                expected_shape = (1,)
+                expected_shape = ()  # scalar: all dims reduced, none kept
         else:
             output_shape = list(input_shape)
             for axis in axes:
@@ -1317,7 +1324,7 @@ class TestReduceMean:
                         output_shape[normalized_axis] = None
             if not keepdims:
                 output_shape = [d for d in output_shape if d is not None]
-            expected_shape = tuple(output_shape) if output_shape else (1,)
+            expected_shape = tuple(output_shape) if output_shape else ()
 
         # Map ONNX dtype to numpy dtype
         dtype_map = {
@@ -1369,24 +1376,28 @@ class TestReduceMean:
         # Verify structure
         assert len(tir_graph.nodes) >= 1, f"Expected at least 1 node, got {len(tir_graph.nodes)}"
 
-        # For integer types, we insert Cast nodes before and after ReduceMean
+        # Multi-axis reduction creates one ReduceMean node per axis.
+        # For integer types, Cast nodes wrap the ReduceMean chain: Cast -> ReduceMean*N -> Cast
+        num_axes = len(axes) if axes is not None else 1
         is_integer = dtype in [onnx.TensorProto.INT32, onnx.TensorProto.INT64]
         if is_integer:
-            # Should have 3 nodes: Cast -> ReduceMean -> Cast
+            # Cast -> (ReduceMean per axis) -> Cast
+            expected_num_nodes = 2 + num_axes
             assert (
-                len(tir_graph.nodes) == 3
-            ), f"Expected 3 nodes (Cast->ReduceMean->Cast) for integer type, got {len(tir_graph.nodes)}"
+                len(tir_graph.nodes) == expected_num_nodes
+            ), f"Expected {expected_num_nodes} nodes (Cast->ReduceMean*{num_axes}->Cast) for integer type, got {len(tir_graph.nodes)}"
             assert tir_graph.nodes[0].op_type == "Cast", f"Expected Cast node first, got {tir_graph.nodes[0].op_type}"
-            assert (
-                tir_graph.nodes[1].op_type == "ReduceMean"
-            ), f"Expected ReduceMean node second, got {tir_graph.nodes[1].op_type}"
-            assert tir_graph.nodes[2].op_type == "Cast", f"Expected Cast node third, got {tir_graph.nodes[2].op_type}"
+            for i in range(1, 1 + num_axes):
+                assert (
+                    tir_graph.nodes[i].op_type == "ReduceMean"
+                ), f"Expected ReduceMean node at index {i}, got {tir_graph.nodes[i].op_type}"
+            assert tir_graph.nodes[-1].op_type == "Cast", f"Expected Cast node last, got {tir_graph.nodes[-1].op_type}"
         else:
-            # For float types, should have ReduceMean node (may be first or only node)
+            # For float types, one ReduceMean per axis
             reduce_mean_nodes = [n for n in tir_graph.nodes if n.op_type == "ReduceMean"]
             assert (
-                len(reduce_mean_nodes) == 1
-            ), f"Expected exactly 1 ReduceMean node for float type, got {len(reduce_mean_nodes)}"
+                len(reduce_mean_nodes) == num_axes
+            ), f"Expected {num_axes} ReduceMean node(s) for float type, got {len(reduce_mean_nodes)}"
 
         # Create test input
         if dtype in [onnx.TensorProto.INT32, onnx.TensorProto.INT64]:
@@ -1532,7 +1543,7 @@ class TestReduceMean:
             if 0 <= normalized_axis < len(output_shape):
                 output_shape[normalized_axis] = None
         output_shape = [d for d in output_shape if d is not None]
-        expected_shape = tuple(output_shape) if output_shape else (1,)
+        expected_shape = tuple(output_shape) if output_shape else ()
 
         # Map ONNX dtype to numpy dtype
         dtype_map = {
@@ -1574,24 +1585,26 @@ class TestReduceMean:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
         tir_graph = transpiler.transpile(onnx_model)
 
-        # Verify structure for integer types
+        # Verify structure — axes=[1, 2] creates 2 ReduceMean nodes; integer types wrap with Cast
         is_integer = dtype in [onnx.TensorProto.INT32, onnx.TensorProto.INT64]
         if is_integer:
-            # Should have 3 nodes: Cast -> ReduceMean -> Cast
+            # Cast -> ReduceMean * len(axes) -> Cast
+            expected_num_nodes = 2 + len(axes)
             assert (
-                len(tir_graph.nodes) == 3
-            ), f"Expected 3 nodes (Cast->ReduceMean->Cast) for integer type, got {len(tir_graph.nodes)}"
+                len(tir_graph.nodes) == expected_num_nodes
+            ), f"Expected {expected_num_nodes} nodes (Cast->ReduceMean*{len(axes)}->Cast) for integer type, got {len(tir_graph.nodes)}"
             assert tir_graph.nodes[0].op_type == "Cast", f"Expected Cast node first, got {tir_graph.nodes[0].op_type}"
-            assert (
-                tir_graph.nodes[1].op_type == "ReduceMean"
-            ), f"Expected ReduceMean node second, got {tir_graph.nodes[1].op_type}"
-            assert tir_graph.nodes[2].op_type == "Cast", f"Expected Cast node third, got {tir_graph.nodes[2].op_type}"
+            for i in range(1, 1 + len(axes)):
+                assert (
+                    tir_graph.nodes[i].op_type == "ReduceMean"
+                ), f"Expected ReduceMean node at index {i}, got {tir_graph.nodes[i].op_type}"
+            assert tir_graph.nodes[-1].op_type == "Cast", f"Expected Cast node last, got {tir_graph.nodes[-1].op_type}"
         else:
-            # For float types, should have ReduceMean node (may be first or only node)
+            # For float types, one ReduceMean per axis
             reduce_mean_nodes = [n for n in tir_graph.nodes if n.op_type == "ReduceMean"]
-            assert (
-                len(reduce_mean_nodes) == 1
-            ), f"Expected exactly 1 ReduceMean node for float type, got {len(reduce_mean_nodes)}"
+            assert len(reduce_mean_nodes) == len(
+                axes
+            ), f"Expected {len(axes)} ReduceMean node(s) for float type, got {len(reduce_mean_nodes)}"
 
         # Create test input
         if dtype in [onnx.TensorProto.INT32, onnx.TensorProto.INT64]:
@@ -1627,7 +1640,7 @@ class TestReduceMean:
             if 0 <= normalized_axis < len(output_shape):
                 output_shape[normalized_axis] = None
         output_shape = [d for d in output_shape if d is not None]
-        expected_shape = tuple(output_shape) if output_shape else (1,)
+        expected_shape = tuple(output_shape) if output_shape else ()
 
         # Create ONNX model with bfloat16
         attrs = {"keepdims": keepdims}

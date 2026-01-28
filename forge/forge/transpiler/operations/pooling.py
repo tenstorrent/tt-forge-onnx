@@ -2,7 +2,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Pooling operations: MaxPool1d, MaxPool2d, MaxPool3d, AveragePool1d, AveragePool2d, AveragePool3d, GlobalAveragePool
+Pooling operations: MaxPool1d, MaxPool2d, MaxPool3d, AveragePool1d, AveragePool2d, AveragePool3d.
+
+Note: GlobalAveragePool is decomposed into a chain of ReduceMean nodes by its converter
+and does not have a dedicated TIRNode in this module.
 """
 import torch
 import torch.nn.functional as F
@@ -11,14 +14,17 @@ from typing import Dict, Union, Tuple
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import PoolingShape
 
 
-class MaxPool1dNode(TIRNode):
+class MaxPool1dNode(PoolingShape, TIRNode):
     """
     1D max pooling operation node.
 
     Applies a 1D max pooling over an input signal composed of several input planes.
     """
+
+    _ndim = 1
 
     @staticmethod
     def create(
@@ -84,12 +90,14 @@ class MaxPool1dNode(TIRNode):
         return {self.output_names[0]: F.max_pool1d(x, kernel_size, stride, padding, dilation, ceil_mode)}
 
 
-class MaxPool2dNode(TIRNode):
+class MaxPool2dNode(PoolingShape, TIRNode):
     """
     2D max pooling operation node.
 
     Applies a 2D max pooling over an input signal composed of several input planes.
     """
+
+    _ndim = 2
 
     @staticmethod
     def create(
@@ -155,13 +163,15 @@ class MaxPool2dNode(TIRNode):
         return {self.output_names[0]: F.max_pool2d(x, kernel_size, stride, padding, dilation, ceil_mode)}
 
 
-class MaxPool3dNode(TIRNode):
+class MaxPool3dNode(PoolingShape, TIRNode):
     """
     3D max pooling operation node.
 
     Applies a 3D max pooling over an input signal composed of several input planes.
     Note: MaxPool3d is not available in Forge (only MaxPool1d and MaxPool2d exist).
     """
+
+    _ndim = 3
 
     @staticmethod
     def create(
@@ -227,12 +237,14 @@ class MaxPool3dNode(TIRNode):
         return {self.output_names[0]: F.max_pool3d(x, kernel_size, stride, padding, dilation, ceil_mode)}
 
 
-class AveragePool1dNode(TIRNode):
+class AveragePool1dNode(PoolingShape, TIRNode):
     """
     1D average pooling operation node.
 
     Applies a 1D average pooling over an input signal composed of several input planes.
     """
+
+    _ndim = 1
 
     @staticmethod
     def create(
@@ -298,12 +310,14 @@ class AveragePool1dNode(TIRNode):
         return {self.output_names[0]: F.avg_pool1d(x, kernel_size, stride, padding, ceil_mode, count_include_pad)}
 
 
-class AveragePool2dNode(TIRNode):
+class AveragePool2dNode(PoolingShape, TIRNode):
     """
     2D average pooling operation node.
 
     Applies a 2D average pooling over an input signal composed of several input planes.
     """
+
+    _ndim = 2
 
     @staticmethod
     def create(
@@ -369,13 +383,15 @@ class AveragePool2dNode(TIRNode):
         return {self.output_names[0]: F.avg_pool2d(x, kernel_size, stride, padding, ceil_mode, count_include_pad)}
 
 
-class AveragePool3dNode(TIRNode):
+class AveragePool3dNode(PoolingShape, TIRNode):
     """
     3D average pooling operation node.
 
     Applies a 3D average pooling over an input signal composed of several input planes.
     Note: AveragePool3d is not available in Forge (only AvgPool1d and AvgPool2d exist).
     """
+
+    _ndim = 3
 
     @staticmethod
     def create(

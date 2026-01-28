@@ -10,7 +10,7 @@ import numpy as np
 import onnx
 
 from forge.transpiler.frontends.onnx.engine import ONNXToForgeTranspiler
-from forge.transpiler.core.exceptions import ConversionError
+from forge.transpiler.utils.exceptions import ConversionError
 from test.transpiler.test_utils import (
     create_onnx_model,
     compare_tir_with_onnx,

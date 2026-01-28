@@ -166,41 +166,6 @@ class TestDropoutV1V6:
             f"ONNX Runtime only guarantees support for opset 7+."
         )
 
-        onnx_model = _create_dropout_model_v1_v6(
-            opset_version=opset_version, input_shape=input_shape, ratio=ratio, is_test=is_test
-        )
-
-        # Create input data
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
-
-        # Transpile and compare
-        transpiler = ONNXToForgeTranspiler(debug=False)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify graph structure
-        verify_tir_graph_structure(tir_graph, onnx_model)
-
-        # Compare with ONNX Runtime
-        # Note: Dropout is stochastic, so we use relaxed tolerance
-        # We mainly check that shapes match and values are reasonable
-        comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-1, atol=1e-1)
-
-        # Verify results
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-
-        # Verify output shape
-        output_name = onnx_model.graph.output[0].name
-        tir_output = comparison["tir_outputs"][output_name]
-        onnx_output = comparison["onnx_outputs"][output_name]
-
-        assert (
-            tir_output.shape == onnx_output.shape
-        ), f"Shape mismatch: TIR {tir_output.shape} vs ONNX {onnx_output.shape}"
-
-        # In inference mode (is_test=1), output should be identical to input
-        if is_test == 1:
-            np.testing.assert_allclose(tir_output, input_data["input_0"], rtol=1e-5, atol=1e-5)
-
     @pytest.mark.parametrize("opset_version", [1, 6])
     def test_dropout_v1_v6_with_seed(self, opset_version):
         """Test Dropout with seed for reproducibility."""
@@ -209,32 +174,6 @@ class TestDropoutV1V6:
             f"ONNX Runtime doesn't support Dropout opset {opset_version}. "
             f"ONNX Runtime only guarantees support for opset 7+."
         )
-
-        input_shape = (1, 3, 32, 32)
-        seed = 42
-
-        onnx_model = _create_dropout_model_v1_v6(
-            opset_version=opset_version, input_shape=input_shape, ratio=0.5, is_test=0, seed=seed
-        )
-
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
-
-        transpiler = ONNXToForgeTranspiler(debug=False)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        verify_tir_graph_structure(tir_graph, onnx_model)
-
-        # Run twice with same seed - should produce same result
-        comparison1 = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-1, atol=1e-1)
-        comparison2 = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-1, atol=1e-1)
-
-        # Note: With seed, results should be deterministic
-        output_name = onnx_model.graph.output[0].name
-        output1 = comparison1["tir_outputs"][output_name]
-        output2 = comparison2["tir_outputs"][output_name]
-
-        # Shapes should match
-        assert output1.shape == output2.shape
 
 
 # ============================================================================

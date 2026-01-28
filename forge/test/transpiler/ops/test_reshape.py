@@ -346,20 +346,17 @@ class TestReshape:
         # Create test input
         input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
 
-        # ONNXRuntime doesn't support reshaping to empty tensors, so skip comparison
-        # Just verify that FullNode is created and produces correct output
-        assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)}"
+        # ONNXRuntime doesn't support reshaping to empty tensors, so skip comparison.
+        # The converter eagerly folds empty-tensor reshapes into a computed constant
+        # (no TIR nodes generated; result is in tir_graph.computed_constants).
+        output_name = "output_0"
         assert (
-            tir_graph.nodes[0].op_type == "Full"
-        ), f"Expected Full node for empty tensor, got {tir_graph.nodes[0].op_type}"
+            output_name in tir_graph.computed_constants
+        ), f"Expected '{output_name}' in tir_graph.computed_constants, got: {list(tir_graph.computed_constants.keys())}"
 
-        # Execute TIR graph to verify output
-        input_dict = {name: torch.from_numpy(data) for name, data in input_data.items()}
-        tir_outputs = tir_graph.run(input_dict)
-
-        tir_output = tir_outputs["output_0"]
-        assert tir_output.numel() == 0, f"Expected empty tensor, got {tir_output.numel()} elements"
-        assert tuple(tir_output.shape) == expected_shape, f"Expected shape {expected_shape}, got {tir_output.shape}"
+        constant = tir_graph.computed_constants[output_name]
+        assert constant.numel() == 0, f"Expected empty tensor, got {constant.numel()} elements"
+        assert tuple(constant.shape) == expected_shape, f"Expected shape {expected_shape}, got {constant.shape}"
 
         logger.info(
             f"✓ Reshape with 0 (explicit) test passed: opset={opset_version}, "
@@ -480,18 +477,16 @@ class TestReshape:
         # For allowzero=1 with empty tensor, ONNXRuntime doesn't support it
         # Just verify the converter creates the correct node
         if allowzero == 1:
-            # Verify FullNode is created for empty tensor
-            assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)}"
+            # The converter eagerly folds empty-tensor reshapes into a computed constant.
+            # No TIR nodes are generated; the result is in tir_graph.computed_constants.
+            output_name = "output_0"
             assert (
-                tir_graph.nodes[0].op_type == "Full"
-            ), f"Expected Full node for empty tensor, got {tir_graph.nodes[0].op_type}"
+                output_name in tir_graph.computed_constants
+            ), f"Expected '{output_name}' in computed_constants, keys: {list(tir_graph.computed_constants.keys())}"
 
-            # Execute TIR graph to verify output
-            input_dict = {name: torch.from_numpy(data) for name, data in input_data.items()}
-            tir_outputs = tir_graph.run(input_dict)
-            tir_output = tir_outputs["output_0"]
-            assert tir_output.numel() == 0, f"Expected empty tensor, got {tir_output.numel()} elements"
-            assert tuple(tir_output.shape) == expected_shape, f"Expected shape {expected_shape}, got {tir_output.shape}"
+            constant = tir_graph.computed_constants[output_name]
+            assert constant.numel() == 0, f"Expected empty tensor, got {constant.numel()} elements"
+            assert tuple(constant.shape) == expected_shape, f"Expected shape {expected_shape}, got {constant.shape}"
         else:
             # For allowzero=0, compare with ONNXRuntime
             comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-5, atol=1e-6)
@@ -581,19 +576,18 @@ class TestReshape:
         transpiler = ONNXToForgeTranspiler(debug=False, validate_model=True)
         tir_graph = transpiler.transpile(onnx_model)
 
-        # Verify structure: should have FullNode, not ReshapeNode
-        assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)}"
+        # The converter eagerly folds empty-tensor reshapes into a computed constant
+        # (no TIR nodes generated; result is in tir_graph.computed_constants).
+        output_name = "output_0"
         assert (
-            tir_graph.nodes[0].op_type == "Full"
-        ), f"Expected Full node for empty tensor, got {tir_graph.nodes[0].op_type}"
-        assert tir_graph.nodes[0].attrs.get("shape") == tuple(
-            expected_shape
-        ), f"Expected shape {expected_shape}, got {tir_graph.nodes[0].attrs.get('shape')}"
-        assert (
-            tir_graph.nodes[0].attrs.get("fill_value") == 0.0
-        ), f"Expected fill_value 0.0, got {tir_graph.nodes[0].attrs.get('fill_value')}"
+            output_name in tir_graph.computed_constants
+        ), f"Expected '{output_name}' in computed_constants, keys: {list(tir_graph.computed_constants.keys())}"
 
-        logger.info("✓ Empty tensor (0 with allowzero=1) creates FullNode test passed")
+        constant = tir_graph.computed_constants[output_name]
+        assert tuple(constant.shape) == expected_shape, f"Expected shape {expected_shape}, got {constant.shape}"
+        assert constant.numel() == 0, f"Expected empty tensor, got {constant.numel()} elements"
+
+        logger.info("✓ Empty tensor (0 with allowzero=1) stored as computed constant test passed")
 
     def test_reshape_validation_both_neg1_and_zero(self):
         """Test that shape cannot contain both -1 and 0."""
@@ -847,27 +841,27 @@ class TestReshape:
             input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32)}
 
             if should_be_empty:
-                # ONNXRuntime doesn't support reshaping to empty tensors, skip comparison
-                # Just verify FullNode is created
-                assert len(tir_graph.nodes) == 1, f"Expected 1 node, got {len(tir_graph.nodes)}"
-                assert (
-                    tir_graph.nodes[0].op_type == "Full"
-                ), f"Expected Full node for empty tensor, got {tir_graph.nodes[0].op_type}"
+                # ONNXRuntime doesn't support reshaping to empty tensors, skip comparison.
+                # The converter eagerly folds empty-tensor reshapes into a computed constant.
+                output_name = "output_0"
+                assert output_name in tir_graph.computed_constants, (
+                    f"Expected '{output_name}' in tir_graph.computed_constants, "
+                    f"keys: {list(tir_graph.computed_constants.keys())}"
+                )
 
-                # Execute TIR graph to verify output
-                input_dict = {name: torch.from_numpy(data) for name, data in input_data.items()}
-                tir_outputs = tir_graph.run(input_dict)
-                tir_output = tir_outputs["output_0"]
-                assert tir_output.numel() == 0, f"Expected empty tensor, got {tir_output.numel()} elements"
-                assert (
-                    tuple(tir_output.shape) == expected_shape
-                ), f"Expected shape {expected_shape}, got {tir_output.shape}"
+                constant = tir_graph.computed_constants[output_name]
+                assert constant.numel() == 0, f"Expected empty tensor, got {constant.numel()} elements"
+                assert tuple(constant.shape) == expected_shape, f"Expected shape {expected_shape}, got {constant.shape}"
             else:
                 # For non-empty tensors, compare with ONNXRuntime
                 comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-5, atol=1e-6)
 
                 assert len(comparison["errors"]) == 0, (
                     f"Comparison errors: {comparison['errors']}\n"
+                    f"Test case: input_shape={input_shape}, shape={shape_with_zero}, allowzero={allowzero_val}"
+                )
+                assert all(comparison["matches"].values()), (
+                    f"Output mismatch: {comparison['matches']}\n"
                     f"Test case: input_shape={input_shape}, shape={shape_with_zero}, allowzero={allowzero_val}"
                 )
 

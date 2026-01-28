@@ -10,6 +10,7 @@ version binding through the get_converter() method.
 """
 from typing import Callable, TYPE_CHECKING
 from collections import OrderedDict
+from loguru import logger
 
 if TYPE_CHECKING:
     from typing import Dict, Any
@@ -45,6 +46,7 @@ class OnnxOpConverter:
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> "ConverterResult":
         """
         Main conversion method. Subclasses must override this.
@@ -90,9 +92,45 @@ class OnnxOpConverter:
             attrs, node_index, graph_proto) and calls convert() with opset bound
         """
 
-        def converter(node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto=None):
-            # Bind opset version to convert() method call
-            # This allows convert() to access opset without it being in the engine's call signature
-            return cls.convert(node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset)
+        def converter(node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto=None, tir_graph=None):
+            if tir_graph is not None and graph_proto is not None:
+                try:
+                    from forge.transpiler.frontends.onnx.utils.shape_finder import resolve_unknown_shapes
+
+                    input_tensors = resolve_unknown_shapes(node_proto, input_tensors, tir_graph, graph_proto)
+                except Exception as e:
+                    logger.error(f"Inline shape resolution failed for {node_proto.op_type}: {e}")
+                    raise
+
+            # Run the op-specific converter
+            result = cls.convert(
+                node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset, tir_graph=tir_graph
+            )
+
+            # Stamp every returned TIR node with its originating ONNX layer
+            # name — analogous to how TVM's ONNX frontend attaches a Span to
+            # each Relay expression so the source op is traceable through
+            # lowering.  We prefer node_proto.name (unique within the graph)
+            # and fall back to op_type when the exporter omitted the name.
+            if isinstance(result, list):
+                _src = node_proto.name or node_proto.op_type
+                for _node in result:
+                    if hasattr(_node, "src_layer") and _node.src_layer is None:
+                        _node.src_layer = _src
+
+            # Resolve unknown output shapes using forward propagation through
+            # the newly created TIR nodes — mirrors resolve_unknown_shapes for
+            # inputs but applied in the forward direction.  This handles ops
+            # like Where, Equal, MatMul, etc. where ONNX shape inference is
+            # unreliable for dynamic-axis models.
+            if tir_graph is not None and isinstance(result, list) and result:
+                try:
+                    from forge.transpiler.frontends.onnx.utils.shape_finder import resolve_output_shapes
+
+                    resolve_output_shapes(node_proto, result, input_tensors, output_tensors, tir_graph)
+                except Exception as _e:
+                    logger.trace(f"Output shape resolution skipped for {node_proto.op_type}: {_e}")
+
+            return result
 
         return converter

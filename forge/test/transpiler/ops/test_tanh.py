@@ -145,52 +145,12 @@ class TestTanh:
     )
     def test_tanh_bfloat16(self, opset_version, input_shape):
         """Test Tanh with bfloat16 type (v13+)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip bfloat16 - ONNX Runtime doesn't support Tanh with bfloat16
         pytest.skip("ONNX Runtime doesn't support Tanh with bfloat16 type")
 
-        dtype = onnx.TensorProto.BFLOAT16
-
-        # Create ONNX model
-        onnx_model = create_onnx_model(
-            op_type="Tanh",
-            input_shapes=[input_shape],
-            input_dtypes=[dtype],
-            output_shapes=[input_shape],
-            output_dtypes=[dtype],
-            attrs={},
-            opset_version=opset_version,
-            node_name="tanh_bfloat16",
-        )
-
-        # Transpile
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify structure
-        assert len(tir_graph.nodes) == 1
-        tanh_nodes = [n for n in tir_graph.nodes if n.op_type == "Tanh"]
-        assert len(tanh_nodes) == 1
-
-        # Create test input
-        # bfloat16 is not directly supported by numpy, use float32 and convert
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32) * 5}
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(
-            tir_graph, onnx_model, input_data, rtol=1e-2, atol=1e-2  # bfloat16 has lower precision
-        )
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-
-    @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
+    @pytest.mark.parametrize("opset_version", [6, 13, 14])
     def test_tanh_positive_values(self, opset_version):
         """Test Tanh with all positive values."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Tanh(1)")
@@ -235,9 +195,6 @@ class TestTanh:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_tanh_negative_values(self, opset_version):
         """Test Tanh with all negative values."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Tanh(1)")
@@ -285,9 +242,6 @@ class TestTanh:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_tanh_zero_values(self, opset_version):
         """Test Tanh with zero values (should output 0)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Tanh(1)")
@@ -331,9 +285,6 @@ class TestTanh:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_tanh_edge_values(self, opset_version):
         """Test Tanh with edge values (very large, very small, zero)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Tanh(1)")
@@ -399,37 +350,6 @@ class TestTanh:
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         pytest.skip("ONNX Runtime doesn't support Tanh(1)")
 
-        # Create ONNX model with consumed_inputs attribute
-        attrs = {"consumed_inputs": [0]}
-
-        onnx_model = create_onnx_model(
-            op_type="Tanh",
-            input_shapes=[input_shape],
-            input_dtypes=[dtype],
-            output_shapes=[input_shape],
-            output_dtypes=[dtype],
-            attrs=attrs,
-            opset_version=opset_version,
-            node_name="tanh_v1",
-        )
-
-        # Transpile
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify structure (should work normally, ignoring consumed_inputs)
-        assert len(tir_graph.nodes) == 1
-        tanh_nodes = [n for n in tir_graph.nodes if n.op_type == "Tanh"]
-        assert len(tanh_nodes) == 1
-
-        # Create test input
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32) * 5}
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-6, atol=1e-6)
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-
     def test_tanh_high_dimensional(self):
         """Test Tanh with high-dimensional tensors."""
         opset_version = 13
@@ -474,9 +394,6 @@ class TestTanh:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_tanh_symmetric(self, opset_version):
         """Test that Tanh is symmetric: tanh(-x) = -tanh(x)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Tanh(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Tanh(1)")

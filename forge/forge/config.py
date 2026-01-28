@@ -101,6 +101,8 @@ class CompilerConfig:
     compile_transpiler_to_python: bool = False  # Generate Python code from TIRGraph
     # Transpiler-specific options
     transpiler_enable_debug: bool = False  # Enable debug mode for transpiler
+    # Whether to resolve dynamic (symbolic) shapes using actual input tensors
+    transpiler_resolve_dynamic_shapes: bool = False
     # Defines store path of serilized TVM graphs.
     tvm_graph_store_path: str = ""
     # Defines load path of serilized TVM graphs.

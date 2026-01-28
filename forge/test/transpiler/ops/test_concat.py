@@ -10,7 +10,7 @@ import numpy as np
 import onnx
 
 from forge.transpiler.frontends.onnx.engine import ONNXToForgeTranspiler
-from forge.transpiler.core.exceptions import ConversionError
+from forge.transpiler.utils.exceptions import ConversionError
 from test.transpiler.test_utils import (
     create_onnx_model,
     compare_tir_with_onnx,
@@ -273,53 +273,8 @@ class TestConcat:
 
     def test_concat_v1_default_axis(self):
         """Test Concat v1 with default axis (should default to 1)."""
-        opset_version = 1
-        # Skip opset 1 - ONNXRuntime doesn't support Concat(1)
-        pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (Concat(1) not implemented)")
-
-        dtype = onnx.TensorProto.FLOAT
-        input_shapes = [(3, 2), (3, 3)]
-        expected_shape = (3, 5)  # Concatenate along axis 1 (default)
-
-        # Don't set axis attribute - should default to 1
-        attrs = {}
-
-        input_names = [f"input_{i}" for i in range(len(input_shapes))]
-        input_dtypes = [dtype] * len(input_shapes)
-
-        onnx_model = create_onnx_model(
-            op_type="Concat",
-            input_shapes=input_shapes,
-            input_dtypes=input_dtypes,
-            output_shapes=[expected_shape],
-            output_dtypes=[dtype],
-            attrs=attrs,
-            opset_version=opset_version,
-            node_name="concat_default",
-            input_names=input_names,
-        )
-
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify ConcatNode has dim=1 (default)
-        concat_nodes = [n for n in tir_graph.nodes if n.op_type == "Concat"]
-        assert len(concat_nodes) == 1, f"Expected 1 ConcatNode, got {len(concat_nodes)}"
-
-        concat_node = concat_nodes[0]
-        assert concat_node.attrs["dim"] == 1, f"Expected dim=1 (default), got {concat_node.attrs['dim']}"
-
-        # Create test inputs
-        input_data = {}
-        for i, shape in enumerate(input_shapes):
-            input_name = f"input_{i}"
-            input_data[input_name] = np.random.randn(*shape).astype(np.float32)
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-5, atol=1e-6)
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-        assert all(comparison["matches"].values()), f"Output mismatch: {comparison}"
+        # Opset 1 Concat is not supported by ONNXRuntime (Concat(1) not implemented)
+        pytest.skip("Opset 1 not supported by ONNXRuntime (Concat(1) not implemented)")
 
     @pytest.mark.parametrize("opset_version", [4, 11, 13])
     def test_concat_missing_axis_error(self, opset_version):
@@ -356,8 +311,6 @@ class TestConcat:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=False)
 
         # Should raise ConversionError because axis is required
-        from forge.transpiler.core.exceptions import ConversionError
-
         with pytest.raises(ConversionError) as exc_info:
             tir_graph = transpiler.transpile(onnx_model)
 

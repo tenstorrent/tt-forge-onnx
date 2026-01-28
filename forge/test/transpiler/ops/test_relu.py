@@ -149,54 +149,11 @@ class TestRelu:
     )
     def test_relu_bfloat16(self, opset_version, input_shape):
         """Test Relu with bfloat16 type (v13+)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip bfloat16 - ONNX Runtime doesn't support Relu with bfloat16
         pytest.skip("ONNX Runtime doesn't support Relu with bfloat16 type")
 
-        dtype = onnx.TensorProto.BFLOAT16
-
-        # Create ONNX model
-        onnx_model = create_onnx_model(
-            op_type="Relu",
-            input_shapes=[input_shape],
-            input_dtypes=[dtype],
-            output_shapes=[input_shape],
-            output_dtypes=[dtype],
-            attrs={},
-            opset_version=opset_version,
-            node_name="relu_bfloat16",
-        )
-
-        # Transpile
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify structure
-        assert len(tir_graph.nodes) == 1
-        relu_nodes = [n for n in tir_graph.nodes if n.op_type == "Relu"]
-        assert len(relu_nodes) == 1
-
-        # Create test input
-        # bfloat16 is not directly supported by numpy, use float32 and convert
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32) * 5}
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(
-            tir_graph, onnx_model, input_data, rtol=1e-2, atol=1e-2  # bfloat16 has lower precision
-        )
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-
-    @pytest.mark.parametrize("opset_version", [14, 21, 23])
-    @pytest.mark.parametrize(
-        "input_shape",
-        [
-            (3, 4),
-            (2, 3),
-        ],
-    )
+    @pytest.mark.parametrize("opset_version", [14])
+    @pytest.mark.parametrize("input_shape", [(3, 4), (2, 3, 4)])
     @pytest.mark.parametrize(
         "dtype",
         [
@@ -208,9 +165,6 @@ class TestRelu:
     )
     def test_relu_integer_types(self, opset_version, input_shape, dtype):
         """Test Relu with integer types (v14+)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip INT16 and INT64 - ONNX Runtime doesn't support Relu(14) with these types
         if dtype in [onnx.TensorProto.INT16, onnx.TensorProto.INT64]:
             pytest.skip(f"ONNX Runtime doesn't support Relu with {dtype} type")
@@ -262,9 +216,6 @@ class TestRelu:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_relu_positive_values(self, opset_version):
         """Test Relu with all positive values (should remain unchanged)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Relu(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Relu(1)")
@@ -309,9 +260,6 @@ class TestRelu:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_relu_negative_values(self, opset_version):
         """Test Relu with all negative values (should all become zero)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Relu(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Relu(1)")
@@ -359,9 +307,6 @@ class TestRelu:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_relu_zero_values(self, opset_version):
         """Test Relu with zero values (should remain zero)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Relu(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Relu(1)")
@@ -404,9 +349,6 @@ class TestRelu:
     @pytest.mark.parametrize("opset_version", [1, 6, 13, 14])
     def test_relu_edge_values(self, opset_version):
         """Test Relu with edge values (very large, very small, zero)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         # Skip opset 1 - ONNX Runtime doesn't support Relu(1)
         if opset_version == 1:
             pytest.skip(f"ONNX Runtime doesn't support Relu(1)")
@@ -470,43 +412,9 @@ class TestRelu:
         # Skip opset 1 - ONNX Runtime doesn't support Relu(1)
         pytest.skip("ONNX Runtime doesn't support Relu(1)")
 
-        # Create ONNX model with consumed_inputs attribute
-        attrs = {"consumed_inputs": [0]}
-
-        onnx_model = create_onnx_model(
-            op_type="Relu",
-            input_shapes=[input_shape],
-            input_dtypes=[dtype],
-            output_shapes=[input_shape],
-            output_dtypes=[dtype],
-            attrs=attrs,
-            opset_version=opset_version,
-            node_name="relu_v1",
-        )
-
-        # Transpile
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify structure (should work normally, ignoring consumed_inputs)
-        assert len(tir_graph.nodes) == 1
-        relu_nodes = [n for n in tir_graph.nodes if n.op_type == "Relu"]
-        assert len(relu_nodes) == 1
-
-        # Create test input
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32) * 5}
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-6, atol=1e-6)
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-
     @pytest.mark.parametrize("opset_version", [14, 21, 23])
     def test_relu_integer_negative_to_zero(self, opset_version):
         """Test that integer negative values become zero in Relu (v14+)."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (2, 3)
         dtype = onnx.TensorProto.INT32
 

@@ -2,7 +2,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Arithmetic operations: Add, Sub, Mul, Div, MatMul, Gemm
+Arithmetic operations: Add, Sub, Mul, Div, Pow, MatMul.
+
+Note: Gemm is decomposed into MatMul + Add (optionally + bias scaling) by its converter
+and does not have a dedicated TIRNode in this module.
 """
 import torch
 from typing import Dict
@@ -10,91 +13,114 @@ from collections import OrderedDict
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.utils.binary_ops import validate_binary_inputs_pytorch_style
+from forge.transpiler.operations.shape_mixins import (
+    BinaryBroadcastShape,
+    MatMulShape,
+)
 
 
-def validate_broadcasting_pytorch_style(
-    shape_a: torch.Size,
-    shape_b: torch.Size,
-    dtype_a: torch.dtype,
-    dtype_b: torch.dtype,
-    op_name: str,
-    tensor_a_name: str,
-    tensor_b_name: str,
-) -> None:
+class PowNode(BinaryBroadcastShape, TIRNode):
     """
-    Validate broadcasting and dtype compatibility following PyTorch style.
+    Element-wise power operation: Z = X ^ Y.
 
-    This function validates:
-    1. Dtype equality: Both tensors must have the same dtype (PyTorch requirement)
-    2. Broadcasting compatibility: Shapes must be compatible for broadcasting
+    Both the base (X) and the exponent (Y) are tensor inputs, matching
+    ``forge.op.Power`` (binary) and ``ttir.pow(%lhs, %rhs)`` which both
+    require two tensor operands.
 
-    Broadcasting rules (PyTorch/NumPy-style):
-    - Shapes are compared from right to left
-    - Two dimensions are compatible if:
-      * They are equal, OR
-      * One of them is 1, OR
-      * One of them doesn't exist (missing dimension)
+    **Dtype handling (ONNX v12+ heterogeneous types):**
+    From opset 12, X has type T and Y has type T1 — they may differ.
+    Output Z always has the same type as X (type T).
+    When Y's dtype differs from X's dtype, :class:`PowConverter` inserts a
+    :class:`~forge.transpiler.operations.other.CastNode` *before* this node
+    in the TIR graph so that both inputs share the same dtype by the time
+    ``eval()`` is called.  No runtime coercion is performed here.
 
-    Args:
-        shape_a: Shape of first tensor
-        shape_b: Shape of second tensor
-        dtype_a: Dtype of first tensor
-        dtype_b: Dtype of second tensor
-        op_name: Name of the operation (for error messages)
-        tensor_a_name: Name of first tensor (for error messages)
-        tensor_b_name: Name of second tensor (for error messages)
+    Shape inference follows NumPy multidirectional broadcasting rules via
+    :class:`BinaryBroadcastShape`.
 
-    Raises:
-        ValueError: If dtypes don't match or shapes are not compatible for broadcasting
+    Maps to ``forge.op.Power(name, X, Y)`` → ``OpType::Power`` → string
+    ``"power"`` → MLIR ``ttir.pow(%lhs, %rhs)``.
     """
-    # 1. Validate dtype equality (PyTorch requirement)
-    if dtype_a != dtype_b:
-        raise ValueError(
-            f"Type mismatch in {op_name}: "
-            f"Input tensors must have the same dtype. "
-            f"{tensor_a_name} has dtype {dtype_a}, "
-            f"{tensor_b_name} has dtype {dtype_b}. "
-            f"PyTorch arithmetic operations require matching dtypes."
+
+    @staticmethod
+    def create(
+        name: str,
+        inputs: OrderedDict[str, TensorInfo],
+        outputs: OrderedDict[str, TensorInfo],
+    ) -> "PowNode":
+        """
+        Create a PowNode.
+
+        Args:
+            name: Node name.
+            inputs: OrderedDict with two entries — X (base) and Y (exponent).
+                Y may be a constant initializer or a runtime activation.
+            outputs: OrderedDict mapping output name to TensorInfo.
+
+        Returns:
+            PowNode instance.
+        """
+        return PowNode(
+            name=name,
+            op_type="Pow",
+            inputs=inputs,
+            outputs=outputs,
+            attrs={},
+            forge_op_name="Power",
         )
 
-    # 2. If shapes are equal, no broadcasting needed
-    if shape_a == shape_b:
-        return
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate the power operation using PyTorch.
 
-    # 3. Validate broadcasting compatibility
-    # Convert to tuples for easier manipulation
-    shape_a_list = list(shape_a)
-    shape_b_list = list(shape_b)
+        Both X and Y are expected to have the same dtype when this node is
+        reached.  If Y originally had a different type (ONNX v12+ heterogeneous
+        T / T1), the :class:`PowConverter` inserts an explicit
+        :class:`~forge.transpiler.operations.other.CastNode` for Y *before*
+        this node so that the dtype contract is already satisfied here.
 
-    # Pad shorter shape with 1s on the left (missing dimensions treated as 1)
-    max_len = max(len(shape_a_list), len(shape_b_list))
-    shape_a_padded = [1] * (max_len - len(shape_a_list)) + shape_a_list
-    shape_b_padded = [1] * (max_len - len(shape_b_list)) + shape_b_list
+        Args:
+            input_tensors: Mapping from input name to tensor.
+                Must contain entries for both X (base) and Y (exponent).
 
-    # Check compatibility from right to left
-    incompatible_dims = []
-    for i in range(max_len - 1, -1, -1):
-        dim_a = shape_a_padded[i]
-        dim_b = shape_b_padded[i]
+        Returns:
+            Mapping from output name to result tensor.
 
-        # Dimensions are compatible if:
-        # 1. They are equal, OR
-        # 2. One of them is 1
-        if dim_a != dim_b and dim_a != 1 and dim_b != 1:
-            incompatible_dims.append((i, dim_a, dim_b))
+        Raises:
+            ValueError: If fewer than 2 tensor inputs are provided, or if
+                dtypes or shapes are incompatible.
+        """
+        if len(self.input_names) < 2:
+            raise ValueError(
+                f"PowNode '{self.name}' requires 2 inputs (base X and exponent Y) "
+                f"but only has {len(self.input_names)}: {self.input_names}. "
+                f"Inputs dict keys: {list(self.inputs.keys())}."
+            )
+        if len(input_tensors) < 2:
+            raise ValueError(
+                f"PowNode '{self.name}' received {len(input_tensors)} input tensor(s) but requires 2. "
+                f"Expected input names: {self.input_names}. "
+                f"Received input names: {list(input_tensors.keys())}"
+            )
+        x = input_tensors[self.input_names[0]]
+        y = input_tensors[self.input_names[1]]
 
-    if incompatible_dims:
-        dim_info = ", ".join([f"dim {d[0]}: {d[1]} vs {d[2]}" for d in incompatible_dims])
-        raise ValueError(
-            f"Broadcasting error in {op_name}: "
-            f"Shapes {shape_a} ({tensor_a_name}) and {shape_b} ({tensor_b_name}) "
-            f"are not compatible for broadcasting. "
-            f"Incompatible dimensions: {dim_info}. "
-            f"Two dimensions are compatible if they are equal OR one is 1."
+        validate_binary_inputs_pytorch_style(
+            x.shape,
+            y.shape,
+            x.dtype,
+            y.dtype,
+            self.op_type,
+            self.input_names[0],
+            self.input_names[1],
+            operation_category="arithmetic",
         )
 
+        return {self.output_names[0]: torch.pow(x, y)}
 
-class AddNode(TIRNode):
+
+class AddNode(BinaryBroadcastShape, TIRNode):
     """
     Addition operation node.
 
@@ -132,17 +158,37 @@ class AddNode(TIRNode):
         Raises:
             ValueError: If dtypes don't match or shapes are incompatible for broadcasting
         """
+        if len(self.input_names) < 2:
+            raise ValueError(
+                f"AddNode '{self.name}' requires 2 inputs but only has {len(self.input_names)}. "
+                f"Input names: {self.input_names}. "
+                f"Inputs dict keys: {list(self.inputs.keys())}. "
+                f"Input tensors provided: {list(input_tensors.keys())}"
+            )
+        if len(input_tensors) < 2:
+            raise ValueError(
+                f"AddNode '{self.name}' received {len(input_tensors)} input tensor(s) but requires 2. "
+                f"Expected input names: {self.input_names}. "
+                f"Received input names: {list(input_tensors.keys())}"
+            )
         a = input_tensors[self.input_names[0]]
         b = input_tensors[self.input_names[1]]
 
-        validate_broadcasting_pytorch_style(
-            a.shape, b.shape, a.dtype, b.dtype, self.op_type, self.input_names[0], self.input_names[1]
+        validate_binary_inputs_pytorch_style(
+            a.shape,
+            b.shape,
+            a.dtype,
+            b.dtype,
+            self.op_type,
+            self.input_names[0],
+            self.input_names[1],
+            operation_category="arithmetic",
         )
 
         return {self.output_names[0]: torch.add(a, b)}
 
 
-class SubNode(TIRNode):
+class SubNode(BinaryBroadcastShape, TIRNode):
     """
     Subtraction operation node.
 
@@ -183,14 +229,21 @@ class SubNode(TIRNode):
         a = input_tensors[self.input_names[0]]
         b = input_tensors[self.input_names[1]]
 
-        validate_broadcasting_pytorch_style(
-            a.shape, b.shape, a.dtype, b.dtype, self.op_type, self.input_names[0], self.input_names[1]
+        validate_binary_inputs_pytorch_style(
+            a.shape,
+            b.shape,
+            a.dtype,
+            b.dtype,
+            self.op_type,
+            self.input_names[0],
+            self.input_names[1],
+            operation_category="arithmetic",
         )
 
         return {self.output_names[0]: torch.sub(a, b)}
 
 
-class MulNode(TIRNode):
+class MulNode(BinaryBroadcastShape, TIRNode):
     """
     Multiplication operation node using PyTorch API.
 
@@ -221,14 +274,21 @@ class MulNode(TIRNode):
         a = input_tensors[self.input_names[0]]
         b = input_tensors[self.input_names[1]]
 
-        validate_broadcasting_pytorch_style(
-            a.shape, b.shape, a.dtype, b.dtype, self.op_type, self.input_names[0], self.input_names[1]
+        validate_binary_inputs_pytorch_style(
+            a.shape,
+            b.shape,
+            a.dtype,
+            b.dtype,
+            self.op_type,
+            self.input_names[0],
+            self.input_names[1],
+            operation_category="arithmetic",
         )
 
         return {self.output_names[0]: torch.mul(a, b)}
 
 
-class DivNode(TIRNode):
+class DivNode(BinaryBroadcastShape, TIRNode):
     """
     Division operation node.
 
@@ -272,25 +332,29 @@ class DivNode(TIRNode):
         a = input_tensors[self.input_names[0]]
         b = input_tensors[self.input_names[1]]
 
-        validate_broadcasting_pytorch_style(
-            a.shape, b.shape, a.dtype, b.dtype, self.op_type, self.input_names[0], self.input_names[1]
+        validate_binary_inputs_pytorch_style(
+            a.shape,
+            b.shape,
+            a.dtype,
+            b.dtype,
+            self.op_type,
+            self.input_names[0],
+            self.input_names[1],
+            operation_category="arithmetic",
         )
 
         is_integer_type = not a.dtype.is_floating_point
 
         if is_integer_type:
-            return {self.output_names[0]: torch.div(a, b, rounding_mode="floor")}
+            # ONNX Div on integers truncates toward zero (C-style), not toward -inf.
+            return {self.output_names[0]: torch.div(a, b, rounding_mode="trunc")}
         else:
             return {self.output_names[0]: torch.div(a, b)}
 
 
-class MatMulNode(TIRNode):
+class MatMulNode(MatMulShape, TIRNode):
     """
-    <<<<<<< Current (Your changes)
-        Matrix multiplication operation node.
-    =======
-        Matrix multiplication operation node using PyTorch API.
-    >>>>>>> Incoming (Background Agent changes)
+    Matrix multiplication operation node using PyTorch API.
 
         Performs matrix multiplication: output = input1 @ input2
         Supports batched matrix multiplication via PyTorch.

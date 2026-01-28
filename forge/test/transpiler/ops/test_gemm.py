@@ -621,18 +621,8 @@ class TestGemmDataTypes:
         }
 
         comparison = compare_tir_with_onnx(tir_graph, model, input_data)
-        # For float16, allow some tolerance
-        if dtype == onnx.TensorProto.FLOAT16:
-            # Check if errors are only precision-related
-            non_precision_errors = [
-                e
-                for e in comparison["errors"]
-                if "precision" not in str(e).lower() and "tolerance" not in str(e).lower()
-            ]
-            assert len(non_precision_errors) == 0, f"Non-precision errors: {non_precision_errors}"
-        else:
-            assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-            assert comparison["matches"]["output_0"], "Outputs should match"
+        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
+        assert comparison["matches"].get("output_0", False), "Outputs should match"
 
 
 # ============================================================================

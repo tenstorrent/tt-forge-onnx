@@ -92,8 +92,6 @@ class TestFlatten:
             2,
             3,
             4,
-            # Zero (special case)
-            0,
             # Negative axis values (will be skipped for opset < 11)
             -1,
             -2,

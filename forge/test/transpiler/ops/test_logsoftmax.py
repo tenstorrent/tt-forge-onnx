@@ -156,10 +156,10 @@ class TestLogSoftmax:
             else:
                 rtol_val, atol_val = 1e-4, 1e-3
         else:
-            # Use relaxed tolerance for opset 1, 10, 11, 13, 14, 21, and 23 due to numerical precision differences
-            if opset_version in [1, 10, 11, 13, 14, 21, 23]:
-                # For opset 10, 13, 14, 21, and 23, use more lenient tolerance for higher dimensional tensors
-                if opset_version in [10, 13, 14, 21, 23] and len(input_shape) >= 2:
+            # Use relaxed tolerance for older opsets due to numerical precision differences
+            if opset_version in [1, 11, 13, 14, 21, 23]:
+                # For opset 13, 14, 21, and 23, use more lenient tolerance for higher dimensional tensors
+                if opset_version in [13, 14, 21, 23] and len(input_shape) >= 2:
                     rtol_val, atol_val = 1e-3, 1e-3
                 else:
                     rtol_val, atol_val = 1e-4, 1e-4
@@ -186,9 +186,6 @@ class TestLogSoftmax:
     @pytest.mark.parametrize("axis", [0, 1, -1, -2])
     def test_logsoftmax_different_axes(self, opset_version, axis):
         """Test LogSoftmax with different axis values."""
-        if opset_version in [24, 25]:
-            pytest.skip(f"Opset {opset_version} not supported by ONNXRuntime (max supported: 23)")
-
         input_shape = (3, 4, 5)
         dtype = onnx.TensorProto.FLOAT
 

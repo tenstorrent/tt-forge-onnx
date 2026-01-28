@@ -20,9 +20,9 @@ def print_tir_graph(tir_graph, title: str = "TIR Graph", detailed: bool = True):
         title: Optional title for the output
         detailed: If True, print detailed node information including attributes
     """
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"{title}")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     # Graph metadata
     print(f"Graph Name: {tir_graph.name}")
@@ -94,4 +94,4 @@ def print_tir_graph(tir_graph, title: str = "TIR Graph", detailed: bool = True):
             if hasattr(node, "forge_op_name") and node.forge_op_name:
                 print(f"    Forge Op: {node.forge_op_function_name}")
 
-    print(f"\n{'='*80}\n")
+    print(f"\n{'=' * 80}\n")

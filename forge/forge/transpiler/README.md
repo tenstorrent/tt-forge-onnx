@@ -2,7 +2,7 @@
 
 ## Motivation: Why We Need the Transpiler
 
-Apache TVM is a comprehensive deep learning compiler stack that combines both runtime components (execution engine, memory management, device management) and compilation components (graph optimization, code generation, operator fusion). However, for Forge, this dual nature creates a fundamental mismatch: we already have our own runtime, so TVM's runtime components are unnecessary, while TVM's compilation path adds complexity through multiple intermediate representations and limits our control over the conversion process.
+Apache TVM is a comprehensive deep learning compiler stack that combines both runtime and compilation components. However, for Forge, this dual nature creates a fundamental mismatch: we already have our own runtime, so TVM's runtime components are unnecessary, while TVM's compilation path adds complexity through multiple intermediate representations and limits our control over the conversion process.
 
 Additionally, TVM's compilation pipeline doesn't provide the transparency and debuggability needed to understand exactly how framework operations are converted to Forge operations, making it difficult to verify correctness and debug conversion issues. We need a lightweight, purpose-built transpiler that focuses solely on compilation—converting framework models to Forge modules—while providing direct control over the conversion pipeline, framework-specific optimizations, and explicit handling of framework version differences (such as ONNX opset versions).
 
@@ -12,18 +12,22 @@ The Forge Transpiler is a direct, transparent, and debuggable compilation system
 
 The transpiler architecture is organized into framework-specific frontends (currently ONNX) that convert framework models into a framework-agnostic TIRGraph—a computational graph representation that captures nodes, inputs, outputs, parameters, and constants. This TIRGraph is then processed by the TranspilerCodeGenerator to map TIR operations to Forge operations and generate executable Python Forge module code.
 
-The system handles the complexity of model conversion through well-defined stages: model validation, shape inference, operation conversion using opset-aware converters, graph construction with proper topology and name sanitization, and finally code generation with memory optimization. Each stage is designed to be transparent and debuggable—the TIRGraph can be executed directly using PyTorch for validation, built-in debug mode compares outputs with ONNX Runtime, and the generated Python code is human-readable—while maintaining explicit opset-aware design that handles multiple ONNX opset versions through version-specific converter logic.
+The system handles the complexity of model conversion through well-defined stages: model validation, shape inference, operation conversion using opset-aware converters, graph construction with proper topology and name sanitization, and finally code generation. Each stage is designed to be transparent and debuggable—the TIRGraph can be executed directly using PyTorch for validation, built-in debug mode compares outputs with ONNX Runtime, and the generated Python code is human-readable—while maintaining explicit opset-aware design that handles multiple ONNX opset versions through version-specific converter logic.
 
-The transpiler is seamlessly integrated into the Forge compilation pipeline as an alternative path to TVM, allowing users to choose between the transpiler path (for transparency, faster compilation, and explicit opset handling) or the TVM path (for advanced graph optimizations and multi-framework support), with both paths producing the same ForgeModule output that proceeds through Forge's graph optimization passes, MLIR compilation, and binary generation. The system is built with extensibility in mind—new operations can be added by implementing converter classes, and the architecture supports future expansion to other frameworks beyond ONNX.
+The transpiler is seamlessly integrated into the Forge compilation pipeline as an alternative path to TVM, allowing users to choose between the transpiler path or the TVM path, with both paths producing the same ForgeModule output that proceeds through Forge's graph passes, MLIR compilation, and binary generation. The system is built with extensibility in mind—new operations can be added by implementing converter classes, and the architecture supports future expansion to other frameworks beyond ONNX.
 
 ## Table of Contents
 
 1. [Quick Start](#quick-start)
 2. [Architecture Overview](#architecture-overview)
+   - [Component Responsibilities](#component-responsibilities)
+   - [Shape Resolution: How Unknown Dimensions Are Resolved](#shape-resolution-how-unknown-dimensions-are-resolved)
 3. [Transpiler Working - Detailed Walkthrough](#transpiler-working---detailed-walkthrough)
 4. [Forge Compilation Pipeline](#forge-compilation-pipeline)
-5. [Compiling MNIST Model: TVM vs Transpiler Path](#compiling-mnist-model-tvm-vs-transpiler-path)
+5. [Compiling Models: TVM vs Transpiler Path](#compiling-mnist-model-tvm-vs-transpiler-path)
 6. [Testing](#testing)
+   - [Operation Tests](#operation-tests)
+   - [Model Tests: MNIST, ResNet-50, BERT, GPT-2](#model-tests)
 
 ---
 
@@ -86,18 +90,73 @@ The transpiler codebase is organized as follows:
 
 ```
 forge/forge/transpiler/
-├── frontends/onnx/          # ONNX-specific frontend
-│   ├── engine.py            # Main transpiler engine
-│   ├── converters/         # Operation converters
-│   └── utils/               # ONNX utilities
-├── core/                    # Framework-agnostic core
-│   ├── graph.py             # TIRGraph implementation
-│   ├── node.py              # TIRNode base class
-│   └── types.py             # Type utilities
-├── operations/              # TIR operation implementations
-└── codegen/                 # Code generation
-    ├── transpiler_generator.py
-    └── transpiler_to_forge.py
+├── frontends/onnx/               # ONNX-specific frontend
+│   ├── engine.py                 # Main transpiler engine (ONNXToForgeTranspiler)
+│   ├── converters/               # Operation converters (30+)
+│   │   ├── activation.py         # Relu, Sigmoid, Tanh, Softmax, Dropout, etc.
+│   │   ├── elementwise_binary.py # Add, Sub, Mul, Div, MatMul, Pow, Gemm
+│   │   ├── elementwise_unary.py  # Abs, Neg, Sqrt, Erf, Log, etc.
+│   │   ├── conv.py               # Conv1d/2d/3d
+│   │   ├── pooling.py            # MaxPool, AvgPool, GlobalAvgPool
+│   │   ├── reduction.py          # ReduceSum, ReduceMean, ReduceMax, ArgMax
+│   │   ├── shape.py              # Reshape, Transpose, Flatten, Cast, Shape
+│   │   ├── reshape.py            # Reshape
+│   │   ├── concat.py             # Concat
+│   │   ├── slice.py              # Slice
+│   │   ├── split.py              # Split
+│   │   ├── gather.py             # Gather, GatherElements
+│   │   ├── expand.py             # Expand
+│   │   ├── pad.py                # Pad
+│   │   ├── squeeze.py            # Squeeze
+│   │   ├── unsqueeze.py          # Unsqueeze
+│   │   ├── clip.py               # Clip
+│   │   ├── layernorm.py          # LayerNormalization
+│   │   ├── condition.py          # Where
+│   │   ├── constant.py           # Constant
+│   │   ├── constantofshape.py    # ConstantOfShape
+│   │   ├── trilu.py              # Trilu
+│   │   ├── gemm.py               # Gemm
+│   │   ├── base.py               # OnnxOpConverter base class
+│   │   └── converter_result.py   # ConverterResult / ConstantResult types
+│   ├── operations/               # ONNX-level shape metadata
+│   │   └── op_shape_meta.py      # Shape evaluation metadata registry
+│   ├── debug/                    # Debug utilities
+│   │   └── validator.py          # ONNX Runtime comparison utilities
+│   └── utils/                    # ONNX utilities
+│       ├── naming.py             # Name sanitization and uniqueness enforcement
+│       ├── attributes.py         # Attribute extraction and value parsing
+│       ├── validation.py         # Constant input lookup & validation
+│       ├── onnx_graph.py         # Graph manipulation helpers
+│       ├── io_builder.py         # Input/output tensor extraction
+│       ├── conversion_logger.py  # Structured conversion/execution logging
+│       ├── constant_value_extractor.py  # Constant tensor value extraction
+│       ├── shape_finder.py       # 4-step input shape resolution + 2-step output shape resolution
+│       ├── subgraph_utils.py     # Subgraph traversal helpers
+│       └── onnx_printer.py       # ONNX model pretty-printing
+├── core/                         # Framework-agnostic core
+│   ├── graph.py                  # TIRGraph implementation
+│   ├── node.py                   # TIRNode base class
+│   ├── types.py                  # TensorInfo and dtype utilities
+│   └── shape_eval.py             # Shape evaluation metadata framework
+├── operations/                   # TIR operation implementations
+│   ├── arithmetic.py             # Add, Sub, Mul, Div, MatMul, Pow
+│   ├── activation.py             # Relu, Sigmoid, Tanh, Softmax, etc.
+│   ├── conv.py                   # Conv1d/2d/3d
+│   ├── pooling.py                # MaxPool, AveragePool, GlobalAveragePool
+│   ├── reduction.py              # ReduceSum, ReduceMean, ReduceMax, ArgMax
+│   ├── shape.py                  # Reshape, Transpose, Squeeze, Unsqueeze, etc.
+│   ├── shape_mixins.py           # Shape computation mixin helpers
+│   ├── normalization.py          # LayerNorm
+│   ├── indexing.py               # Gather, Slice, Split, Concat, Index
+│   ├── comparison.py             # Equal, Greater, Less, etc.
+│   └── other.py                  # Cast, Clip, Identity, Full, Trilu, etc.
+├── utils/                        # Shared transpiler utilities
+│   ├── exceptions.py             # Exception hierarchy (ConversionError, etc.)
+│   ├── binary_ops.py             # Shape broadcasting utilities
+│   └── graph_printer.py          # TIRGraph pretty-printing
+└── codegen/                      # Code generation
+    ├── transpiler_generator.py   # TranspilerCodeGenerator
+    └── transpiler_to_forge.py    # Full pipeline: ONNX → ForgeModule
 ```
 
 ---
@@ -117,32 +176,41 @@ The transpiler architecture is organized into four main layers, each with distin
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  Engine (ONNXToForgeTranspiler)                                  │  │  │
-│  │  │  - Orchestrates conversion pipeline                              │  │  │
+│  │  │  - Orchestrates the full ONNX -> TIRGraph conversion pipeline    │  │  │
 │  │  │  - Model validation (ONNX schema checking)                       │  │  │
 │  │  │  - Shape inference (fills missing tensor shapes)                 │  │  │
+│  │  │  - Resolves symbolic/dynamic dims via ONNX Runtime once          │  │  │
 │  │  │  - Opset extraction & converter map building                     │  │  │
 │  │  │  - Parameter/constant distinction (heuristic-based)              │  │  │
 │  │  │  - Name sanitization & uniqueness enforcement                    │  │  │
-│  │  │  - Debug mode support (ONNX Runtime comparison)                  │  │  │
+│  │  │  - Per Onnx node: resolves shapes, runs converter, updates graph │  │  │
+│  │  │  - Folds constant ops into graph; no runtime node emitted        │  │  │
+│  │  │  - Debug mode: caches ORT tensors for per-node comparison        │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  Converters (OnnxOpConverter subclasses)                         │  │  │
-│  │  │  - One converter per ONNX operation type (20+ converters)        │  │  │
+│  │  │  - One converter class per ONNX op type (30+ converters)         │  │  │
 │  │  │  - Opset-aware conversion via version-specific patterns          │  │  │
-│  │  │  - Returns TIR nodes or constant results                         │  │  │
-│  │  │  - Handles attribute conversion from ONNX to PyTorch format      │  │  │
-│  │  │  - Supports operation decomposition (e.g., Gemm -> MatMul+Add)   │  │  │
-│  │  │  - Examples: ConvConverter, ReluConverter, GemmConverter, etc.   │  │  │
+│  │  │  - Returns TIR nodes or constant results (constant folding)      │  │  │
+│  │  │  - Attribute conversion from ONNX to PyTorch/Forge format        │  │  │
+│  │  │  - Operation decomposition (Gemm->MatMul+Add, Trilu->Where)      │  │  │
+│  │  │  - Input shape resolution before convert() (4-step strategy)     │  │  │
+│  │  │  - Output shape resolution after convert() returns               │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  Utils (utils/)                                                  │  │  │
-│  │  │  - naming.py: Name sanitization and uniqueness enforcement       │  │  │
+│  │  │  - naming.py: Name sanitization & uniqueness enforcement         │  │  │
 │  │  │  - attributes.py: Attribute extraction and value parsing         │  │  │
-│  │  │  - validation.py: ONNX model schema validation                   │  │  │
+│  │  │  - validation.py: Constant input lookup & validation             │  │  │
+│  │  │  - io_builder.py: Input/output TensorInfo dict building          │  │  │
 │  │  │  - onnx_graph.py: Graph manipulation helpers                     │  │  │
-│  │  │  - io_builder.py: Input/output tensor extraction                 │  │  │
+│  │  │  - onnx_printer.py: Model pretty-print with shapes               │  │  │
+│  │  │  - conversion_logger.py: Per-node structured debug logging       │  │  │
+│  │  │  - subgraph_utils.py: Backward trace & subgraph execution        │  │  │
+│  │  │  - constant_value_extractor.py: Compile-time const evaluation    │  │  │
+│  │  │  - shape_finder.py: Unknown dim resolution (rules/fake exec)     │  │  │
 │  │  │  - debug/validator.py: ONNX Runtime comparison utilities         │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
@@ -155,33 +223,42 @@ The transpiler architecture is organized into four main layers, each with distin
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  TIRGraph (graph.py)                                             │  │  │
-│  │  │  - Computational graph representation                            │  │  │
-│  │  │  - Manages nodes in execution order                              │  │  │
-│  │  │  - Tracks topology with producer and consumer mappings           │  │  │
-│  │  │  - Stores parameters (trainable weights) and constants           │  │  │
-│  │  │  - Maintains name mappings between original and sanitized names  │  │  │
-│  │  │  - Uses topological sort for execution order                     │  │  │
-│  │  │  - Memory management via activation dependency computation       │  │  │
-│  │  │  - Direct execution with PyTorch backend                         │  │  │
+│  │  │  - Computational graph (nodes in topological order)              │  │  │
+│  │  │  - Tracks topology via producer and consumer mappings            │  │  │
+│  │  │  - Stores params (trainable), constants, computed tensors        │  │  │
+│  │  │  - Persists computed tensors to disk for runtime access          │  │  │
+│  │  │  - Memory management via activation reference counting           │  │  │
+│  │  │  - Direct execution with PyTorch for validation                  │  │  │
+│  │  │  - Bidirectional name mapping (original <-> sanitized)           │  │  │
 │  │  │  - Debug mode: compares outputs with ONNX Runtime                │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  TIRNode (node.py)                                               │  │  │
-│  │  │  - Base class for all operations                                 │  │  │
-│  │  │  - Stores node attributes: name, op_type, inputs, outputs, attrs │  │  │
-│  │  │  - Manages inputs and outputs as ordered dictionaries            │  │  │
-│  │  │  - Executes operations for validation                            │  │  │
+│  │  │  - Base class for all TIR operations                             │  │  │
+│  │  │  - Stores name, op_type, inputs, outputs, attrs                  │  │  │
+│  │  │  - Executes operations for validation (PyTorch backend)          │  │  │
 │  │  │  - Generates code metadata for Forge module generation           │  │  │
-│  │  │  - Converts attributes to Forge format                           │  │  │
-│  │  │  - Tracks Forge operation names (e.g., "Conv2d", "Relu")         │  │  │
-│  │  │  - Maintains source tracking for original framework node names   │  │  │
+│  │  │  - Translates ONNX attributes to Forge format                    │  │  │
+│  │  │  - Tracks Forge op name (e.g., "Conv2d", "Relu")                 │  │  │
+│  │  │  - Records source ONNX node name for traceability                │  │  │
+│  │  │  - Declares output shape dependency to guide the resolver        │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
-│  │  │  TensorInfo                                                      │  │  │
-│  │  │  - Shape and dtype information                                   │  │  │
-│  │  │  - Type conversion utilities (ONNX <-> PyTorch)                  │  │  │
+│  │  │  Shape Evaluation (shape_eval.py + op_shape_meta.py)             │  │  │
+│  │  │  - Classifies each op by how its output shape is determined:     │  │  │
+│  │  │      SHAPE_ONLY: follows from input shapes alone                 │  │  │
+│  │  │      VALUE_OF_SHAPE_INPUT: depends on a shape-input value        │  │  │
+│  │  │      VALUE_DEPENDENT: requires runtime data (exec skipped)       │  │  │
+│  │  │  - Lets frontends register op metadata without coupling core     │  │  │
+│  │  └──────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                        │  │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  TensorInfo (types.py)                                           │  │  │
+│  │  │  - Carries shape and dtype for a tensor through the pipeline     │  │  │
+│  │  │  - Uses None for unknown dims so partial shapes can propagate    │  │  │
+│  │  │  - Converts between ONNX element types and PyTorch dtypes        │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                     │                                        │
@@ -193,16 +270,24 @@ The transpiler architecture is organized into four main layers, each with distin
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  Operation Nodes (operations/)                                   │  │  │
-│  │  │  - Arithmetic: AddNode, SubNode, MulNode, DivNode, MatMulNode    │  │  │
-│  │  │  - Convolution: Conv1dNode, Conv2dNode, Conv3dNode               │  │  │
-│  │  │  - Activation: ReluNode, SigmoidNode, TanhNode, SoftmaxNode,     │  │  │
-│  │  │                LogSoftmaxNode, LeakyReluNode, DropoutNode        │  │  │
-│  │  │  - Pooling: MaxPool1d/2d/3dNode, AveragePool1d/2d/3dNode         │  │  │
-│  │  │  - Shape: ReshapeNode, TransposeNode, SqueezeNode, UnsqueezeNode │  │  │
-│  │  │  - Reduction: ReduceSumNode, ReduceMeanNode, ReduceMaxNode       │  │  │
-│  │  │  - Other: ConcatNode, ClipNode, CastNode, IdentityNode, FullNode │  │  │
 │  │  │  - All implement PyTorch-based execution for validation          │  │  │
 │  │  │  - All generate code metadata for Forge module generation        │  │  │
+│  │  │  - Arithmetic : AddNode, SubNode, MulNode, DivNode, MatMulNode   │  │  │
+│  │  │  - Activation : ReluNode, SigmoidNode, TanhNode, SoftmaxNode     │  │  │
+│  │  │  - Conv/Pool  : Conv1d/2d/3dNode, MaxPool/AvgPool1d/2d/3dNode    │  │  │
+│  │  │  - Shape      : ReshapeNode, TransposeNode, SqueezeNode          │  │  │
+│  │  │  - Reduction  : ReduceSumNode, ReduceMeanNode, ArgMaxNode        │  │  │
+│  │  │  - Indexing   : GatherNode, SliceNode, ConcatNode, SplitNode     │  │  │
+│  │  │  - Other      : LayerNormNode, CastNode, TriluNode, WhereNode    │  │  │
+│  │  └──────────────────────────────────────────────────────────────────┘  │  │
+│  │                                                                        │  │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  Shape Mixins (shape_mixins.py)                                  │  │  │
+│  │  │  - Formula-based output shape computation per node type          │  │  │
+│  │  │  - Compute output shape from input shapes and attributes         │  │  │
+│  │  │  - No execution needed; reduces cost of shape resolution         │  │  │
+│  │  │  - Cover elementwise, broadcast, matmul, conv, pooling,          │  │  │
+│  │  │    reduction, reshape, transpose, and pad patterns               │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                     │                                        │
@@ -214,26 +299,24 @@ The transpiler architecture is organized into four main layers, each with distin
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  TranspilerCodeGenerator (transpiler_generator.py)               │  │  │
-│  │  │  - Generates complete Python ForgeModule class                   │  │  │
-│  │  │  - Writes header with required imports                           │  │  │
-│  │  │  - Generates class definition with parameter/const registration  │  │  │
-│  │  │  - Writes forward method with operations in topological order    │  │  │
-│  │  │  - Memory optimization: Reference counting algorithm             │  │  │
-│  │  │  - Generates parameter parser method                             │  │  │
-│  │  │  - Handles device-specific data type conversion                  │  │  │
-│  │  │  - Matches ForgeWriter code structure for consistency            │  │  │
+│  │  │  - Generates complete Python ForgeModule class from TIRGraph     │  │  │
+│  │  │  - Writes import header and class definition                     │  │  │
+│  │  │  - Registers params, constants, computed tensors as attributes   │  │  │
+│  │  │  - forward() replays all ops in topological order                │  │  │
+│  │  │  - Memory optimization: del after last use (ref counting)        │  │  │
+│  │  │  - Generates weight-loading from ONNX initializers & .pt file   │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                        │  │
 │  │  ┌──────────────────────────────────────────────────────────────────┐  │  │
 │  │  │  transpiler_to_forge (transpiler_to_forge.py)                    │  │  │
-│  │  │  - Main entry point for transpiler-based module generation       │  │  │
-│  │  │  - Generates TIRGraph via ONNXToForgeTranspiler                  │  │  │
-│  │  │  - Generates code via TranspilerCodeGenerator                    │  │  │
-│  │  │  - Writes generated modules to file system                       │  │  │
-│  │  │  - Dynamically imports generated modules at runtime              │  │  │
-│  │  │  - Loads parameters from framework models                        │  │  │
+│  │  │  - Main entry point for ONNX -> ForgeModule conversion           │  │  │
+│  │  │  - Builds TIRGraph via ONNXToForgeTranspiler                     │  │  │
+│  │  │  - Generates Python source via TranspilerCodeGenerator           │  │  │
+│  │  │  - Writes generated module to file system                        │  │  │
+│  │  │  - Dynamically imports generated module at runtime               │  │  │
+│  │  │  - Loads weights from ONNX initializers & computed tensors       │  │  │
 │  │  │  - Verifies outputs against framework models when enabled        │  │  │
-│  │  │  - Returns generated Forge modules and inputs                    │  │  │
+│  │  │  - Returns generated ForgeModule and sample inputs               │  │  │
 │  │  └──────────────────────────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
@@ -255,343 +338,308 @@ The conversion process flows through these layers in a sequential manner:
 
 The frontend layer handles all ONNX-specific aspects of conversion:
 
-- **Engine** (`engine.py`): The `ONNXToForgeTranspiler` class orchestrates the entire conversion process through a multi-stage pipeline. It validates the ONNX model structure and schema, runs shape inference to determine tensor shapes, extracts the opset version from model metadata, builds opset-specific converter maps, processes initializers (distinguishing trainable parameters from constants), converts each ONNX node using appropriate converters, and constructs the final TIRGraph with proper topology and name mappings. Supports debug mode for ONNX Runtime comparison and parameter freezing options.
+- **Engine** (`engine.py`): The `ONNXToForgeTranspiler` class orchestrates the entire conversion process through a multi-stage pipeline. It validates the ONNX model structure and schema, runs shape inference to determine tensor shapes, optionally resolves dynamic (symbolic) dimensions by executing the model once via ONNX Runtime (`resolve_dynamic_shapes=True`), extracts the opset version from model metadata, builds opset-specific converter maps, processes initializers (distinguishing trainable parameters from constants), converts each ONNX node using appropriate converters, and constructs the final TIRGraph with proper topology and name mappings. Supports debug mode where ONNX Runtime is run once in a single pass to cache all intermediate tensors, which are then compared against TIR outputs per node. Supports parameter freezing options.
 
-- **Converters** (`converters/`): Each ONNX operation type has a corresponding converter class (e.g., `ConvConverter`, `ReluConverter`, `GemmConverter`) that inherits from `OnnxOpConverter`. These converters are opset-aware, explicitly handling different ONNX opset versions (e.g., `Conv` uses `group` in opset < 11, `groups` in opset >= 11). They convert ONNX operations into one or more TIR nodes, handling attribute conversion from ONNX format to PyTorch-compatible format, and performing operation decomposition when necessary (e.g., `Gemm` → `MatMul` + `Add`). Converters return either `List[TIRNode]` for normal operations or `ConstantResult` for constant values.
+- **Converters** (`converters/`): Each ONNX operation type has its own dedicated converter class (30+ total). A converter's job is to take an ONNX node and produce one or more TIR nodes. They handle differences between ONNX opset versions transparently. When an ONNX op has no direct equivalent in Forge (e.g. `Gemm`, `GlobalAveragePool`, `Trilu`), the converter decomposes it into a sequence of simpler supported ops. When the converter's output is a compile-time constant (e.g. a `Constant` node), it returns a constant result instead of a TIR node — the value is stored directly in the graph without generating any runtime computation. Supported op categories: arithmetic (`Add`, `Sub`, `Mul`, `Div`, `MatMul`, `Gemm`, `Pow`), activation (`Relu`, `Sigmoid`, `Tanh`, `Softmax`, `LogSoftmax`, `LeakyRelu`, `Dropout`, `Sqrt`, `Erf`), convolution, pooling, shape ops (`Reshape`, `Transpose`, `Squeeze`, `Unsqueeze`, `Flatten`), reduction (`ReduceSum`, `ReduceMean`, `ReduceMax`, `ArgMax`), indexing (`Gather`, `Slice`, `Split`, `Concat`, `Expand`), normalization (`LayerNormalization`), comparison and logical ops, constants (`Constant`, `ConstantOfShape`), and utilities (`Cast`, `Clip`, `Identity`, `Pad`, `Where`, `Trilu`, `Shape`).
 
-- **Utils** (`utils/`): Helper utilities organized by functionality: naming utilities (`sanitize_name()`, `ensure_unique_name()`, `generate_clean_variable_name()`) convert ONNX names to valid Python identifiers; attribute utilities (`extract_attributes()`, `extract_attr_value()`) extract and convert ONNX attributes to PyTorch-friendly names; validation utilities check ONNX model schema and structure; graph manipulation utilities handle input/output extraction and graph traversal; and debug utilities compare TIR outputs with ONNX Runtime for validation.
+- **Utils** (`utils/`): Helper modules each focused on one responsibility:
+  - `naming.py`: Converts ONNX tensor names into valid Python identifiers, ensuring uniqueness across the generated module
+  - `attributes.py`: Parses ONNX attribute formats (int, float, tensor, list) into PyTorch-friendly Python values
+  - `validation.py`: Checks whether a converter input is a known compile-time constant by searching through params, constants, and computed constants in the TIR graph; raises a distinct error type so the error origin is always unambiguous
+  - `constant_value_extractor.py`: Evaluates compile-time constant values by tracing backward through the TIR graph and executing the constant subgraph; used by converters like `Gather` and `Reshape` that need the actual tensor value at conversion time
+  - `subgraph_utils.py`: Shared graph-tracing utilities — backward BFS trace to classify ancestor tensors as constants or runtime inputs, minimal subgraph construction and execution, topological sorting, and node copying; used by both the shape resolver and the constant value extractor
+  - `shape_finder.py`: Resolves unknown tensor dimensions using a four-step strategy before each converter runs, and a two-step strategy after it returns (see Shape Resolution section below)
+  - `conversion_logger.py`: Structured per-node logging during conversion and TIR graph execution, including node headers, input/output shape summaries, and debug comparison blocks
+  - `debug/validator.py`: Runs ONNX Runtime once in a single pass to cache all intermediate tensors, then compares them against TIR node outputs for numerical validation
+
+#### Shape Resolution: How Unknown Dimensions Are Resolved
+
+ONNX models — especially those exported with dynamic axes — frequently contain symbolic or `None` dimensions. The transpiler resolves all unknown dimensions to concrete integers before generating TIR nodes. Resolution happens at **two points** surrounding every converter call.
+
+**Point 1 — Before the converter: resolve input tensor shapes**
+
+Before each op-specific converter runs, the resolver inspects the incoming input shapes and, for any tensor whose shape contains an unknown dimension, runs the following four-step pipeline:
+
+```
+Step 0 — Graph-proto recovery
+    Some ONNX shape inference passes convert zero-sized dimensions (0) into
+    unknown (None). This step reads the original model declarations to recover
+    those concrete zero values before attempting the backward trace.
+
+Step 1 — Shape rules (no tensor execution)
+    The resolver walks the TIR graph backward from the unknown tensor to
+    collect all ancestor nodes. For each ancestor (in topological order), it
+    applies a pure Python shape formula based on the operation family.
+    Shape maps are seeded from all known constants, params, and already-resolved
+    tensors, then propagated forward through the trace.
+    Fast and deterministic — no PyTorch execution involved.
+
+Step 2 — Constant subgraph execution
+    If all ancestors are constants or params (no runtime model inputs),
+    a minimal subgraph is built from those constants and executed with PyTorch.
+    The shape of the resulting tensor is the answer.
+    Skipped when any ancestor is a genuine runtime model input.
+
+Step 3 — Fake-input execution
+    Same as Step 2 but runtime model inputs are replaced by deterministic dummy
+    tensors, with symbolic dimensions replaced by 1. Skipped when any op in the
+    trace has VALUE_DEPENDENT shape metadata, because fake input values would
+    produce incorrect shapes for ops like Reshape (whose output shape depends on
+    the actual values of its second input, not just its shape).
+```
+
+If all steps fail, an error is raised with a diagnostic showing the tensor name, current shape, trace path, and whether any runtime model input was involved.
+
+**Point 2 — After the converter: resolve output tensor shapes**
+
+Immediately after a converter returns its TIR nodes, with input shapes now fully concrete, the resolver checks whether any output shapes are still unknown (ONNX shape inference may have left them symbolic for dynamic-axis ops like `Where`, `Equal`, `MatMul`, or `Concat`). For each TIR node with unknown outputs:
+
+```
+Step 1 — Shape rules
+    A pure Python shape formula is applied using the concrete input shapes and
+    any constant/param values already in the TIRGraph. No tensor execution needed.
+
+Step 2 — Fake-input subgraph execution
+    A minimal subgraph is built with real constant tensors and synthetic
+    activation tensors constructed from the known concrete shapes. The node is
+    executed and the output shapes are read off the produced tensors.
+    Skipped for VALUE_DEPENDENT nodes (e.g. Reshape).
+```
+
+Resolved shapes are written back into the TIR nodes and output tensors so the engine can propagate them to all downstream converter calls.
+
+**How concrete shapes propagate across nodes**
+
+After each ONNX node is converted, the engine records every resolved output shape. Subsequent converter calls therefore receive concrete shapes and almost never need to trigger the backward trace at all. The trace is only invoked when a downstream node still sees a symbolic dimension — either because ONNX shape inference could not infer it, or because the model uses truly dynamic axes.
+
+**Shape dependency classification**
+
+Each TIR node carries a tag that tells the resolver which resolution strategy is safe to use:
+
+| Category | Meaning | Fake-exec safe? |
+|---|---|---|
+| `SHAPE_ONLY` | Output shape depends only on input shapes (e.g. Relu, Add, Transpose) | Yes |
+| `VALUE_OF_SHAPE_INPUT` | Output shape depends on the *value* of one specific input tensor (e.g. Reshape, Unsqueeze) | Yes — that input is typically a constant |
+| `VALUE_DEPENDENT` | Output shape depends on runtime input values — conservative default | No |
+
+All 30+ supported op types are registered with their category at startup. Unregistered ops default to `VALUE_DEPENDENT` (safest assumption), ensuring the resolver never uses fake inputs where they would produce an incorrect shape.
 
 #### Core Layer (`core/`)
 
 The core layer provides framework-agnostic abstractions that work across all frontends:
 
-- **TIRGraph** (`graph.py`): Represents the computational graph in a framework-agnostic way. It maintains nodes in execution order, topology maps (`producer_map` and `consumer_map`) tracking tensor dependencies, parameters (trainable weights) and constants (non-trainable values), and bidirectional name mappings between original frontend names and sanitized names. The graph can be executed directly using PyTorch for validation via the `run()` method, supports topological sorting using Kahn's algorithm, computes activation dependencies for memory management, and includes debug mode for comparing outputs with ONNX Runtime.
+- **TIRGraph** (`graph.py`): Represents the computational graph in a framework-agnostic way. It maintains nodes in execution order, topology maps (`producer_map` and `consumer_map`) tracking tensor dependencies, three distinct tensor stores — `params` (trainable weights from ONNX initializers), `constants` (non-trainable values from ONNX initializers), and `computed_constants` (tensors produced by ONNX ops such as `Constant`, `ConstantOfShape`, and auxiliary scalars created during conversion that are NOT in the ONNX initializer list) — and bidirectional name mappings between original frontend names and sanitized names. The graph can be executed directly using PyTorch via the `run()` method (inputs are optional for subgraphs whose all inputs are already constants), supports topological sorting using Kahn's algorithm, computes activation dependencies for memory management, and includes an optimized debug mode that runs ONNX Runtime once (single-pass) to cache all intermediate tensors before per-node comparison. A `log_execution` flag suppresses verbose logs for internal utility sub-graphs. The `initializers` property combines `params + constants + computed_constants` for uniform access when all tensor stores are needed together.
 
-- **TIRNode** (`node.py`): Base class for all operations in the TIRGraph. Stores node metadata (name, op_type, inputs/outputs as `OrderedDict[str, TensorInfo]`, attributes), provides execution interface via `eval()` method that executes operations using PyTorch, provides code generation interface via `emit()` method that returns operation metadata for Forge API calls, and handles attribute conversion from PyTorch-compatible format to Forge-specific format via `convert_attrs_to_forge_attrs()` method. Subclasses can override attribute conversion for custom transformations.
+- **Exceptions** (`utils/exceptions.py`): Defines the exception hierarchy used throughout the transpiler — a base error type and distinct subtypes for op conversion failures, structural validation failures, debug comparison failures, unsupported operations, and ONNX model validation failures. Lives in `utils/` (shared across all layers) and is re-exported from `core/__init__.py` for convenient import.
 
-- **Types** (`types.py`): Provides `TensorInfo` class for representing tensor metadata (name, shape with support for dynamic dimensions, ONNX dtype, and derived PyTorch dtype). Includes `onnx_dtype_to_torch_dtype()` utility function that converts ONNX `TensorProto.DataType` integer enums to PyTorch dtypes, supporting FLOAT, INT32, INT64, BOOL, FLOAT16, DOUBLE, and other common types.
+- **TIRNode** (`node.py`): Base class for every operation in the TIRGraph. It stores the operation's name, type, inputs, outputs, and attributes. It can execute itself with PyTorch for validation and emit the metadata needed to generate a Forge API call in the output Python file. Attribute conversion from PyTorch format to Forge's format is done lazily via a property on first access, ensuring any subclass override fires only after the subclass is fully constructed. Each node also carries a shape dependency tag (populated from the registry at construction) that the shape resolver uses to decide which resolution strategies are safe to apply.
+
+- **Shape Evaluation Metadata** (`core/shape_eval.py`): Defines the three shape dependency categories (`SHAPE_ONLY`, `VALUE_OF_SHAPE_INPUT`, `VALUE_DEPENDENT`) and a pluggable registry that lets frontends register per-op-type mappings. The core layer has no knowledge of ONNX — the ONNX frontend registers its own mappings at startup. Unregistered ops default to `VALUE_DEPENDENT` (safest conservative assumption).
+
+- **ONNX Op Shape Metadata** (`frontends/onnx/operations/op_shape_meta.py`): Registers the shape dependency category for all 30+ ONNX op types supported by the frontend. The shape resolver reads these registrations to select the cheapest resolution strategy that is safe for each op.
+
+- **Types** (`types.py`): A lightweight container that carries a tensor's shape and data type through the pipeline, with support for partially-known shapes containing `None` dimensions, and utilities for converting between ONNX and PyTorch data type representations.
 
 #### Operations Layer (`operations/`)
 
-Operations are implemented as `TIRNode` subclasses using PyTorch, enabling direct execution for validation while maintaining framework-agnostic representation:
+Every supported operation is implemented as a concrete `TIRNode` subclass with a PyTorch implementation for validation and code-generation metadata for the output file. Operations are grouped by family:
 
-- **Operation Categories**: Includes arithmetic operations (`AddNode`, `SubNode`, `MulNode`, `DivNode`, `MatMulNode`), convolution operations (`Conv1dNode`, `Conv2dNode`, `Conv3dNode` - automatically selected based on input dimensions), activation functions (`ReluNode`, `SigmoidNode`, `TanhNode`, `SoftmaxNode`, `LogSoftmaxNode`, `LeakyReluNode`, `DropoutNode`), pooling operations (`MaxPool1d/2d/3dNode`, `AveragePool1d/2d/3dNode`), shape operations (`ReshapeNode`, `TransposeNode`, `SqueezeNode`, `UnsqueezeNode`), reduction operations (`ReduceSumNode`, `ReduceMeanNode`, `ReduceMaxNode`), and other operations (`ConcatNode`, `ClipNode`, `CastNode`, `IdentityNode`, `FullNode`).
+- **Arithmetic** — Add, Sub, Mul, Div, MatMul, Pow
+- **Convolution** — Conv1d, Conv2d, Conv3d (selected automatically based on input rank)
+- **Activation** — Relu, Sigmoid, Tanh, Softmax, LogSoftmax, LeakyRelu, Dropout, Erf, Sqrt
+- **Pooling** — MaxPool and AveragePool for 1d/2d/3d, GlobalAveragePool
+- **Shape** — Reshape, Transpose, Squeeze, Unsqueeze
+- **Reduction** — ReduceSum, ReduceMean, ReduceMax, ArgMax
+- **Indexing** — Gather, Slice, Split, Concat, Index
+- **Normalization** — LayerNorm
+- **Comparison** — Equal, Greater, Less, GreaterOrEqual, LessOrEqual
+- **Logical** — LogicalAnd, LogicalNot
+- **Other** — Cast, Clip, Identity, Full (constant tensor), Trilu, Where
 
-- **Implementation Pattern**: All operations inherit from `TIRNode` and implement `eval()` method using PyTorch functions (e.g., `torch.nn.functional.relu()` for `ReluNode`), implement `emit()` method that returns metadata dictionary for code generation (typically uses base class implementation), and can optionally override `convert_attrs_to_forge_attrs()` for custom attribute transformations.
-
-- **Usage**: Operations can be executed directly for validation (e.g., `node.eval({"input": tensor})` returns output dictionary), and they emit metadata that describes how they should be generated in Python code (e.g., `forge.op.Relu(...)`).
+**Shape Mixins** (`operations/shape_mixins.py`): Each operation class also inherits a shape mixin that provides a pure-Python formula for computing the output shape without executing the operation. This allows the shape resolver to determine output shapes cheaply before (or instead of) running PyTorch. Mixins cover all operation families — elementwise, broadcast, matmul, convolution, pooling, reduction, reshape, transpose, pad, concat, and others — so the resolver always has a formula-based path available as its first and cheapest option.
 
 #### Codegen Layer (`codegen/`)
 
-The codegen layer transforms `TIRGraph` into executable Python code that implements a `ForgeModule`:
+The codegen layer transforms a `TIRGraph` into a runnable Python file that implements a `ForgeModule`:
 
-- **TranspilerCodeGenerator** (`transpiler_generator.py`): Generates complete Python `ForgeModule` class from `TIRGraph`. It writes header with required imports (`torch`, `forge`, `forge.op`, `ForgeModule`), generates class definition with `__init__` method that registers parameters (trainable weights) and constants (non-trainable values) with proper device-specific data format handling, generates `forward()` method with operations in topological order formatted as Forge API calls (e.g., `forge.op.Conv2d(...)`), implements reference counting algorithm (`_compute_inputs_to_delete()`) to determine which intermediate activations can be safely deleted for memory optimization, and generates `process_framework_parameters()` method that loads weights from ONNX model into the Forge module. The generated code matches `ForgeWriter` structure for consistency.
+- **TranspilerCodeGenerator** (`transpiler_generator.py`): Generates the complete `ForgeModule` Python class from the TIRGraph. The generated class `__init__` registers all trainable parameters, ONNX-initializer constants, and computed constants (tensors that were produced during transpilation, such as `ConstantOfShape` outputs) as module attributes with proper device-aware data format handling. The `forward` method replays every operation in topological order as Forge API calls. The generator also applies a reference-counting algorithm so that intermediate activations are deleted as soon as they are no longer needed, keeping peak memory usage low. A parameter-loading method is generated that loads weights from the ONNX file and, if a companion `.pt` file was saved for computed constants, loads those too.
 
-- **transpiler_to_forge** (`transpiler_to_forge.py`): Orchestrates the complete pipeline from framework model to executable Forge module. It generates `TIRGraph` via `ONNXToForgeTranspiler.transpile()`, generates Python code via `TranspilerCodeGenerator.generate()`, writes generated code to file system (`generated_modules/{graph_name}.py`), dynamically imports the generated module at runtime using `importlib`, instantiates the `ForgeModule` class from imported module, loads parameters from ONNX model using `process_framework_parameters()`, and optionally verifies outputs by comparing Forge module outputs with framework outputs. Returns tuple of `(forge_modules, forge_inputs)` for integration with Forge compilation pipeline.
+- **transpiler_to_forge** (`transpiler_to_forge.py`): The single entry point that ties the whole pipeline together. It calls the engine to build the TIRGraph (passing real sample inputs so dynamic shapes can be resolved), saves any computed constants to a `.pt` file on disk, calls the code generator to produce the Python source, writes that source to a file, imports it at runtime, instantiates the `ForgeModule`, loads all weights, and optionally runs a numerical comparison against the original ONNX model to verify correctness. Returns the generated module and sample inputs to the Forge compilation pipeline.
 
 ---
 
 ## Transpiler Working - Detailed Walkthrough
 
-### High-Level Conversion Pipeline
-
-The transpiler converts ONNX models to Forge modules through a well-defined pipeline with five main stages:
+The transpiler converts an ONNX `ModelProto` into a runnable Python `ForgeModule` through five sequential stages. All five stages are orchestrated by `transpiler_to_forge.py`; stages 1–4 run inside `ONNXToForgeTranspiler.transpile()`, and stage 5 runs in `transpiler_to_forge()`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ONNX Model                                          │
-│  (ModelProto: nodes, initializers, inputs, outputs, metadata)               │
+│                              ONNX Model                                     │
+│  (ModelProto: nodes, initializers, inputs, outputs, opset metadata)         │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              Stage 1: Model Validation & Preparation                        │
-│  • Validate ONNX model structure and schema                                 │
-│  • Run shape inference to determine tensor shapes                           │
-│  • Extract opset version from model metadata                                │
-│  • Build converter map for the specific opset version                       │
+│  Stage 1 — Validate & Prepare                                               │
+│  • Validate model against ONNX spec (optional, raises on failure)           │
+│  • Extract opset version and build the op-type → converter map              │
+│  • Run ONNX shape inference to fill in missing tensor shapes                │
+│  • Remove initializers from the graph input list                            │
+│  • Optionally run model once via ONNX Runtime to resolve dynamic dims       │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              Stage 2: Process Initializers                                  │
-│  • Distinguish parameters (trainable weights) from constants                │
-│  • Convert ONNX tensors to PyTorch tensors                                  │
-│  • Store in TIRGraph.params (trainable) or TIRGraph.constants               │
+│  Stage 2 — Process Initializers                                             │
+│  • Classify each initializer as param (trainable) or constant               │
+│    using name/shape/dtype heuristics, or freeze_params flag                 │
+│  • Convert ONNX tensors to PyTorch and store in TIRGraph                    │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              Stage 3: Convert ONNX Nodes → TIR Nodes                        │
-│  For each ONNX node:                                                        │
-│    1. Look up converter for operation type                                  │
-│    2. Extract input/output tensor information (shapes, dtypes)              │
-│    3. Extract node attributes                                               │
-│    4. Call converter with opset version                                     │
-│    5. Converter returns List[TIRNode] or ConstantResult                     │
-│    6. Add nodes to graph with name sanitization                             │
+│  Stage 3 — Convert ONNX Nodes → TIR Nodes                                  │
+│  Pre-scan: reject all unsupported op types upfront (fail-fast)              │
+│  For each node (in topological order):                                      │
+│    1. Build TensorInfo dicts for inputs and outputs                         │
+│    2. Extract and normalize ONNX attributes                                 │
+│    3. Resolve unknown input shapes (4-step strategy)                        │
+│    4. Call the opset-bound converter                                        │
+│    5. Resolve unknown output shapes (2-step strategy)                       │
+│    6. Store: TIR nodes → graph, ConstantResult → computed_constants         │
+│    7. Propagate concrete output shapes to value_info_map                    │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              Stage 4: Build TIRGraph                                        │
-│  • Sanitize input/output names (convert to valid Python identifiers)        │
-│  • Build topology maps (producer/consumer relationships)                    │
-│  • Compute activation dependencies for memory management                    │
-│  • Store name mappings (original ↔ sanitized)                               │
+│  Stage 4 — Finalize TIRGraph                                                │
+│  • Confirm output name → sanitized name mappings                            │
+│  • Compute activation dependency map (drives memory management)             │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         TIRGraph                                            │
-│  (Framework-agnostic intermediate representation)                           │
-│  • Nodes in topological order                                               │
-│  • Parameters and constants                                                 │
-│  • Topology maps                                                            │
-│  • Name mappings                                                            │
+│                    TIRGraph (complete)                                      │
+│  • TIR nodes in topological order                                           │
+│  • params, constants, computed_constants                                    │
+│  • producer_map / consumer_map topology                                     │
+│  • Bidirectional original ↔ sanitized name maps                             │
+│  • Activation dependency map                                                │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              Stage 5: Generate & Instantiate Forge Module                   │
-│  • Generate ForgeModule class definition                                    │
-│  • Generate __init__ with parameter/constant registration                   │
-│  • Generate forward() method with operations in topological order           │
-│  • Compute memory optimization (which activations to delete)                │
-│  • Generate process_framework_parameters() method                           │
-│  • Write code to file (generated_modules/model.py)                          │
-│  • Dynamically import module using importlib                                │
-│  • Instantiate ForgeModule class                                            │
-│  • Load parameters from ONNX model                                          │
+│  Stage 5 — Generate & Instantiate ForgeModule                               │
+│  • Save computed_constants to {model}_constants.pt (before codegen)         │
+│  • Generate ForgeModule Python class from TIRGraph                          │
+│    - __init__: registers params, constants, computed constants              │
+│    - forward(): ops in topological order as Forge API calls                 │
+│    - Memory optimization: del after last use (reference counting)           │
+│    - process_framework_parameters(): loads weights + computed constants     │
+│  • Write source to generated_modules/{model_name}.py                       │
+│  • Import module at runtime via importlib                                   │
+│  • Instantiate ForgeModule and load all weights (2-phase loading)           │
+│  • Optionally verify outputs against original ONNX model                   │
 └──────────────────────────────┬──────────────────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      ForgeModule                                            │
-│  (Ready for execution)                                                      │
+│                    ForgeModule (ready for Forge compilation)                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Detailed Stage Explanations
+### Stage 1 — Validate & Prepare
 
-#### Stage 1: Model Validation & Preparation
+The goal of this stage is to give every subsequent stage a clean, fully-shaped model with no ambiguity about opset version, tensor shapes, or graph structure.
 
-Before conversion begins, the transpiler validates and prepares the ONNX model through a systematic validation and setup process:
+**Validation** (optional, `validate_model=True`): `onnx.checker.check_model()` verifies the model conforms to the ONNX specification. Structural problems, schema violations, missing required fields, and type mismatches are caught here before any conversion work begins. Failure raises `ONNXModelValidationError` immediately.
 
-**Model Validation**: The ONNX model undergoes comprehensive validation to ensure it conforms to the ONNX specification:
-- **Structural Validation**: Verifies that the model contains all required components including version information, opset definitions, and graph structure
-- **Schema Validation**: Checks that all operations in the graph conform to ONNX operator schemas for the specified opset version, ensuring operations are used correctly
-- **Type Checking**: Validates that tensor data types are consistent throughout the graph—input types must match what operations expect, and operation outputs must match what their consumers expect
-- **Graph Integrity**: Verifies that the graph is well-formed with no dangling references, all tensor references point to valid sources, and all nodes have proper input/output connections
-- **Early Error Detection**: If validation fails, the process stops immediately with a clear error message, preventing wasted computation on invalid models
+**Opset extraction**: The primary opset version is read from the model's `opset_import` list. This number determines which conversion logic applies to every op. If absent, the transpiler defaults to opset 1. Different opset versions can move attributes to tensor inputs, rename fields, or change operation semantics, so this must be determined first.
 
-**Shape Inference**: The transpiler determines tensor shapes throughout the graph by propagating shape information:
-- **Shape Propagation**: Traverses the graph in execution order, starting from model inputs and propagating shape information through each operation to determine output shapes
-- **Operation Shape Rules**: Each operation type has mathematical rules for computing output shapes from input shapes and operation parameters (e.g., convolution output height depends on input height, padding, kernel size, stride, and dilation)
-- **Dynamic Dimensions**: Handles cases where dimensions cannot be determined statically (e.g., variable batch sizes or sequence lengths), marking them as dynamic for later handling
-- **Graceful Degradation**: If shape inference encounters issues, the transpiler continues with available shape information rather than failing, using whatever shape data is present in the model
+**Converter map building**: A dictionary from ONNX op-type string to converter function is built. Each converter is retrieved via `get_converter(opset)`, which binds the opset version at lookup time. The opset does not need to be passed again at call time.
 
-**Opset Extraction**: The ONNX opset version is identified from the model metadata:
-- **Version Reading**: Extracts the primary opset version from the model's metadata, which determines which version of each operation specification to use
-- **Default Behavior**: If no opset is explicitly specified, assumes the oldest supported version (opset 1) for backward compatibility
-- **Version Handling**: While ONNX models can specify multiple opsets for different operation domains, the transpiler uses the primary opset for the main operation set
-- **Version Impact**: Different opset versions may change attribute names, move attributes to become inputs, introduce new operations, or modify operation behavior, so the correct version must be identified
+**Shape inference**: `onnx.shape_inference.infer_shapes()` propagates shapes and dtypes from model inputs forward through all nodes, filling in whatever can be determined statically. Remaining dynamic dimensions (symbolic strings like `"__unk__"`, or `None`) stay as-is and are resolved later by the inline shape resolver. Failure is fatal — the transpiler cannot proceed without shape information.
 
-**Converter Map Building**: A lookup table is created mapping each ONNX operation type to its corresponding converter:
-- **Map Creation**: Builds a dictionary that maps operation type names (like "Conv", "Relu", "Gemm") to their converter functions
-- **Opset Binding**: Each converter is configured for the specific opset version, ensuring version-specific conversion logic is applied
-- **Converter Coverage**: Registers converters for all supported operation categories including arithmetic operations, activation functions, convolutions, pooling operations, reduction operations, shape manipulation operations, and constant operations
-- **Fast Lookup**: The map structure enables instant lookup of converters during node conversion, making the conversion process efficient even for large models with many operations
+**Remove initializers from inputs**: ONNX models sometimes list weight tensors in the graph input list. This step removes them, leaving only the true runtime inputs that the caller must supply.
 
-#### Stage 2: Process Initializers
+**Dynamic shape resolution** (optional, `resolve_dynamic_shapes=True`): When sample inputs are provided, the model is run once via ONNX Runtime with those concrete inputs. The actual integer value of every symbolic or unknown dimension (across all inputs, outputs, and intermediate tensors) is collected and written back into the model proto in-place. The patched model is used for the rest of the conversion so every converter receives fully concrete shapes without triggering backward traces. This is essential for models such as GPT-2 and BERT that are exported with dynamic sequence dimensions.
 
-Initializers are pre-computed tensor values stored in the ONNX model. The transpiler processes each initializer to distinguish trainable parameters from non-trainable constants and convert them to PyTorch tensors:
+---
 
-**Initializer Processing**: The transpiler iterates through all initializers in the ONNX model:
-- **Tensor Extraction**: Extracts tensor data from the ONNX format, handling various storage methods (embedded data, external files, etc.)
-- **Type Conversion**: Converts tensor data types from ONNX format to PyTorch format, mapping ONNX type enums to PyTorch dtype objects
-- **Shape Preservation**: Maintains the original tensor dimensions and shape information from the ONNX model
-- **Name Tracking**: Uses the tensor name as an identifier for storage and later reference
+### Stage 2 — Process Initializers
 
-**Parameter vs Constant Distinction**: The transpiler uses heuristics to classify initializers as either trainable parameters or non-trainable constants:
-- **Constant Indicators**:
-  - Names containing "constant" (case-insensitive) typically indicate non-trainable values
-  - Scalar tensors or single-element tensors are usually constants rather than weights
-  - Integer or boolean type tensors that aren't weights or biases are often constants (like indices or masks)
-  - Explicit naming patterns that suggest constant values
-- **Parameter Indicators**:
-  - Weight tensors typically have multi-dimensional shapes matching layer configurations (e.g., convolution weights have shape matching input/output channels and kernel dimensions)
-  - Bias tensors are usually one-dimensional with shape matching output channels
-  - Any tensor that doesn't match constant patterns is treated as a trainable parameter
-- **Storage Separation**: Parameters are stored separately from constants, allowing the code generator to handle them differently (parameters need gradient tracking, constants don't)
-- **Parameter Freezing Option**: The transpiler supports an option to treat all initializers as constants, which is useful for inference-only models where training is not needed
+ONNX initializers are the pre-computed tensors stored in the model file — weights, biases, embedding tables, positional encodings, and similar values. Each is converted from ONNX format to a PyTorch tensor and classified as either a **parameter** (trainable) or a **constant** (non-trainable).
 
-**Tensor Conversion**: During conversion, several transformations occur:
-- **Dtype Mapping**: ONNX data types (like FLOAT, INT32, INT64, BOOL, FLOAT16, DOUBLE) are mapped to their PyTorch equivalents, ensuring type compatibility
-- **Memory Layout**: Tensors are stored in contiguous memory using row-major (C-style) layout, matching ONNX's storage format
-- **Device Placement**: Tensors are initially created on CPU; device placement for execution happens later in the Forge compilation pipeline
+**Classification heuristics** (when `freeze_params=False`):
+- Classified as a constant if the name contains "constant" (case-insensitive), the tensor is a scalar, or it has an integer/boolean dtype and is not a weight or bias
+- Everything else is classified as a parameter
 
-#### Stage 3: Convert ONNX Nodes → TIR Nodes
+When `freeze_params=True`, all initializers are treated as constants regardless of name or dtype.
 
-Each ONNX operation node is converted to one or more TIR nodes using opset-aware converters. This stage processes nodes sequentially, maintaining graph topology and name mappings:
+Parameters go into `tir_graph.params`; constants go into `tir_graph.constants`. The code generator handles them differently: parameters are registered as trainable module attributes, constants as fixed buffers.
 
-**Node Conversion Process**: The transpiler iterates through all operation nodes in the ONNX graph in order:
-- **Node Information Extraction**: For each node, extracts the operation type, input tensor names, output tensor names, and tracks the node's position in the graph
+---
 
-**Step 1: Converter Lookup**:
-- **Operation Type Matching**: Looks up the appropriate converter for the operation type from the converter map built in Stage 1
-- **Error Handling**: If no converter exists for an operation type, the conversion fails with a clear error message indicating the unsupported operation
-- **Version-Specific Logic**: The converter retrieved is already configured for the specific opset version, ensuring the correct conversion logic is applied
+### Stage 3 — Convert ONNX Nodes → TIR Nodes
 
-**Step 2: Tensor Information Extraction**:
-- **Input Tensor Metadata**: For each input to the operation, looks up tensor shape and type information from either shape inference results or initializer data
-- **Output Tensor Metadata**: Determines output tensor shapes and types based on operation semantics and input shapes
-- **Shape Calculation**: Uses operation-specific rules to compute output shapes (e.g., convolution output dimensions depend on input size, kernel size, padding, stride, and dilation)
-- **Metadata Storage**: Creates tensor metadata objects that capture name, shape (which may include unknown dimensions), and data type information
+This is the core of the transpiler. Every ONNX node is converted into one or more TIR nodes, or into a constant value if its output can be determined at compile time.
 
-**Step 3: Attribute Extraction**:
-- **Attribute Reading**: Extracts all attributes associated with the operation node
-- **Name Normalization**: Converts ONNX attribute names to PyTorch-compatible names (e.g., "axis" becomes "dim", "dilations" becomes "dilation")
-- **Format Conversion**: Transforms attribute values from ONNX format to PyTorch format (e.g., lists become tuples, padding format changes from ONNX's begin/end pairs to PyTorch's symmetric pairs)
-- **Type Conversion**: Converts attribute values to appropriate Python types (integers, floats, strings, or tensors)
-- **Default Application**: Applies operation-specific default values when attributes are missing (e.g., convolution defaults to stride of 1, no padding, no dilation, single group)
+**Pre-scan**: Before the conversion loop starts, all nodes are scanned against the converter map. Any unsupported op types are collected and reported together in a single `UnsupportedOperationError`. This prevents partial conversion failures midway through large models.
 
-**Step 4: Converter Invocation**:
-- **Converter Execution**: Calls the converter with the node information, tensor metadata, and converted attributes
-- **Opset-Aware Processing**: The converter uses the opset version to handle version-specific differences (e.g., older opsets use different attribute names than newer ones)
-- **Attribute Transformation**: The converter transforms ONNX attributes to PyTorch-compatible formats, handling differences in representation
-- **Operation Decomposition**: Some converters break complex operations into simpler ones (e.g., general matrix multiply becomes matrix multiplication plus addition, asymmetric padding becomes a padding operation followed by symmetric convolution)
-- **TIR Node Creation**: The converter creates one or more TIR nodes representing the operation with all necessary information
+**Per-node conversion loop** (nodes processed in ONNX graph order, which is topological):
 
-**Step 5: Result Processing**:
-- **Result Type Determination**: Checks whether the converter returned computational nodes or a constant value
-- **TIR Nodes Handling**: For computational nodes:
-  - Validates that nodes have all required information and valid connections
-  - Sanitizes node names to be valid Python identifiers
-  - Updates name mappings between original ONNX names and sanitized names
-  - Handles operations that produce multiple outputs (like split operations)
-  - Adds nodes to the graph, which automatically updates topology tracking
-  - Records mappings for debug mode comparison
-- **Constant Handling**: For constant values:
-  - Extracts the constant tensor value and output name
-  - Stores the constant directly in the graph's constants dictionary
-  - Updates name mappings
-  - Skips creating a computational node since constants don't need execution
+1. **Build TensorInfo dicts** — For each node input, the shape and dtype are looked up from `value_info_map` (populated by shape inference and updated after each previous node). If not found there, the value is taken directly from params or constants. For each node output, shape/dtype come from the shape inference results.
 
-**Opset-Specific Handling**: Different ONNX opset versions handle operations differently:
-- **Convolution**: Older opsets use "group" attribute, newer opsets use "groups"
-- **Reshape**: Older opsets have shape as an attribute, newer opsets have shape as an input tensor
-- **Squeeze/Unsqueeze**: Older opsets have axes as attributes, newer opsets have axes as input tensors
-- **Padding**: Older opsets use different attribute names than newer opsets
+2. **Extract attributes** — ONNX attributes are parsed from the node proto and converted to Python values. Attribute names are normalised to PyTorch conventions (e.g. `dilations` → `dilation`). Defaults are applied for any missing optional attribute.
 
-**Operation Decomposition**: Some operations are decomposed into simpler operations:
-- **General Matrix Multiply**: Broken down into matrix multiplication followed by addition
-- **Asymmetric Padding**: Split into a padding operation followed by symmetric convolution
-- **Multi-Output Operations**: Operations that produce multiple outputs create multiple TIR nodes, one for each output
+3. **Resolve unknown input shapes** — Before the converter is called, any input tensor whose shape still contains a `None`, a symbolic string, or a negative integer is resolved by the inline shape resolver using a four-step strategy (see [Shape Resolution](#shape-resolution-how-unknown-dimensions-are-resolved)). Converters always receive fully concrete input shapes.
 
-#### Stage 4: Build TIRGraph
+4. **Call the converter** — The opset-bound converter function is called with the node proto, TensorInfo dicts, attributes, the graph proto, and the TIRGraph. The converter may decompose the ONNX op into multiple TIR nodes (e.g. `Gemm` → `MatMul` + `Add`, `GlobalAveragePool` → chain of `ReduceMean`, `Trilu` → mask + `Where`).
 
-The TIRGraph is constructed with proper topology, name mappings, and memory management information. This stage finalizes the graph structure and prepares it for execution or code generation:
+5. **Resolve unknown output shapes** — After the converter returns, any output tensor whose shape is still unknown is resolved using a two-step strategy (shape rules, then fake-input execution). `VALUE_DEPENDENT` nodes (e.g. `Reshape`) skip fake execution.
 
-**Graph Initialization**: The TIRGraph is created with all necessary data structures:
-- **Basic Information**: Stores the graph name, framework identifier, debug mode setting, and reference to the original ONNX model for debugging
-- **Node Collection**: Maintains a list of all operation nodes that will be populated during conversion
-- **Parameter and Constant Storage**: Separate dictionaries store trainable parameters and non-trainable constants
-- **Topology Tracking**: Creates maps to track which nodes produce which tensors and which nodes consume which tensors
-- **Name Mapping**: Maintains bidirectional mappings between original ONNX names and sanitized Python-compatible names
+6. **Store the result**:
+   - *TIR nodes*: Each node gets a sanitized output name (e.g. `conv2d_0`, `relu_1`) generated from the op type and a counter. Bidirectional name mappings are updated. Each node is added to the TIRGraph, which automatically updates the `producer_map` and `consumer_map`.
+   - *ConstantResult*: The tensor value is stored in `tir_graph.computed_constants` (distinct from `tir_graph.constants` which holds ONNX initializers). Scalar 0-d tensors are reshaped to 1-d before storage. No TIR node is created.
 
-**Name Sanitization Process**: ONNX names often contain characters invalid for Python identifiers, so they must be sanitized:
-- **Input Name Processing**: For each graph input:
-  - Extracts the original name from the ONNX model
-  - Replaces invalid characters (colons, slashes, dots, dashes, spaces) with underscores
-  - Removes consecutive underscores and trims leading/trailing underscores
-  - Ensures names don't start with digits (prepends prefix if needed)
-  - Ensures uniqueness by appending numeric suffixes if names collide
-  - Preserves input names more closely since users may reference them
-  - Stores mappings between original and sanitized names
-- **Output Name Generation**: For graph outputs:
-  - Generates clean, readable names based on operation type (e.g., "conv2d_0", "relu_1")
-  - Uses operation type and a counter to ensure uniqueness
-  - Makes generated code more readable and maintainable
-- **Node Name Sanitization**: Each node's name is sanitized when added to the graph, ensuring all names are valid Python identifiers
+7. **Propagate shapes** — Resolved output shapes are written back into `value_info_map` so the next node in the loop reads concrete shapes directly, without triggering another backward trace.
 
-**Topology Map Construction**: The graph builds maps to track tensor dependencies:
-- **Producer Map**: Records which node produces each tensor, enabling quick lookup of tensor sources
-- **Consumer Map**: Records all nodes that consume each tensor, enabling detection of multi-consumer scenarios
-- **Incremental Building**: These maps are built incrementally as nodes are added, keeping the graph structure up-to-date
-- **Topology Validation**: After all nodes are added, validates that:
-  - All tensor references point to valid sources (inputs, initializers, or node outputs)
-  - The graph contains no cycles (would prevent execution)
-  - All graph outputs are actually produced by some node
+**Opset differences handled per-converter**:
+- `Reshape`: shape as attribute (old) vs. input tensor (opset ≥ 5)
+- `Squeeze`/`Unsqueeze`: axes as attribute (old) vs. input tensor (opset ≥ 13)
+- `ReduceSum`: axes as attribute (old) vs. optional input tensor (opset ≥ 18)
 
-**Activation Dependency Computation**: The graph computes which activations are needed by which operations:
-- **Reverse Dependency Graph**: Builds a map showing which tensors depend on which other tensors
-- **Dependency Tracking**: For each operation, tracks which input tensors are needed to compute each output tensor
-- **Memory Management**: This information enables:
-  - Garbage collection during graph execution (tensors can be deleted when no longer needed)
-  - Memory optimization in code generation (reference counting determines when to free memory)
-  - Activation lifetime tracking (knowing when an intermediate result can be safely discarded)
+---
 
-**Graph Finalization**: The graph undergoes final validation and setup:
-- **Topological Sort**: Computes execution order ensuring all dependencies are satisfied, and verifies the graph is acyclic
-- **Output Validation**: Verifies that all declared graph outputs are actually reachable and produced by valid nodes
-- **Name Mapping Completion**: Finalizes all name mappings between original ONNX names and sanitized names
-- **Debug Mode Setup**: If debug mode is enabled, stores the original ONNX model and builds mappings for comparing outputs with ONNX Runtime
+### Stage 4 — Finalize TIRGraph
 
-#### Stage 5: Generate & Instantiate Forge Module
+The TIRGraph has been built incrementally throughout stages 1–3. It was created at the start of `transpile()`, input names were sanitized before the conversion loop, and topology maps were updated node-by-node during stage 3. Two finalization steps complete it:
 
-The TIRGraph is converted to executable Python code that implements a ForgeModule. This stage produces human-readable Python code and creates an executable module instance:
+**Output name resolution**: The final list of graph output names is confirmed. Their sanitized identifiers were pre-registered before the conversion loop, but this step sets the definitive `tir_graph.outputs` list, handling edge cases where an output comes directly from a constant or parameter.
 
-**Code Generation**: The code generator creates a complete Python class from the TIRGraph:
-- **Header Generation**: Writes necessary Python imports including PyTorch, Forge framework, and Forge operations
-- **Class Definition**: Generates a ForgeModule subclass with:
-  - **Initialization Method**: Registers all parameters (trainable weights) and constants (non-trainable values) with their shapes and data types, handling device-specific data format requirements
-  - **Forward Method**: Generates the computation graph with operations in topological order, formatted as Forge API calls
-  - **Parameter Parser Method**: Generates code to load weights from the ONNX model into the Forge module
+**Activation dependency computation**: For each TIR node, the graph records which of its outputs are consumed by later nodes. This map tells the code generator exactly when each intermediate activation can be safely deleted after its last use, keeping peak memory low. The same map is used during direct PyTorch execution of the graph for garbage collection between nodes.
 
-**Memory Optimization**: The code generator implements a reference counting algorithm to optimize memory usage:
-- **Reference Counting**: Counts how many times each intermediate tensor is used by subsequent operations
-- **Deletion Marking**: Identifies which tensors can be safely deleted after their last use
-- **Code Insertion**: Inserts code to delete unused intermediate activations, reducing memory footprint during execution
-- **Safety**: Only deletes intermediate activations, never model inputs, parameters, or constants
+---
 
-**File I/O**: The generated Python code is written to disk:
-- **Directory Management**: Creates a directory for generated modules if it doesn't exist
-- **File Writing**: Writes the complete Python code to a file with a name based on the model name
-- **File Organization**: Generated files are stored in a dedicated directory for easy management
+### Stage 5 — Generate & Instantiate ForgeModule
 
-**Dynamic Import**: The generated module is loaded at runtime:
-- **Module Loading**: Uses Python's import system to dynamically load the generated module file
-- **Code Execution**: Executes the module code, which defines the ForgeModule class
-- **Class Availability**: Makes the ForgeModule class available for instantiation
+This stage (in `transpiler_to_forge.py`) takes the complete TIRGraph and produces a running `ForgeModule` instance with all weights loaded.
 
-**Module Instantiation**: The ForgeModule class is instantiated:
-- **Instance Creation**: Creates an instance of the generated ForgeModule class
-- **Structure Initialization**: The initialization method sets up the module structure, registering parameters and constants (but not loading values yet)
-- **Empty State**: At this point, the module has the correct structure but no weights loaded
+**Save computed constants** (before code generation): Any tensors in `tir_graph.computed_constants` are de-duplicated by sanitized name and saved to `generated_modules/{module_name}_constants.pt`. The file path is baked into the generated `process_framework_parameters()` so constants are loaded automatically at runtime.
 
-**Parameter Loading**: Weights are transferred from the ONNX model to the Forge module:
-- **Weight Extraction**: Extracts tensor values from the ONNX model's initializer list
-- **Name Mapping**: Uses the name mappings to find the correct parameters/constants using original ONNX names
-- **Value Assignment**: Loads the extracted values into the Forge module's parameter and constant storage
-- **Special Handling**: Handles edge cases like scalar constants that may need reshaping
-- **Error Handling**: Provides clear error messages if parameters or constants are missing
+**Code generation**: The `TranspilerCodeGenerator` produces a complete Python `ForgeModule` class:
+- `__init__` registers all params, constants, and computed constants as module attributes
+- `forward()` replays every TIR node in topological order as Forge API calls
+- A reference-counting pass inserts `del` statements for intermediate activations immediately after their last use
+- `process_framework_parameters()` loads ONNX initializer weights (phase 1) and, if present, computed constants from the `.pt` file (phase 2)
 
-**Input Conversion**: Input tensors are converted to Forge format:
-- **Tensor Transformation**: Converts PyTorch input tensors to Forge Tensor objects
-- **Device Placement**: Sets up appropriate device placement for the tensors
-- **Shape Preservation**: Maintains tensor shapes and data types during conversion
+**Write & import**: The source is written to `generated_modules/{module_name}.py` and imported at runtime via `importlib`. No separate process or restart is needed.
 
-**Verification (Optional)**: The transpiler can verify correctness at multiple stages:
-- **TIRGraph Verification**: Executes the TIRGraph and compares outputs with the original framework model
-- **Forge Module Verification**: Executes the generated Forge module and compares outputs with the framework model
-- **Tolerance-Based Comparison**: Uses numerical tolerance to account for floating-point differences
-- **Error Reporting**: Provides detailed error messages if outputs don't match within tolerance
+**Instantiate & load weights**: The `ForgeModule` class is instantiated. Weights are then loaded in two phases: ONNX initializers first (mapped from original to sanitized names), then computed constants from the `.pt` file.
 
-**Integration**: The generated ForgeModule integrates with the Forge compilation pipeline:
-- **Pipeline Entry**: The module is returned to the Forge compilation system
-- **Next Steps**: The module proceeds through Forge's graph optimization passes, MLIR compilation, and binary code generation
-- **Configuration**: The transpiler path is controlled by compiler configuration settings
+**Verify** (optional): The module is run with the sample inputs and its outputs are compared against the original ONNX model within numerical tolerance.
+
+**Return**: The fully initialised `ForgeModule` and the converted sample inputs are returned to the Forge compilation pipeline for graph optimisation, MLIR lowering, and binary code generation.
 
 ---
 
@@ -708,9 +756,9 @@ The Forge compilation system supports two parallel paths for converting framewor
 
 ---
 
-## Compiling MNIST Model: TVM vs Transpiler Path
+## Compiling Models: TVM vs Transpiler Path
 
-This section shows how to compile the MNIST model using both TVM and transpiler paths. The MNIST test (`test_mnist_onnx.py`) uses pytest parametrize to test both compilation paths in a single test file, allowing easy comparison between TVM and transpiler paths.
+This section shows how to compile models using both TVM and transpiler paths, using MNIST as the canonical example. The system now supports MNIST, ResNet-50, BERT, and GPT-2. The MNIST test (`test_mnist_onnx.py`) uses pytest parametrize to test both compilation paths in a single test file, allowing easy comparison between TVM and transpiler paths.
 
 ### Combined Test Approach
 
@@ -785,6 +833,7 @@ compiled_model = forge.compile(
 - `compile_transpiler_to_python=True`: Routes compilation through transpiler path (ONNX → TIRGraph → ForgeModule)
 - `compile_tvm_to_python=False`: Disables TVM path (required when using transpiler)
 - `transpiler_enable_debug=True`: Enables debug mode for ONNX Runtime comparison and detailed debugging
+- `transpiler_resolve_dynamic_shapes=True`: Runs the model once via ONNX Runtime with actual inputs to resolve symbolic/dynamic dimensions (e.g., sequence length in BERT/GPT-2) before conversion. Requires ONNX Runtime and actual inputs to be passed to `forge.compile()`.
 
 **VerifyConfig Usage:**
 - `verify_transpiler_graph=True`: Compares TIRGraph outputs with ONNX Runtime outputs after transpiler conversion
@@ -823,40 +872,61 @@ compiled_model = forge.compile(
 
 | Path | CompilerConfig | Key Settings | When to Use |
 |------|---------------|--------------|-------------|
-| **Transpiler** | `compile_transpiler_to_python=True`<br>`compile_tvm_to_python=False`<br>`transpiler_enable_debug=True` | Uses direct ONNX → TIRGraph → ForgeModule conversion | • ONNX models only<br>• Need faster compilation<br>• Want transparent conversion<br>• Need explicit opset handling |
-| **TVM** | Default (no config needed)<br>`compile_tvm_to_python=True` (default) | Uses ONNX → TVM Relay IR → ForgeModule conversion | • Multiple frameworks (PyTorch, TensorFlow, etc.)<br>• Need advanced optimizations<br>• Model has unsupported operations |
+| **Transpiler** | `compile_transpiler_to_python=True`<br>`compile_tvm_to_python=False`<br>`transpiler_enable_debug=True`<br>`transpiler_resolve_dynamic_shapes=True` | Direct ONNX → TIRGraph → ForgeModule | • ONNX models only<br>• Need faster compilation<br>• Want transparent conversion<br>• Models with dynamic shapes (BERT, GPT-2) |
+| **TVM** | Default (no config needed)<br>`compile_tvm_to_python=True` (default) | ONNX → TVM Relay IR → ForgeModule | • Multiple frameworks (PyTorch, TensorFlow, etc.)<br>• Need advanced optimizations<br>• Model has unsupported operations |
 
 ---
 
 ## Testing
 
-### Operation Tests
+### Operation Tests (`forge/test/transpiler/ops/`)
 
-**Location**: `forge/test/transpiler/ops/`
+Each ONNX operation has a dedicated test file. Tests compare TIRGraph outputs against ONNX Runtime outputs across opset versions, input shapes, dtypes, and edge cases.
 
-**What is tested**: Individual ONNX operations are tested to verify correct conversion to TIR nodes. Each operation has a dedicated test file (e.g., `test_relu.py`, `test_conv.py`, `test_add.py`).
+| Test File | Operations Covered |
+|-----------|-------------------|
+| `test_add.py` | Add |
+| `test_arithmetic.py` | Sub, Mul, Div |
+| `test_matmul.py` | MatMul |
+| `test_pow.py` | Pow |
+| `test_erf.py` | Erf |
+| `test_sqrt.py` | Sqrt |
+| `test_comparison.py` | Equal, Greater, Less, GreaterOrEqual, LessOrEqual |
+| `test_logical.py` | LogicalAnd, LogicalNot |
+| `test_reduction.py` | ReduceSum, ReduceMean, ReduceMax |
+| `test_argmax.py` | ArgMax |
+| `test_globalavgpool.py` | GlobalAveragePool |
+| `test_reshape.py` | Reshape |
+| `test_concat.py` | Concat |
+| `test_slice.py` | Slice |
+| `test_split.py` | Split |
+| `test_gather.py` | Gather, GatherElements |
+| `test_expand.py` | Expand |
+| `test_unsqueeze.py` | Unsqueeze |
+| `test_shape.py` | Shape |
+| `test_constantofshape.py` | ConstantOfShape |
+| `test_layernorm.py` | LayerNormalization |
+| `test_trilu.py` | Trilu |
+| `test_where.py` | Where |
 
-**Test coverage**: Tests verify operations across multiple opset versions, input shapes, data types, and edge cases. Tests compare TIRGraph outputs with ONNX Runtime outputs to ensure correctness.
+### Model Tests (`forge/test/transpiler/models/`, `forge/test/models/onnx/`)
 
-**Supported operations**: Add, Sub, Mul, Div, Conv, Relu, Sigmoid, Tanh, Softmax, LogSoftmax, MaxPool, AvgPool, Gemm, Reshape, Transpose, Flatten, Squeeze, Unsqueeze, Concat, Pad, Clip, Dropout, and reduction operations.
-
-### Model Tests
-
-**Location**: `forge/test/transpiler/models/` and `forge/test/models/onnx/vision/mnist/`
-
-**What is tested**: End-to-end conversion of complete models from PyTorch → ONNX → TIRGraph → ForgeModule. Tests verify the full conversion pipeline including code generation and compare outputs at multiple stages.
-
-**MNIST Test**: The MNIST model test (`forge/test/models/onnx/vision/mnist/test_mnist_onnx.py`) uses pytest parametrize to test both TVM and transpiler compilation paths in a single test file. The test runs twice with `use_transpiler=False` (TVM path) and `use_transpiler=True` (transpiler path), ensuring both paths produce equivalent results:
+End-to-end tests covering the full pipeline: PyTorch → ONNX → TIRGraph → ForgeModule, including code generation, computed constant persistence, and numerical output comparison. Shared helpers in `model_test_utils.py` provide consistent output comparison across all tests.
 
 ```bash
-# Run both paths
+# MNIST
 pytest forge/test/models/onnx/vision/mnist/test_mnist_onnx.py
+pytest forge/test/transpiler/models/test_mnist.py
 
-# Run only TVM path
-pytest forge/test/models/onnx/vision/mnist/test_mnist_onnx.py::test_mnist[tvm]
+# ResNet-50
+pytest forge/test/models/onnx/vision/resnet/test_resnet.py
+pytest forge/test/transpiler/models/test_resnet50.py
 
-# Run only transpiler path
-pytest forge/test/models/onnx/vision/mnist/test_mnist_onnx.py::test_mnist[transpiler]
+# BERT
+pytest forge/test/models/onnx/text/bert/test_bert.py
+pytest forge/test/transpiler/models/test_bert.py
+
+# GPT-2
+pytest forge/test/models/onnx/text/gpt2/test_gpt2_onnx.py
+pytest forge/test/transpiler/models/test_gpt2.py
 ```
-
-This parametrized approach allows easy comparison between compilation paths and ensures both are tested with identical inputs and verification logic.

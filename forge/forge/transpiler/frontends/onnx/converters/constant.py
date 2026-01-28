@@ -42,6 +42,7 @@ class ConstantConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> ConstantResult:
         """
         Convert ONNX Constant operation to ConstantResult.

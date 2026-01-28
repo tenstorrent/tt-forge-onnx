@@ -178,9 +178,9 @@ class DeprecatedVerifyConfig:
             torch.bfloat16: None,
         }
         for dt in [torch.float32, torch.float16, torch.bfloat16]:
-            if not dt in self.rtol:
+            if dt not in self.rtol:
                 self.rtol[dt] = rtol_defaults[dt]
-            if not dt in self.atol:
+            if dt not in self.atol:
                 self.atol[dt] = atol_defaults[dt]
 
         if self.pcc is None:

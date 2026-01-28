@@ -2,50 +2,53 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Test cases for MNIST model transpilation from PyTorch to ONNX to TIRGraph.
-This test demonstrates:
-1. Creating MNIST model in PyTorch
-2. Exporting to ONNX
-3. Converting ONNX to TIRGraph
-4. Printing graph structure with op types, shapes, dtypes, and attributes
-5. Running inference and comparing outputs
+Transpiler tests for a hand-crafted MNIST CNN model.
+
+Two focused test cases:
+1. ``test_mnist_tir_graph``        – PyTorch → ONNX → TIRGraph conversion +
+                                     ONNX Runtime output comparison.
+2. ``test_mnist_forge_module_gen`` – ONNX → Forge module code generation.
 """
 import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import onnx
-import tempfile
-import os
 
-from forge.transpiler.frontends.onnx.engine import ONNXToForgeTranspiler
-from test.transpiler.test_utils import (
-    print_tir_graph,
-    compare_tir_with_onnx,
+from test.transpiler.models.model_test_utils import (
+    SEPARATOR,
+    export_to_onnx,
+    print_section,
+    run_forge_module_gen,
+    run_onnx_comparison,
+    run_tir_transpilation,
 )
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
-# Define MNIST model directly in the test file
-class MnistModel(torch.nn.Module):
+_OPSET = 17
+_GRAPH_NAME = "mnist_model"
+
+
+# ---------------------------------------------------------------------------
+# Model definition
+# ---------------------------------------------------------------------------
+
+
+class MnistModel(nn.Module):
     """
-    MNIST model adapted from PyTorch examples.
-    Architecture:
-    - Conv2d(1, 32, kernel_size=3, stride=1)
-    - ReLU
-    - Conv2d(32, 64, kernel_size=3, stride=1)
-    - ReLU
-    - MaxPool2d(kernel_size=2)
-    - Dropout(0.25)
-    - Flatten
-    - Linear(9216, 128)
-    - ReLU
-    - Dropout(0.5)
-    - Linear(128, 10)
-    - LogSoftmax
+    Small CNN for MNIST digit classification.
+
+    Architecture (from the canonical PyTorch MNIST example):
+      Conv2d(1→32, k=3) → ReLU → Conv2d(32→64, k=3) → ReLU
+      → MaxPool2d(2) → Dropout(0.25) → Flatten
+      → Linear(9216→128) → ReLU → Dropout(0.5) → Linear(128→10)
+      → LogSoftmax
     """
 
     def __init__(self):
-        super(MnistModel, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.dropout1 = nn.Dropout(0.25)
@@ -53,155 +56,101 @@ class MnistModel(torch.nn.Module):
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2)
         x = self.dropout1(x)
         x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = F.relu(x)
+        x = F.relu(self.fc1(x))
         x = self.dropout2(x)
-        x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output
+        return F.log_softmax(self.fc2(x), dim=1)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _create_mnist_model() -> MnistModel:
+    model = MnistModel()
+    model.eval()
+    return model
+
+
+def _create_test_input(batch_size: int = 1) -> torch.Tensor:
+    """Return a random ``(B, 1, 28, 28)`` grayscale image tensor."""
+    return torch.randn(batch_size, 1, 28, 28)
+
+
+# ---------------------------------------------------------------------------
+# Test class
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.transpiler
 class TestMnistTranspilation:
-    """Test cases for MNIST model transpilation."""
+    """Transpiler tests for the MNIST CNN model."""
 
-    @staticmethod
-    def _create_mnist_model():
-        """Create and initialize MNIST model."""
-        model = MnistModel()
-        model.eval()
-        return model
-
-    @staticmethod
-    def _create_test_input(batch_size=1):
-        """Create test input tensor for MNIST (28x28 grayscale image)."""
-        return torch.randn(batch_size, 1, 28, 28)
-
-    @pytest.mark.nightly
-    def test_mnist_comprehensive(self):
+    def test_mnist_tir_graph(self):
         """
-        Comprehensive test for MNIST model transpilation from PyTorch -> ONNX -> TIRGraph -> Forge Module.
-        This test verifies the complete pipeline with both TIRGraph and Forge module generation.
+        Verify PyTorch → ONNX → TIRGraph conversion and ONNX Runtime parity.
+
+        Steps:
+        1. Instantiate the MNIST CNN.
+        2. Export to ONNX (opset 17).
+        3. Transpile to TIRGraph and print the graph summary.
+        4. Run ONNX Runtime and compare outputs with the TIRGraph execution.
         """
-        print("\n" + "=" * 80)
-        print("MNIST Model Comprehensive Transpilation Test")
-        print("=" * 80)
+        print_section("MNIST — TIRGraph Conversion Test")
 
-        # Create PyTorch model and run inference
-        pytorch_model = self._create_mnist_model()
-        test_input = self._create_test_input(batch_size=1)
-        with torch.no_grad():
-            pytorch_output = pytorch_model(test_input)
+        model = _create_mnist_model()
+        test_input = _create_test_input()
 
-        # Export to ONNX
-        with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as tmp_file:
-            onnx_path = tmp_file.name
-
-        try:
-            torch.onnx.export(
-                pytorch_model,
-                test_input,
-                onnx_path,
-                opset_version=17,
-                input_names=["input"],
-                output_names=["output"],
-                dynamic_axes=None,
-                do_constant_folding=True,
+        with export_to_onnx(
+            pytorch_model=model,
+            test_input=test_input,
+            input_names=["input"],
+            output_names=["output"],
+            opset_version=_OPSET,
+        ) as onnx_model:
+            tir_graph = run_tir_transpilation(
+                onnx_model,
+                title="TIRGraph — MNIST",
             )
 
-            # Load and validate ONNX model
-            onnx_model = onnx.load(onnx_path)
-            onnx.checker.check_model(onnx_model)
-            print(f"\n✓ ONNX model: opset={onnx_model.opset_import[0].version}, " f"nodes={len(onnx_model.graph.node)}")
-
-            # # Print ONNX model structure
-            # print_onnx_model(onnx_model, title="ONNX Model Structure")
-
-            # Convert ONNX to TIRGraph (with debug mode for ONNX Runtime comparison)
-            transpiler = ONNXToForgeTranspiler(validate_model=True, debug=True)
-            tir_graph = transpiler.transpile(onnx_model)
-
-            # Graph structure summary
-            op_type_counts = {}
-            for node in tir_graph.nodes:
-                op_type_counts[node.op_type] = op_type_counts.get(node.op_type, 0) + 1
-
-            print(
-                f"\n✓ TIRGraph: {len(tir_graph.nodes)} nodes, "
-                f"{len(tir_graph.params)} params, {len(tir_graph.constants)} constants"
-            )
-            print("Node counts by type:", ", ".join(f"{k}:{v}" for k, v in sorted(op_type_counts.items())))
-
-            # Print detailed TIRGraph structure
-            print_tir_graph(tir_graph, title="TIRGraph Structure (MNIST Model)", detailed=True)
-
-            # ONNX Runtime comparison (includes shape and value verification)
             input_data = {"input": test_input.detach().cpu().numpy()}
-            comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data)
+            result = run_onnx_comparison(tir_graph, onnx_model, input_data)
+            assert not result["errors"], f"Comparison errors: {result['errors']}"
+            assert all(result["matches"].values()), f"Output mismatch: {result['matches']}"
 
-            print(f"\n[ONNX Runtime Comparison]")
-            if comparison["errors"]:
-                print(f"  Errors ({len(comparison['errors'])}):")
-                for error in comparison["errors"]:
-                    print(f"    - {error}")
-            else:
-                print("  ✓ No errors")
+        print(f"\n{SEPARATOR}\n")
 
-            if all(comparison["matches"].values()):
-                print("  ✓ All outputs match")
-            else:
-                print("  ⚠ Output mismatches:")
-                for output_name, matches in comparison["matches"].items():
-                    if not matches:
-                        print(f"    - {output_name}")
-                        if output_name in comparison.get("diffs", {}):
-                            diff = comparison["diffs"][output_name]
-                            print(f"      Max: {diff.get('max_diff', 'N/A')}, " f"Mean: {diff.get('mean_diff', 'N/A')}")
+    def test_mnist_forge_module_gen(self):
+        """
+        Verify Forge module code generation from the MNIST ONNX model.
 
-            # Part 2: Forge Module Generation
-            print("\n" + "=" * 80)
-            print("MNIST Model Forge Module Generation Test")
-            print("=" * 80)
+        Steps:
+        1. Instantiate the MNIST CNN.
+        2. Export to ONNX (opset 17).
+        3. Run the Forge codegen pipeline and verify the generated module.
+        """
+        print_section("MNIST — Forge Module Generation Test")
 
-            from forge.transpiler.codegen.transpiler_to_forge import generate_forge_module_from_transpiler
-            from forge.module import OnnxModule
-            from forge.config import CompilerConfig
-            from forge.verify.config import DeprecatedVerifyConfig
+        model = _create_mnist_model()
+        test_input = _create_test_input()
 
-            # Create OnnxModule wrapper (reuse existing onnx_model)
-            onnx_module = OnnxModule("mnist_model", onnx_model)
-
-            # Create compiler config with transpiler enabled
-            compiler_cfg = CompilerConfig(
-                compile_transpiler_to_python=True,
-                transpiler_enable_debug=True,  # Enable debug mode
+        with export_to_onnx(
+            pytorch_model=model,
+            test_input=test_input,
+            input_names=["input"],
+            output_names=["output"],
+            opset_version=_OPSET,
+        ) as onnx_model:
+            run_forge_module_gen(
+                onnx_model=onnx_model,
+                test_input=test_input,
+                graph_name=_GRAPH_NAME,
             )
 
-            # Create verify config
-            verify_cfg = DeprecatedVerifyConfig()
-            verify_cfg.verify_forge_codegen_vs_framework = True  # Enable verification
-            verify_cfg.verify_transpiler_graph = True  # Enable verification
-
-            # Generate Forge module from transpiler
-            # All verification is done inside generate_forge_module_from_transpiler
-            generate_forge_module_from_transpiler(
-                framework_mod=onnx_module,
-                module_inputs=[test_input],
-                compiler_cfg=compiler_cfg,
-                graph_name="mnist_model",
-                verify_cfg=verify_cfg,
-            )
-
-            print("\n" + "=" * 80 + "\n")
-
-        finally:
-            if os.path.exists(onnx_path):
-                os.unlink(onnx_path)
+        print(f"\n{SEPARATOR}\n")

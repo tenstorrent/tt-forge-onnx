@@ -329,6 +329,7 @@ class GemmConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Gemm converter - single method handles all versions using opset parameter.
@@ -353,6 +354,7 @@ class GemmConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Core implementation for Gemm conversion.
@@ -370,7 +372,7 @@ class GemmConverter(OnnxOpConverter):
         if opset < 6:
             broadcast = int(attrs.get("broadcast", 0))
             if broadcast != 0:
-                logger.debug(
+                logger.trace(
                     f"Gemm node '{node_proto.name}': Using broadcast=1 (opset {opset}). "
                     f"This attribute is deprecated in opset 6+."
                 )
@@ -450,16 +452,18 @@ class GemmConverter(OnnxOpConverter):
             shape_a = tensor_a_info.shape
             shape_b = tensor_b_info.shape
 
-            # Get effective shapes
+            # Get effective inner/outer dims using trailing indices so that
+            # batched tensors (e.g. shape (B, K, M) with transA=1) are handled
+            # correctly regardless of the number of batch dimensions.
             if transA:
-                m, k = shape_a[1], shape_a[0]
+                m, _ = shape_a[-1], shape_a[-2]
             else:
-                m, k = shape_a[0], shape_a[1]
+                m, _ = shape_a[-2], shape_a[-1]
 
             if transB:
-                n = shape_b[0]
+                n = shape_b[-2]
             else:
-                n = shape_b[1]
+                n = shape_b[-1]
 
             # Handle batch dimensions (if any)
             if len(shape_a) > 2:
@@ -624,9 +628,11 @@ class GemmConverter(OnnxOpConverter):
             # No C or beta=0, final output is current_output
             final_output = node_proto.output[0]
             if current_output != final_output:
-                # Create identity node to rename output
-                output_tensors[final_output] = output_tensors[current_output]
-                output_tensors[final_output].name = final_output
+                # Create a fresh TensorInfo for the renamed output rather than
+                # aliasing the existing one — aliasing would mutate the entry
+                # still keyed under current_output when we set .name below.
+                src = output_tensors[current_output]
+                output_tensors[final_output] = TensorInfo(name=final_output, shape=src.shape, onnx_dtype=src.onnx_dtype)
 
                 # Build OrderedDict for IdentityNode
                 identity_input_dict, identity_output_dict = build_input_output_dicts(

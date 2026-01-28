@@ -90,14 +90,14 @@ def is_tir_nodes_result(result: ConverterResult) -> TypeGuard[List["TIRNode"]]:
 def match_result(
     result: ConstantResult, on_constant: Callable[[ConstantResult], T], on_nodes: Callable[[List["TIRNode"]], T]
 ) -> T:
-    ...
+    pass
 
 
 @overload
 def match_result(
     result: List["TIRNode"], on_constant: Callable[[ConstantResult], T], on_nodes: Callable[[List["TIRNode"]], T]
 ) -> T:
-    ...
+    pass
 
 
 def match_result(

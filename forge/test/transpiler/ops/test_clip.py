@@ -776,47 +776,8 @@ class TestClip:
 
     def test_clip_v1_consumed_inputs_ignored(self):
         """Test that Clip v1 ignores consumed_inputs legacy attribute."""
-        opset_version = 1
-        # Skip opset 1 - ONNXRuntime doesn't support Clip(1)
-        pytest.skip(f"Opset 1 not supported by ONNXRuntime (Clip(1) not implemented)")
-        dtype = onnx.TensorProto.FLOAT
-        input_shape = (3, 4)
-
-        # Set consumed_inputs (legacy attribute) - should be ignored
-        attrs = {"min": 0.0, "max": 1.0, "consumed_inputs": [0]}  # Legacy attribute
-
-        onnx_model = create_onnx_model(
-            op_type="Clip",
-            input_shapes=[input_shape],
-            input_dtypes=[dtype],
-            output_shapes=[input_shape],
-            output_dtypes=[dtype],
-            attrs=attrs,
-            opset_version=opset_version,
-            node_name="clip_legacy",
-        )
-
-        transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
-        tir_graph = transpiler.transpile(onnx_model)
-
-        # Verify ClipNode
-        clip_nodes = [n for n in tir_graph.nodes if n.op_type == "Clip"]
-        assert len(clip_nodes) == 1, f"Expected 1 ClipNode, got {len(clip_nodes)}"
-
-        # Verify consumed_inputs is not in attrs (it's ignored)
-        clip_node = clip_nodes[0]
-        assert (
-            "consumed_inputs" not in clip_node.attrs
-        ), "ClipNode should not have 'consumed_inputs' attribute (legacy, ignored)"
-
-        # Create test input
-        input_data = {"input_0": np.random.randn(*input_shape).astype(np.float32) * 5}
-
-        # Compare with ONNX runtime
-        comparison = compare_tir_with_onnx(tir_graph, onnx_model, input_data, rtol=1e-5, atol=1e-6)
-
-        assert len(comparison["errors"]) == 0, f"Comparison errors: {comparison['errors']}"
-        assert all(comparison["matches"].values()), f"Output mismatch: {comparison}"
+        # Opset 1 Clip is not supported by ONNXRuntime (Clip(1) not implemented)
+        pytest.skip("Opset 1 not supported by ONNXRuntime (Clip(1) not implemented)")
 
     def test_clip_zero_tensor(self):
         """Test Clip with zero tensor."""

@@ -9,20 +9,21 @@ from onnx import NodeProto
 from loguru import logger
 
 
-class ValidationError(Exception):
+class ConverterValidationError(Exception):
     """
-    Exception raised for validation errors in ONNX converters.
+    Raised for validation errors that occur inside ONNX converter functions.
 
-    This is a local exception class used by validation utilities.
-    For core transpiler validation errors, see forge.transpiler.core.exceptions.ValidationError.
+    This is intentionally distinct from ``forge.transpiler.utils.exceptions.ValidationError``
+    (which represents transpiler-level validation failures) to make the origin
+    of each error unambiguous.
     """
 
 
 def validate_attributes(
     node_proto: NodeProto,
     attrs: Dict[str, Any],
-    required_attrs: List[str] = None,
-    attr_ranges: Dict[str, Tuple[Any, Any]] = None,
+    required_attrs: Optional[List[str]] = None,
+    attr_ranges: Optional[Dict[str, Tuple[Any, Any]]] = None,
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate node attributes.
@@ -61,74 +62,123 @@ def validate_attributes(
 
 
 def validate_constant_input(
-    node_proto: NodeProto, input_index: int, graph_proto, input_name: str = None
+    node_proto: NodeProto,
+    input_index: int,
+    graph_proto,
+    input_name: str = None,
+    tir_graph=None,
+    to_python: bool = True,
 ) -> Tuple[bool, Optional[Any], Optional[str]]:
     """
-    Validate and extract constant value from an input tensor (for opset >= 11/13 operations).
+    Validate and extract a constant value from an op's input tensor.
+
+    Lookup order:
+        1. TIR graph stores (params, constants, computed_constants) — covers
+           ONNX initializers already loaded and Constant/ConstantOfShape outputs
+           created during transpilation.
+        2. Raw ONNX graph initializers — fallback for cases where the TIR graph
+           has not yet been populated (e.g. early validation passes).
 
     Args:
-        node_proto: ONNX node proto
-        input_index: Index of the input to check
-        graph_proto: ONNX graph proto (for accessing initializers)
-        input_name: Optional input name (if None, uses node_proto.input[input_index])
+        node_proto:   ONNX node proto (used for error messages).
+        input_index:  Index of the input to validate.
+        graph_proto:  ONNX graph proto (may be None; used for initializer fallback).
+        input_name:   Explicit input tensor name; defaults to
+                      node_proto.input[input_index].
+        tir_graph:    Partially-built TIR graph; searched first when provided.
+        to_python:    If ``True`` (default) the returned ``constant_value`` is a
+                      Python scalar or list.  If ``False`` it is a
+                      ``numpy.ndarray``, avoiding an extra Python→numpy
+                      conversion round-trip in callers that need an array
+                      directly (e.g. ``GatherConverter``).
 
     Returns:
-        Tuple of (is_valid, constant_value, error_message)
-        - is_valid: True if input is a constant or optional
-        - constant_value: Extracted constant value (None if optional and not provided)
-        - error_message: Error message if validation failed
+        (is_valid, constant_value, error_message)
+        is_valid        – True when a constant value was found, or when the
+                          input is optional and was not provided.
+        constant_value  – Python scalar or list (``to_python=True``) or
+                          ``numpy.ndarray`` (``to_python=False``); None when
+                          optional or on failure.
+        error_message   – Human-readable reason on failure, None on success.
     """
     if input_index >= len(node_proto.input):
-        # Optional input not provided - this is valid
-        return True, None, None
+        return True, None, None  # optional input not provided
 
     input_name = input_name or node_proto.input[input_index]
+    node_id = node_proto.name or node_proto.op_type
 
+    # ── Step 1: TIR graph stores ──────────────────────────────────────────────
+    # NOTE: explicit is-None checks are required here — Python's `or` operator
+    # evaluates truthiness, which raises RuntimeError for multi-element tensors
+    # (numpy arrays or torch.Tensors with more than one element).
+    if tir_graph is not None:
+        tensor = tir_graph.params.get(input_name)
+        if tensor is None:
+            tensor = tir_graph.constants.get(input_name)
+        if tensor is None and hasattr(tir_graph, "computed_constants"):
+            tensor = tir_graph.computed_constants.get(input_name)
+        if tensor is not None:
+            return True, _tensor_to_python(tensor, to_python=to_python), None
+
+    # ── Step 2: raw ONNX initializers ────────────────────────────────────────
     if graph_proto is None:
         return (
             False,
             None,
-            (
-                f"Node {node_proto.name or node_proto.op_type} requires constant input '{input_name}' "
-                f"but graph_proto is not available"
-            ),
+            (f"Node '{node_id}' requires constant input '{input_name}' " f"but graph_proto is not available."),
         )
 
-    # Try to find in initializers
     for init in graph_proto.initializer:
         if init.name == input_name:
             try:
                 from onnx import numpy_helper
-                import numpy
 
-                constant_array = numpy_helper.to_array(init)
-                # Convert to Python native type
-                if constant_array.size == 1:
-                    constant_value = constant_array.item()
-                    if isinstance(constant_value, numpy.ndarray):
-                        constant_value = constant_value.tolist()
-                else:
-                    constant_value = constant_array.tolist()
-                return True, constant_value, None
-            except Exception as e:
-                return (
-                    False,
-                    None,
-                    (
-                        f"Node {node_proto.name or node_proto.op_type} failed to extract constant "
-                        f"from input '{input_name}': {e}"
-                    ),
-                )
+                return True, _tensor_to_python(numpy_helper.to_array(init), to_python=to_python), None
+            except Exception as exc:
+                return False, None, (f"Node '{node_id}': failed to read initializer '{input_name}': {exc}")
 
-    # Input not found in initializers - it's dynamic (not supported yet)
     return (
         False,
         None,
         (
-            f"Node {node_proto.name or node_proto.op_type} requires constant input '{input_name}' "
-            f"but it was not found in initializers. Dynamic input tensors are not yet supported."
+            f"Node '{node_id}' requires constant input '{input_name}' "
+            f"but it was not found in any compile-time constant store. "
+            f"Dynamic inputs are not supported."
         ),
     )
+
+
+def _tensor_to_python(tensor, to_python: bool = True) -> Any:
+    """
+    Convert a numpy array or torch.Tensor to a Python value or keep as numpy.
+
+    Args:
+        tensor:    Input value — ``torch.Tensor``, ``numpy.ndarray``, or an
+                   already-converted Python scalar / list.
+        to_python: If ``True`` (default) convert to a Python scalar (for
+                   single-element arrays) or a Python list (for multi-element
+                   arrays).  If ``False`` return the intermediate
+                   ``numpy.ndarray`` directly, avoiding a potentially expensive
+                   round-trip back to numpy when the caller needs an array.
+
+    Returns:
+        * ``to_python=True``  → Python ``int`` / ``float`` (scalar) or ``list``
+        * ``to_python=False`` → ``numpy.ndarray``
+        * Passthrough for values that are already plain Python objects.
+    """
+    import numpy as np
+    import torch as _torch
+
+    if isinstance(tensor, _torch.Tensor):
+        arr = tensor.detach().cpu().numpy()
+    elif isinstance(tensor, np.ndarray):
+        arr = tensor
+    else:
+        return tensor  # already a Python scalar/list
+
+    if not to_python:
+        return arr
+    return arr.item() if arr.size == 1 else arr.tolist()
 
 
 def handle_validation_error(node_proto: NodeProto, error_msg: str, strict: bool = False) -> bool:
@@ -144,7 +194,7 @@ def handle_validation_error(node_proto: NodeProto, error_msg: str, strict: bool 
         True if error was handled gracefully, False if should skip this node
     """
     if strict:
-        raise ValidationError(f"{node_proto.op_type} (node: {node_proto.name}): {error_msg}")
+        raise ConverterValidationError(f"{node_proto.op_type} (node: {node_proto.name}): {error_msg}")
     else:
         logger.warning(f"{node_proto.op_type} (node: {node_proto.name}): {error_msg}")
         return False

@@ -2,17 +2,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Reduction operations: ReduceSum, ReduceMean, ReduceMax
+Reduction operations: ReduceSum, ReduceMean, ReduceMax, ArgMax
 """
 import torch
 from collections import OrderedDict
-from typing import Dict, Union, Tuple
+from typing import Dict, Tuple, Union
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import ReductionShape
 
 
-class ReduceSumNode(TIRNode):
+class ReduceSumNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceSum operation.
     """
@@ -75,7 +76,7 @@ class ReduceSumNode(TIRNode):
         return {self.output_names[0]: torch.sum(x, dim=dim, keepdim=keepdim)}
 
 
-class ReduceMeanNode(TIRNode):
+class ReduceMeanNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceMean operation.
     """
@@ -138,7 +139,7 @@ class ReduceMeanNode(TIRNode):
         return {self.output_names[0]: torch.mean(x, dim=dim, keepdim=keepdim)}
 
 
-class ReduceMaxNode(TIRNode):
+class ReduceMaxNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceMax operation.
     """
@@ -201,3 +202,56 @@ class ReduceMaxNode(TIRNode):
         dim = self.attrs.get("dim", None)
         keepdim = bool(self.attrs.get("keepdim", False))
         return {self.output_names[0]: torch.amax(x, dim=dim, keepdim=keepdim)}
+
+
+class ArgMaxNode(ReductionShape, TIRNode):
+    """
+    ArgMax operation: returns the index of the maximum value along a given axis.
+
+    Always outputs dtype torch.int64, regardless of input dtype.
+    Does not support select_last_index; converter raises an error if that attribute is set.
+    """
+
+    @staticmethod
+    def create(
+        name: str,
+        inputs: OrderedDict[str, TensorInfo],
+        outputs: OrderedDict[str, TensorInfo],
+        dim: int = 0,
+        keepdim: bool = True,
+    ) -> "ArgMaxNode":
+        """Static factory method to create an ArgMaxNode."""
+        return ArgMaxNode(
+            name=name,
+            op_type="ArgMax",
+            inputs=inputs,
+            outputs=outputs,
+            attrs={"dim": dim, "keepdim": keepdim},
+            forge_op_name="Argmax",
+        )
+
+    def convert_attrs_to_forge_attrs(self, attrs):
+        """Convert PyTorch attrs to Forge attrs (dim/keepdim → dim/keep_dim)."""
+        forge_attrs = {}
+        if "dim" in attrs:
+            forge_attrs["dim"] = attrs["dim"]
+        if "keepdim" in attrs:
+            forge_attrs["keep_dim"] = attrs["keepdim"]
+        return forge_attrs
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate ArgMax using torch.argmax.
+
+        Args:
+            input_tensors: Dictionary mapping input names to tensors
+
+        Returns:
+            Dictionary mapping output name to int64 index tensor
+        """
+        if len(self.input_names) < 1:
+            raise ValueError(f"ArgMaxNode '{self.name}' requires at least 1 input, got 0")
+        x = input_tensors[self.input_names[0]]
+        dim = self.attrs.get("dim", 0)
+        keepdim = bool(self.attrs.get("keepdim", True))
+        return {self.output_names[0]: torch.argmax(x, dim=dim, keepdim=keepdim)}

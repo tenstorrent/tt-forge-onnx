@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Activation operations: Relu, Sigmoid, Tanh, Softmax, LogSoftmax, LeakyRelu, Dropout
+Activation operations: Relu, Sigmoid, Tanh, Softmax, LogSoftmax, LeakyRelu, Dropout, Sqrt, Erf, Reciprocal
 """
 import torch
 import torch.nn.functional as F
@@ -11,9 +11,10 @@ from typing import Dict, Optional
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import ElementwiseUnaryShape
 
 
-class ReluNode(TIRNode):
+class ReluNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Relu operation.
     """
@@ -37,7 +38,7 @@ class ReluNode(TIRNode):
         return {self.output_names[0]: F.relu(x)}
 
 
-class SigmoidNode(TIRNode):
+class SigmoidNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Sigmoid operation.
     """
@@ -63,7 +64,7 @@ class SigmoidNode(TIRNode):
         return {self.output_names[0]: torch.sigmoid(x)}
 
 
-class TanhNode(TIRNode):
+class TanhNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Tanh operation.
     """
@@ -84,10 +85,10 @@ class TanhNode(TIRNode):
             Dictionary mapping output name to result tensor
         """
         x = input_tensors[self.input_names[0]]
-        return {self.output_names[0]: F.tanh(x)}
+        return {self.output_names[0]: torch.tanh(x)}
 
 
-class SoftmaxNode(TIRNode):
+class SoftmaxNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Softmax operation.
 
@@ -157,7 +158,7 @@ class SoftmaxNode(TIRNode):
         return {self.output_names[0]: F.softmax(x, dim=dim)}
 
 
-class LogSoftmaxNode(TIRNode):
+class LogSoftmaxNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like LogSoftmax operation.
 
@@ -232,7 +233,7 @@ class LogSoftmaxNode(TIRNode):
         return {self.output_names[0]: F.log_softmax(x, dim=dim)}
 
 
-class LeakyReluNode(TIRNode):
+class LeakyReluNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like LeakyRelu operation.
     """
@@ -283,14 +284,14 @@ class LeakyReluNode(TIRNode):
         return {self.output_names[0]: F.leaky_relu(x, negative_slope=negative_slope)}
 
 
-class DropoutNode(TIRNode):
+class DropoutNode(ElementwiseUnaryShape, TIRNode):
     """
-    PyTorch-like Dropout operation.
+    Dropout regularisation operation.
 
-    Supports different ONNX versions:
-    - v1-v6: Uses `is_test` attribute and `ratio` attribute
-    - v7-v10: Uses `ratio` attribute, training mode from graph context
-    - v12+: Uses `ratio` and `training_mode` inputs, `seed` attribute
+    In training mode randomly zeroes input elements with probability ``p``
+    and scales the remaining elements by ``1 / (1 - p)``.  In inference mode
+    the operation is a no-op and the input is returned unchanged.
+    Maps to ``torch.nn.functional.dropout``.
     """
 
     @staticmethod
@@ -359,3 +360,88 @@ class DropoutNode(TIRNode):
             output = x
 
         return {self.output_names[0]: output}
+
+
+class SqrtNode(ElementwiseUnaryShape, TIRNode):
+    """
+    PyTorch-like Sqrt operation.
+
+    Performs element-wise square root: y = x^0.5
+    If x is negative, returns NaN.
+    """
+
+    @staticmethod
+    def create(name: str, inputs: OrderedDict[str, TensorInfo], outputs: OrderedDict[str, TensorInfo]) -> "SqrtNode":
+        """Static factory method to create a SqrtNode."""
+        return SqrtNode(name=name, op_type="Sqrt", inputs=inputs, outputs=outputs, attrs={}, forge_op_name="Sqrt")
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate Sqrt operation using PyTorch.
+
+        Args:
+            input_tensors: Dictionary mapping input names to tensors
+
+        Returns:
+            Dictionary mapping output name to result tensor
+        """
+        x = input_tensors[self.input_names[0]]
+        return {self.output_names[0]: torch.sqrt(x)}
+
+
+class ErfNode(ElementwiseUnaryShape, TIRNode):
+    """
+    PyTorch-like Erf (Error Function) operation.
+
+    Performs element-wise error function: y = erf(x)
+    The error function is defined as: erf(x) = (2/√π) ∫₀ˣ e^(-t²) dt
+    """
+
+    @staticmethod
+    def create(name: str, inputs: OrderedDict[str, TensorInfo], outputs: OrderedDict[str, TensorInfo]) -> "ErfNode":
+        """Static factory method to create an ErfNode."""
+        return ErfNode(name=name, op_type="Erf", inputs=inputs, outputs=outputs, attrs={}, forge_op_name="Erf")
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate Erf operation using PyTorch.
+
+        Args:
+            input_tensors: Dictionary mapping input names to tensors
+
+        Returns:
+            Dictionary mapping output name to result tensor
+        """
+        x = input_tensors[self.input_names[0]]
+        return {self.output_names[0]: torch.special.erf(x)}
+
+
+class ReciprocalNode(ElementwiseUnaryShape, TIRNode):
+    """
+    PyTorch-like Reciprocal operation.
+
+    Performs element-wise reciprocal: y = 1 / x
+    Maps to forge.op.Reciprocal.
+    """
+
+    @staticmethod
+    def create(
+        name: str, inputs: OrderedDict[str, TensorInfo], outputs: OrderedDict[str, TensorInfo]
+    ) -> "ReciprocalNode":
+        """Static factory method to create a ReciprocalNode."""
+        return ReciprocalNode(
+            name=name, op_type="Reciprocal", inputs=inputs, outputs=outputs, attrs={}, forge_op_name="Reciprocal"
+        )
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate Reciprocal operation using PyTorch.
+
+        Args:
+            input_tensors: Dictionary mapping input names to tensors
+
+        Returns:
+            Dictionary mapping output name to result tensor
+        """
+        x = input_tensors[self.input_names[0]]
+        return {self.output_names[0]: torch.reciprocal(x)}

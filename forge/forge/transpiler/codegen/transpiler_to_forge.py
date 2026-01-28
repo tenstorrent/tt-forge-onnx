@@ -84,9 +84,19 @@ def generate_forge_module_from_transpiler(
 
     # Create transpiler with validation enabled and debug mode from config
     # Debug mode enables ONNX Runtime comparison for validation
-    transpiler = ONNXToForgeTranspiler(validate_model=True, debug=compiler_cfg.transpiler_enable_debug)
+    logger.info(
+        f"Transpiling '{graph_name}': ONNX framework model → TIR graph  "
+        f"[debug={compiler_cfg.transpiler_enable_debug}]"
+    )
+    transpiler = ONNXToForgeTranspiler(
+        validate_model=True,
+        debug=compiler_cfg.transpiler_enable_debug,
+        resolve_dynamic_shapes=compiler_cfg.transpiler_resolve_dynamic_shapes,
+    )
     # Perform conversion: ONNX ModelProto -> TIRGraph
-    tir_graph = transpiler.transpile(framework_mod.module)
+    tir_graph = transpiler.transpile(
+        framework_mod.module, module_inputs=module_inputs if compiler_cfg.transpiler_resolve_dynamic_shapes else None
+    )
 
     # Set graph name to match module name for consistency
     tir_graph.name = framework_mod.name
@@ -115,20 +125,46 @@ def generate_forge_module_from_transpiler(
     if not delete_inputs:
         logger.warning("Preserving Intermediate tensor values in ForgeModule forward may cause out-of-memory issues")
 
+    # Step 7a: Persist computed constants to a PT file (TVM-style).
+    #
+    # tir_graph.computed_constants contains constants that were produced during
+    # transpilation and are NOT present in the ONNX model's initializer list:
+    #   - ONNX Constant node outputs
+    #   - ConstantOfShape outputs
+    #   - Gather / LayerNorm auxiliary scalars (created via FullNode → computed_constants)
+    #
+    # The generated process_framework_parameters() iterates only ONNX initializers,
+    # so without this file those constants would never receive their actual values.
+    module_directory = "generated_modules"
+    os.makedirs(module_directory, exist_ok=True)
+
+    computed_constants_file = None
+    if tir_graph.computed_constants:
+        # De-duplicate: keep only sanitized-name entries and constants that have no
+        # original-name alias (i.e. created directly under their sanitized name).
+        # This prevents the same tensor from being saved twice under two names.
+        sanitized_names = set(tir_graph.original_to_sanitized.values())
+        unique_computed = {
+            name: tensor
+            for name, tensor in tir_graph.computed_constants.items()
+            if name in sanitized_names or name not in tir_graph.original_to_sanitized
+        }
+        computed_constants_file = os.path.join(module_directory, f"{module_name}_constants.pt")
+        torch.save(unique_computed, computed_constants_file)
+        logger.info(f"Saved {len(unique_computed)} computed constant(s) → '{computed_constants_file}'")
+
     # Create code generator with TIR graph and configuration
     # The generator will produce Python code implementing the model as a ForgeModule class
     code_generator = TranspilerCodeGenerator(
         tir_graph=tir_graph,
         class_name=class_name,
         delete_inputs=delete_inputs,
+        computed_constants_file=computed_constants_file,
     )
     # Generate Python source code string
     python_code = code_generator.generate()
 
     # Step 8: Write generated Python code to file
-    # Create output directory if it doesn't exist
-    module_directory = "generated_modules"
-    os.makedirs(module_directory, exist_ok=True)
     filename = f"{module_name}.py"
     file_path = os.path.join(module_directory, filename)
 
@@ -136,7 +172,7 @@ def generate_forge_module_from_transpiler(
     with open(file_path, "w") as f:
         f.write(python_code)
 
-    logger.info(f"Generated Forge module code: {file_path}")
+    logger.info(f"Generated ForgeModule '{class_name}' → '{file_path}'")
 
     # Step 9: Dynamically import and instantiate the generated module
     # Add current directory to Python path for imports
@@ -200,7 +236,7 @@ def _verify_transpiler_graph_outputs(
         KeyError: If output name not found in TIR graph outputs
         AssertionError: If output count mismatch or output values don't match
     """
-    logger.info("Verifying transpiler graph outputs against framework model...")
+    logger.info("Verifying TIR graph outputs vs framework model outputs...")
 
     if isinstance(framework_mod, OnnxModule):
         # Step 1: Execute framework model to get reference outputs
@@ -284,7 +320,7 @@ def _verify_transpiler_graph_outputs(
                 golden, tir_out, pcc=pcc, rtol=rtol, atol=atol
             ), f"Output {i} mismatch: golden={golden}, tir_out={tir_out}"
 
-        logger.info("Transpiler graph verification passed: TIR graph matches framework outputs")
+        logger.info("[PASS] TIR graph outputs match framework outputs")
 
 
 def _to_pascal_case(name: str) -> str:

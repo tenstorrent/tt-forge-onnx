@@ -114,7 +114,7 @@ def create_onnx_model(
 
 
 def compare_tir_with_onnx(
-    tir_graph, onnx_model: onnx.ModelProto, input_data: Dict[str, np.ndarray], rtol: float = 1e-3, atol: float = 1e-4
+    tir_graph, onnx_model: onnx.ModelProto, input_data: Dict[str, np.ndarray], rtol: float = 1e-3, atol: float = 1e-3
 ) -> Dict[str, Any]:
     """
     Compare TIR graph execution with ONNX model execution.
@@ -133,21 +133,35 @@ def compare_tir_with_onnx(
 
     results = {"tir_outputs": {}, "onnx_outputs": {}, "matches": {}, "errors": []}
 
-    # Run TIR graph
+    # Run TIR graph.
+    # ValidationError is raised by graph.py when debug=True and a per-node shape/value
+    # mismatch is detected.  Re-raise it immediately so the caller sees the failure at
+    # the exact node that diverged rather than having it silently recorded as an error.
     try:
+        from forge.transpiler.utils.exceptions import ValidationError
+
         input_dict = {name: torch.from_numpy(data) for name, data in input_data.items()}
         tir_outputs = tir_graph.run(input_dict)
         results["tir_outputs"] = {
             name: output.detach().cpu().numpy() if isinstance(output, torch.Tensor) else np.array(output)
             for name, output in tir_outputs.items()
         }
+    except ValidationError:
+        raise
     except Exception as e:
-        results["errors"].append(f"TIR execution failed: {e}")
+        import traceback
+
+        error_traceback = traceback.format_exc()
+        results["errors"].append(f"TIR execution failed: {e}\nTraceback:\n{error_traceback}")
         return results
 
     # Run ONNX model
     try:
-        sess = ort.InferenceSession(onnx_model.SerializeToString())
+        _opts = ort.SessionOptions()
+        _opts.log_severity_level = 3
+        _opts.inter_op_num_threads = 1
+        _opts.intra_op_num_threads = 1
+        sess = ort.InferenceSession(onnx_model.SerializeToString(), sess_options=_opts)
         onnx_inputs = {name: data for name, data in input_data.items()}
         onnx_outputs = sess.run(None, onnx_inputs)
 

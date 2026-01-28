@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Other operations: Concat, Clip, Cast, Pad, Identity
+Other operations: Concat, Clip, Cast, Pad, Identity, Full, Where
 """
 import torch
 import torch.nn.functional as F
@@ -11,9 +11,24 @@ from typing import Dict, List, Tuple, Union, Optional
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import (
+    ElementwiseUnaryShape,
+    TernaryBroadcastShape,
+    ConcatShape,
+    PadShape,
+    FullShape,
+)
 
 
-class ConcatNode(TIRNode):
+class ConcatNode(ConcatShape, TIRNode):
+    """
+    Concatenation operation node.
+
+    Concatenates a list of input tensors along a specified dimension.
+    All inputs must have the same shape except in the concatenation dimension.
+    Maps to ``torch.cat``.
+    """
+
     @staticmethod
     def create(
         name: str, inputs: OrderedDict[str, TensorInfo], outputs: OrderedDict[str, TensorInfo], dim: int
@@ -78,7 +93,7 @@ class ConcatNode(TIRNode):
         return {self.output_names[0]: torch.cat(inputs, dim=dim)}
 
 
-class ClipNode(TIRNode):
+class ClipNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Clip operation.
 
@@ -91,8 +106,8 @@ class ClipNode(TIRNode):
         name: str,
         inputs: OrderedDict[str, TensorInfo],
         outputs: OrderedDict[str, TensorInfo],
-        min_val: float = None,
-        max_val: float = None,
+        min_val: Optional[float] = None,
+        max_val: Optional[float] = None,
     ) -> "ClipNode":
         """Static factory method to create a ClipNode."""
         attrs = {}
@@ -118,7 +133,7 @@ class ClipNode(TIRNode):
         return {self.output_names[0]: torch.clamp(x, min=min_val, max=max_val)}
 
 
-class CastNode(TIRNode):
+class CastNode(ElementwiseUnaryShape, TIRNode):
     """
     PyTorch-like Cast operation.
 
@@ -154,7 +169,7 @@ class CastNode(TIRNode):
         return {self.output_names[0]: x.to(dtype=to_dtype)}
 
 
-class PadNode(TIRNode):
+class PadNode(PadShape, TIRNode):
     """
     PyTorch-like Pad operation.
     """
@@ -222,7 +237,7 @@ class PadNode(TIRNode):
         return {self.output_names[0]: F.pad(x, pad, mode=mode, value=value)}
 
 
-class IdentityNode(TIRNode):
+class IdentityNode(ElementwiseUnaryShape, TIRNode):
     """
     Identity operation - returns input tensor unchanged.
     Maps to PyTorch's identity operation (just returns the tensor as-is).
@@ -253,7 +268,7 @@ class IdentityNode(TIRNode):
         return {self.output_names[0]: x}
 
 
-class FullNode(TIRNode):
+class FullNode(FullShape, TIRNode):
     """
     Full operation - creates a tensor filled with a specified value.
     Maps to PyTorch's torch.full() operation.
@@ -329,3 +344,53 @@ class FullNode(TIRNode):
 
         result = torch.full(shape, fill_value, dtype=dtype)
         return {self.output_names[0]: result}
+
+
+class WhereNode(TernaryBroadcastShape, TIRNode):
+    """
+    Conditional selection operation node.
+
+    Performs element-wise conditional selection: output = condition ? X : Y
+    Supports broadcasting for all three inputs (condition, X, Y).
+    Maps to PyTorch's torch.where operation.
+    """
+
+    @staticmethod
+    def create(name: str, inputs: OrderedDict[str, TensorInfo], outputs: OrderedDict[str, TensorInfo]) -> "WhereNode":
+        """
+        Static factory method to create a WhereNode.
+
+        Args:
+            name: Node name
+            inputs: OrderedDict mapping input names to TensorInfo (condition, X, Y)
+            outputs: OrderedDict mapping output names to TensorInfo
+
+        Returns:
+            WhereNode instance
+        """
+        return WhereNode(name=name, op_type="Where", inputs=inputs, outputs=outputs, attrs={}, forge_op_name="Where")
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate conditional selection operation using PyTorch.
+
+        Performs element-wise conditional selection with broadcasting support.
+        For each element position:
+        - If condition[i] is True (nonzero), output[i] = X[i]
+        - If condition[i] is False (zero), output[i] = Y[i]
+
+        Args:
+            input_tensors: Dictionary mapping input names to tensors
+                Expected keys: condition (bool), X (T), Y (T)
+
+        Returns:
+            Dictionary mapping output name to result tensor
+
+        Note:
+            PyTorch's torch.where handles broadcasting automatically.
+            X and Y must have the same dtype.
+        """
+        condition = input_tensors[self.input_names[0]]
+        x = input_tensors[self.input_names[1]]
+        y = input_tensors[self.input_names[2]]
+        return {self.output_names[0]: torch.where(condition, x, y)}

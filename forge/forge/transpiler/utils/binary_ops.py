@@ -2,29 +2,108 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-ONNX Arithmetic operation converters.
+Shared utilities for binary operations and broadcasting.
 
-This module provides converters for ONNX arithmetic operations:
-- Add, Sub, Mul, Div: Element-wise binary operations with broadcasting support
-- MatMul: Matrix multiplication operation
+This is the single canonical module for all broadcasting and binary-operation
+validation utilities used across the transpiler.  It covers:
 
-Key features:
-- Handles opset version differences in broadcasting behavior (v1-6 vs v7+)
-- Validates shape compatibility based on opset version
-- Supports PyTorch-style multidirectional broadcasting (opset 7+)
-- Handles limited broadcasting with axis attribute (opset 1-6)
+- NumPy/PyTorch-style shape broadcasting (compatibility checks + shape computation)
+- OPSET 1-6 limited broadcasting validation (axis attribute)
+- OPSET 7+ multidirectional broadcasting validation
+- Dtype compatibility checking for arithmetic and comparison ops
 """
-from loguru import logger
-from typing import List, Dict, Any, Optional, Tuple
+import torch
+from typing import Tuple, Optional, Dict, Any
 from collections import OrderedDict
-from onnx import NodeProto
+from loguru import logger
+
 from forge.transpiler.core.types import TensorInfo
-from forge.transpiler.operations.arithmetic import AddNode, SubNode, MulNode, DivNode, MatMulNode
-from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
-from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
 
 
-def _are_shapes_equal(shape_a: Tuple, shape_b: Tuple) -> bool:
+def validate_binary_inputs_pytorch_style(
+    shape_a: torch.Size,
+    shape_b: torch.Size,
+    dtype_a: torch.dtype,
+    dtype_b: torch.dtype,
+    op_name: str,
+    tensor_a_name: str,
+    tensor_b_name: str,
+    operation_category: str = "operation",
+) -> None:
+    """
+    Validate inputs for binary operations (arithmetic or comparison) following PyTorch style.
+
+    This function validates:
+    1. Dtype equality: Both tensors must have the same dtype (PyTorch requirement)
+    2. Broadcasting compatibility: Shapes must be compatible for broadcasting
+
+    Broadcasting rules (PyTorch/NumPy-style):
+    - Shapes are compared from right to left
+    - Two dimensions are compatible if:
+      * They are equal, OR
+      * One of them is 1, OR
+      * One of them doesn't exist (missing dimension)
+
+    Args:
+        shape_a: Shape of first tensor
+        shape_b: Shape of second tensor
+        dtype_a: Dtype of first tensor
+        dtype_b: Dtype of second tensor
+        op_name: Name of the operation (for error messages)
+        tensor_a_name: Name of first tensor (for error messages)
+        tensor_b_name: Name of second tensor (for error messages)
+        operation_category: Category of operation ("arithmetic" or "comparison") for error messages
+
+    Raises:
+        ValueError: If dtypes don't match or shapes are not compatible for broadcasting
+    """
+    # 1. Validate dtype equality (PyTorch requirement)
+    if dtype_a != dtype_b:
+        raise ValueError(
+            f"Type mismatch in {op_name}: "
+            f"Input tensors must have the same dtype. "
+            f"{tensor_a_name} has dtype {dtype_a}, "
+            f"{tensor_b_name} has dtype {dtype_b}. "
+            f"PyTorch {operation_category} operations require matching dtypes."
+        )
+
+    # 2. If shapes are equal, no broadcasting needed
+    if shape_a == shape_b:
+        return
+
+    # 3. Validate broadcasting compatibility
+    shape_a_list = list(shape_a)
+    shape_b_list = list(shape_b)
+
+    # Pad shorter shape with 1s on the left (missing dimensions treated as 1)
+    max_len = max(len(shape_a_list), len(shape_b_list))
+    shape_a_padded = [1] * (max_len - len(shape_a_list)) + shape_a_list
+    shape_b_padded = [1] * (max_len - len(shape_b_list)) + shape_b_list
+
+    # Check compatibility from right to left
+    incompatible_dims = []
+    for i in range(max_len - 1, -1, -1):
+        dim_a = shape_a_padded[i]
+        dim_b = shape_b_padded[i]
+
+        # Dimensions are compatible if:
+        # 1. They are equal, OR
+        # 2. One of them is 1
+        if dim_a != dim_b and dim_a != 1 and dim_b != 1:
+            incompatible_dims.append((i, dim_a, dim_b))
+
+    if incompatible_dims:
+        dim_info = ", ".join([f"dim {d[0]}: {d[1]} vs {d[2]}" for d in incompatible_dims])
+        raise ValueError(
+            f"Broadcasting error in {op_name}: "
+            f"Shapes {shape_a} ({tensor_a_name}) and {shape_b} ({tensor_b_name}) "
+            f"are not compatible for broadcasting. "
+            f"Incompatible dimensions: {dim_info}. "
+            f"Two dimensions are compatible if they are equal OR one is 1."
+        )
+
+
+def are_shapes_equal(shape_a: Tuple, shape_b: Tuple) -> bool:
     """
     Check if two shapes are exactly equal.
 
@@ -38,7 +117,28 @@ def _are_shapes_equal(shape_a: Tuple, shape_b: Tuple) -> bool:
     return shape_a == shape_b
 
 
-def _are_shapes_compatible_for_broadcasting(shape_a: Tuple, shape_b: Tuple) -> bool:
+def _check_no_unknown_dims(shape: Tuple, context: str = "") -> None:
+    """Raise ValueError if shape contains unknown dimensions (None, str, or int < 0)."""
+    import numpy as np
+
+    if shape is None:
+        raise ValueError(
+            f"Shape is None. Unknown dimensions are not supported.{f' Context: {context}' if context else ''}"
+        )
+    for idx, dim in enumerate(shape):
+        if dim is None or isinstance(dim, str):
+            raise ValueError(
+                f"Unknown dimension at index {idx}: {dim}. All dimensions must be known integers. "
+                f"Unknown dimensions are not supported." + (f" Context: {context}" if context else "")
+            )
+        if isinstance(dim, (int, np.integer)) and dim < 0:
+            raise ValueError(
+                f"Unknown/dynamic dimension at index {idx}: {dim}. "
+                f"Negative dimensions must be resolved before use." + (f" Context: {context}" if context else "")
+            )
+
+
+def are_shapes_compatible_for_broadcasting(shape_a: Tuple, shape_b: Tuple) -> bool:
     """
     Check if two shapes are compatible for NumPy-style broadcasting (OPSET 7+).
 
@@ -55,7 +155,16 @@ def _are_shapes_compatible_for_broadcasting(shape_a: Tuple, shape_b: Tuple) -> b
 
     Returns:
         True if shapes are compatible for broadcasting, False otherwise
+
+    Raises:
+        ValueError: If shapes contain unknown dimensions (None, str, negative int)
     """
+    if shape_a is None or shape_b is None:
+        return False
+
+    _check_no_unknown_dims(shape_a, "are_shapes_compatible_for_broadcasting")
+    _check_no_unknown_dims(shape_b, "are_shapes_compatible_for_broadcasting")
+
     if shape_a == shape_b:
         return True
 
@@ -79,7 +188,7 @@ def _are_shapes_compatible_for_broadcasting(shape_a: Tuple, shape_b: Tuple) -> b
     return True
 
 
-def _validate_limited_broadcasting(shape_a: Tuple, shape_b: Tuple, axis: Optional[int], op_type: str) -> None:
+def validate_limited_broadcasting(shape_a: Tuple, shape_b: Tuple, axis: Optional[int], op_type: str) -> None:
     """
     Validate broadcasting for OPSET 1-6 (limited broadcasting with axis attribute).
 
@@ -153,17 +262,20 @@ def _validate_limited_broadcasting(shape_a: Tuple, shape_b: Tuple, axis: Optiona
                 )
 
 
-def _validate_broadcast_attributes(
+def validate_broadcast_attributes(
     op_type: str, attrs: Dict[str, Any], input_tensors: OrderedDict[str, TensorInfo], opset: int
 ) -> None:
     """
     Validate broadcast and axis attributes based on opset version.
 
+    This function validates broadcasting compatibility for binary operations
+    (both arithmetic and comparison) based on the opset version.
+
     This function only validates - it does not return processed attributes.
     Raises ValueError if validation fails.
 
     Args:
-        op_type: Operation type (Add, Sub, Mul, Div)
+        op_type: Operation type (Add, Sub, Mul, Div, Equal, Greater, Less, etc.)
         attrs: Extracted attributes dictionary
         input_tensors: Dictionary of input tensor information
         opset: Opset version
@@ -193,8 +305,8 @@ def _validate_broadcast_attributes(
         )
         return  # Skip validation if shapes are unknown
 
-    shapes_match = _are_shapes_equal(shape_a, shape_b)
-    shapes_compatible_multidir = _are_shapes_compatible_for_broadcasting(shape_a, shape_b)
+    shapes_match = are_shapes_equal(shape_a, shape_b)
+    shapes_compatible_multidir = are_shapes_compatible_for_broadcasting(shape_a, shape_b)
 
     # Handle broadcasting validation based on opset version
     if opset <= 6:
@@ -210,9 +322,9 @@ def _validate_broadcast_attributes(
             else:
                 # broadcast=1 is set, validate limited broadcasting rules
                 # Limited broadcasting: B must match a contiguous subset of A's shape
-                _validate_limited_broadcasting(shape_a, shape_b, axis, op_type)
+                validate_limited_broadcasting(shape_a, shape_b, axis, op_type)
                 if axis is not None:
-                    logger.debug(f"{op_type} node: Using axis={axis} for broadcasting (OPSET {opset})")
+                    logger.trace(f"{op_type} node: Using axis={axis} for broadcasting (OPSET {opset})")
 
     else:
         # OPSET 7+: Multidirectional broadcasting always enabled (NumPy/PyTorch style)
@@ -236,77 +348,76 @@ def _validate_broadcast_attributes(
             )
 
 
-class BinaryArithmeticConverter(OnnxOpConverter):
+# ---------------------------------------------------------------------------
+# Shape computation
+# ---------------------------------------------------------------------------
+
+
+def compute_broadcasted_shape(shape_a: Tuple, shape_b: Tuple) -> Optional[Tuple]:
     """
-    Unified converter for binary arithmetic operations: Add, Sub, Mul, Div.
+    Compute the output shape produced by broadcasting two input shapes.
 
-    This converter handles all four operations (Add, Sub, Mul, Div) using a single
-    implementation, while maintaining separate operator nodes for each operation type.
-    The operator nodes use PyTorch API (torch.add, torch.sub, torch.mul, torch.div).
+    Follows NumPy/PyTorch multidirectional broadcasting rules:
 
-    Broadcasting Handling:
-    - OPSET 1-6: Validates `broadcast=1` attribute and handles `axis` attribute
-    - OPSET 7+: Multidirectional broadcasting always enabled (attributes ignored)
-    - PyTorch operations handle broadcasting automatically
+    1. Shapes are compared from right to left (trailing dimensions first).
+    2. Two dimensions are compatible if they are equal, or one of them is 1,
+       or one of them is missing (treated as 1).
+    3. The output dimension is the maximum of the two compatible dimensions.
+
+    Args:
+        shape_a: First operand shape tuple.
+        shape_b: Second operand shape tuple.
+
+    Returns:
+        Broadcasted shape tuple, or ``None`` if shapes are incompatible or either
+        shape is ``None``.
     """
+    if shape_a is None or shape_b is None:
+        return None
 
-    # Mapping from ONNX op type to corresponding node class
-    _OP_NODE_MAP = {
-        "Add": AddNode,
-        "Sub": SubNode,
-        "Mul": MulNode,
-        "Div": DivNode,
-    }
+    _check_no_unknown_dims(shape_a, "compute_broadcasted_shape")
+    _check_no_unknown_dims(shape_b, "compute_broadcasted_shape")
 
-    @classmethod
-    def convert(
-        cls,
-        node_proto: NodeProto,
-        input_tensors: OrderedDict[str, TensorInfo],
-        output_tensors: OrderedDict[str, TensorInfo],
-        attrs: Dict[str, Any],
-        node_index: int,
-        graph_proto=None,
-        opset: int = 1,
-    ) -> List:
-        """
-        Convert binary arithmetic operations (Add, Sub, Mul, Div).
+    if shape_a == shape_b:
+        return shape_a
 
-        Args:
-            node_proto: ONNX node protocol buffer
-            input_tensors: Dictionary of input tensor information
-            output_tensors: Dictionary of output tensor information
-            attrs: Extracted attributes (may include broadcast, axis)
-            node_index: Index of the node in the graph
-            graph_proto: Optional graph protocol buffer
-            opset: Opset version (default: 1)
+    shape_a_list = list(shape_a)
+    shape_b_list = list(shape_b)
 
-        Returns:
-            List containing a single node instance (AddNode, SubNode, MulNode, or DivNode)
-        """
-        op_type = node_proto.op_type
+    max_len = max(len(shape_a_list), len(shape_b_list))
+    shape_a_padded = [1] * (max_len - len(shape_a_list)) + shape_a_list
+    shape_b_padded = [1] * (max_len - len(shape_b_list)) + shape_b_list
 
-        # Get the appropriate node class for this operation
-        node_class = cls._OP_NODE_MAP.get(op_type)
-        if node_class is None:
-            raise ValueError(
-                f"Unsupported binary arithmetic operation: {op_type}. "
-                f"Supported operations: {list(cls._OP_NODE_MAP.keys())}"
-            )
+    broadcasted = []
+    for dim_a, dim_b in zip(shape_a_padded, shape_b_padded):
+        if dim_a != dim_b and dim_a != 1 and dim_b != 1:
+            return None
+        broadcasted.append(max(dim_a, dim_b))
 
-        # Validate broadcast/axis attributes based on opset version
-        # This ensures shapes are compatible and raises errors if not
-        # Note: PyTorch operations handle broadcasting automatically, but we validate
-        # to catch errors early and provide better error messages
-        _validate_broadcast_attributes(op_type=op_type, attrs=attrs, input_tensors=input_tensors, opset=opset)
+    return tuple(broadcasted)
 
-        # Generate node name if not provided
-        node_name = node_proto.name if node_proto.name else f"{op_type}_{node_index}"
 
-        # Build OrderedDict for inputs and outputs
-        input_dict, output_dict = build_input_output_dicts(node_proto, input_tensors, output_tensors)
+def compute_broadcasted_shape_multi(*shapes: Tuple) -> Optional[Tuple]:
+    """
+    Compute the broadcasted output shape for two or more input shapes.
 
-        # Create and return the appropriate node
-        # The node will use PyTorch operations (torch.add, torch.sub, etc.)
-        # which handle broadcasting automatically
-        return [node_class.create(name=node_name, inputs=input_dict, outputs=output_dict)]
+    Applies :func:`compute_broadcasted_shape` iteratively, left to right.
+
+    Args:
+        *shapes: Two or more shape tuples to broadcast together.
+
+    Returns:
+        Broadcasted shape tuple, or ``None`` if any pair is incompatible or any
+        shape is ``None``.
+    """
+    if not shapes:
+        return None
+    if len(shapes) == 1:
+        return shapes[0]
+
+    result = shapes[0]
+    for shape in shapes[1:]:
+        result = compute_broadcasted_shape(result, shape)
+        if result is None:
+            return None
+    return result
