@@ -1,0 +1,93 @@
+{
+  "_description": "Enhanced descriptions for Forge operations. These are used when docstrings need additional detail beyond what is in the source code. Future developers should update forge/forge/op/*.py docstrings directly instead of adding entries here.",
+  "_note": "This file serves as a temporary enhancement layer. The goal is to migrate all descriptions to the source docstrings.",
+  "_supported_fields": {
+    "description": "Override or supplement the operation overview/description",
+    "parameters": "Object mapping parameter names to enhanced descriptions",
+    "mathematical_definition": "Mathematical formula for the operation",
+    "related_operations": "List of related operations with descriptions"
+  },
+
+  "operations": {
+    "Resize2d": {
+      "description": "Resizes the spatial dimensions (height and width) of a 2D input tensor using interpolation. This operation is commonly used in computer vision tasks for image resizing, upsampling, and downsampling.",
+      "parameters": {
+        "operandA": "Input tensor of shape `(N, C, H, W)` for channel-first or `(N, H, W, C)` for channel-last format.",
+        "sizes": "Target output spatial dimensions as `[height, width]`. The output tensor will have these exact height and width values.",
+        "mode": "Interpolation mode: `'nearest'` for nearest neighbor (fast) or `'bilinear'` for bilinear interpolation (smoother).",
+        "align_corners": "If `True`, corner pixels are aligned. Only affects bilinear mode.",
+        "channel_last": "If `True`, input is `(N, H, W, C)` format; if `False`, input is `(N, C, H, W)` format."
+      },
+      "mathematical_definition": "### Nearest Neighbor Interpolation\n\nFor nearest neighbor interpolation, each output pixel value is taken from the nearest input pixel:\n\n```\noutput[i, j] = input[round(i * H_in / H_out), round(j * W_in / W_out)]\n```\n\n### Bilinear Interpolation\n\nFor bilinear interpolation, each output pixel is computed as a weighted average of the four nearest input pixels:\n\n```\noutput[i, j] = Σ(weight_k * input[k]) for k in {top-left, top-right, bottom-left, bottom-right}\n```\n\nThe weights are computed based on the distance from the output pixel to the surrounding input pixels.",
+      "related_operations": [
+        {"name": "Resize1d", "description": "Resize 1D tensors (e.g., sequences)"},
+        {"name": "Upsample2d", "description": "Upsample using scale factors instead of target sizes"},
+        {"name": "Downsample2d", "description": "Downsample operation"},
+        {"name": "Transpose", "description": "Rearrange tensor dimensions"}
+      ]
+    },
+    "Resize1d": {
+      "related_operations": [
+        {"name": "Resize2d", "description": "Resize 2D tensors"},
+        {"name": "Upsample2d", "description": "Upsample operation"}
+      ]
+    },
+    "Abs": {
+      "mathematical_definition": "```\nabs(x) = |x| = { x if x ≥ 0, -x if x < 0 }\n```",
+      "related_operations": [
+        {"name": "Relu", "description": "ReLU activation (sets negatives to zero)"},
+        {"name": "Sigmoid", "description": "Sigmoid activation function"}
+      ]
+    },
+    "Relu": {
+      "mathematical_definition": "```\nrelu(x) = max(0, x) = { x if x > 0, 0 if x ≤ 0 }\n```",
+      "related_operations": [
+        {"name": "LeakyRelu", "description": "Leaky ReLU with non-zero negative slope"},
+        {"name": "Gelu", "description": "Gaussian Error Linear Unit"},
+        {"name": "Sigmoid", "description": "Sigmoid activation function"},
+        {"name": "Tanh", "description": "Hyperbolic tangent activation"}
+      ]
+    },
+    "Sigmoid": {
+      "mathematical_definition": "```\nsigmoid(x) = 1 / (1 + exp(-x))\n```\n\nThe output is always in the range (0, 1).",
+      "related_operations": [
+        {"name": "Relu", "description": "ReLU activation function"},
+        {"name": "Tanh", "description": "Hyperbolic tangent activation"},
+        {"name": "Gelu", "description": "Gaussian Error Linear Unit"}
+      ]
+    },
+    "Tanh": {
+      "mathematical_definition": "```\ntanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))\n```\n\nThe output is always in the range (-1, 1).",
+      "related_operations": [
+        {"name": "Sigmoid", "description": "Sigmoid activation function"},
+        {"name": "Relu", "description": "ReLU activation function"}
+      ]
+    },
+    "Gelu": {
+      "mathematical_definition": "```\ngelu(x) = x * Φ(x)\n```\n\nWhere Φ(x) is the cumulative distribution function of the standard normal distribution.\n\nFor 'tanh' approximation:\n```\ngelu(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))\n```",
+      "related_operations": [
+        {"name": "Relu", "description": "ReLU activation function"},
+        {"name": "Sigmoid", "description": "Sigmoid activation function"}
+      ]
+    },
+    "Conv2d": {
+      "parameters": {
+        "weight": "Convolution kernel of shape `(C_out, C_in, K_H, K_W)` where `C_out` is output channels, `C_in` is input channels, and `K_H x K_W` is kernel size.",
+        "bias": "Optional bias tensor of shape `(C_out,)`. Added to each output channel."
+      },
+      "mathematical_definition": "For input `x` of shape `(N, C_in, H, W)` and kernel `k` of shape `(C_out, C_in, K_H, K_W)`:\n\n```\noutput[n, c_out, h, w] = Σ_{c_in} Σ_{kh} Σ_{kw} x[n, c_in, h*s + kh*d, w*s + kw*d] * k[c_out, c_in, kh, kw] + bias[c_out]\n```\n\nWhere `s` is stride and `d` is dilation.",
+      "related_operations": [
+        {"name": "Conv2dTranspose", "description": "Transposed 2D convolution"},
+        {"name": "AvgPool2d", "description": "2D average pooling"},
+        {"name": "MaxPool2d", "description": "2D max pooling"}
+      ]
+    },
+    "Matmul": {
+      "mathematical_definition": "For matrices `A` of shape `(M, K)` and `B` of shape `(K, N)`:\n\n```\noutput[i, j] = Σ_k A[i, k] * B[k, j]\n```\n\nFor batched inputs, the operation is applied to the last two dimensions.",
+      "related_operations": [
+        {"name": "Add", "description": "Elementwise addition (for bias)"},
+        {"name": "Transpose", "description": "Transpose dimensions before matmul"}
+      ]
+    }
+  }
+}

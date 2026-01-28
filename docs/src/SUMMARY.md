@@ -13,6 +13,9 @@
     - [Performance Benchmark](./perf.md)
 - [Tools](./tools.md)
 
+# Operations Reference
+- [Operations](./operations.md)
+
 # Dev Notes
 - [Running standalone FFE generated TTIRs](./dev_notes/standalone_ttir_run.md)
 - [Verification in tests](./dev_notes/verification.md)

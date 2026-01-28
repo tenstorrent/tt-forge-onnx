@@ -63,25 +63,60 @@ def Resize2d(
     channel_last: bool = False,
 ) -> Tensor:
     """
-    Resize input activations, with default mode 'nearest'
+    Resizes the spatial dimensions of a 2D input tensor using interpolation.
+
+    The Resize2d operation resizes the height and width dimensions of a 4D
+    input tensor to specified target sizes. This operation is commonly used
+    in computer vision tasks for image resizing, upsampling, and downsampling.
 
     Parameters
     ----------
-    name: str
-        Op name, unique to the module, or leave blank to autoset
+    name : str
+        Name identifier for this operation in the computation graph.
+        Use empty string to auto-generate.
 
-    operandA: Tensor
-        Input operand A
+    operandA : Tensor
+        Input tensor of shape `(N, C, H, W)` (channel-first) or
+        `(N, H, W, C)` (channel-last) where:
+        - `N` is the batch size
+        - `C` is the number of channels
+        - `H` is the input height
+        - `W` is the input width
 
-    sizes: Union[List[int], Tuple[int, int]]
-        The target 2D sizes to extrapolate to
+    sizes : Union[List[int], Tuple[int, int]]
+        Target output spatial dimensions as `[height, width]` or
+        `(height, width)`. The output tensor will have these exact
+        height and width values.
 
-    mode: str
-        Interpolation mode
+    mode : str, optional
+        Interpolation mode. Supported values:
+        - `'nearest'`: Nearest neighbor interpolation (fast, may produce aliasing)
+        - `'bilinear'`: Bilinear interpolation (smoother, better for upsampling)
+        Default: `'nearest'`
 
-    channel_last: bool
-        Whether the input is in channel-last format (NHWC)
+    align_corners : bool, optional
+        If True, align corner pixels of input and output tensors.
+        Only affects bilinear mode. When False, pixels are aligned by centers.
+        Default: `False`
 
+    channel_last : bool, optional
+        If True, input is in channel-last format `(N, H, W, C)`.
+        If False, input is in channel-first format `(N, C, H, W)`.
+        Default: `False`
+
+    Returns
+    -------
+    Tensor
+        Output tensor with resized spatial dimensions:
+        - Shape `(N, C, H_out, W_out)` if `channel_last=False`
+        - Shape `(N, H_out, W_out, C)` if `channel_last=True`
+        where `H_out, W_out` are the values specified in `sizes`.
+
+    See Also
+    --------
+    forge.op.Resize1d : Resize 1D tensors
+    forge.op.Upsample2d : Upsample using scale factors
+    forge.op.Downsample2d : Downsample operation
     """
 
     assert isinstance(sizes, (list, tuple)) and len(sizes) == 2
