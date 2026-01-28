@@ -7,17 +7,19 @@ Base node class and operation registry for the transpiler IR.
 Framework-agnostic - used by all frontends.
 """
 import torch
-from typing import Dict, List, Any
+from abc import ABC, abstractmethod
+from typing import Dict, List, Any, Optional, Tuple
 from collections import OrderedDict
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.core.shape_eval import get_shape_eval_meta_for_op, ShapeEvalMeta
 
 
-class TIRNode:
+class TIRNode(ABC):
     """
     Base class for all Transpiler Intermediate Representation nodes.
     Represents a node in the intermediate representation between ML frameworks
-    (e.g., ONNX, PaddlePaddle) and Forge module graphs.
-    Framework-agnostic - operations are common across all frontends.
+    (e.g., ONNX) and Forge module graphs.
+    Framework-agnostic — operations are common across all supported frontends.
 
     TIRNodes are created with PyTorch-compatible attributes (attrs).
     The only conversion pipeline is: attrs -> forge_attrs.
@@ -31,8 +33,8 @@ class TIRNode:
         inputs: OrderedDict[str, TensorInfo],
         outputs: OrderedDict[str, TensorInfo],
         attrs: Dict[str, Any],
-        forge_op_name: str = None,
-        src_layer: str = None,
+        forge_op_name: Optional[str] = None,
+        src_layer: Optional[str] = None,
     ):
         """
         Initialize a TIRNode.
@@ -61,6 +63,13 @@ class TIRNode:
         # This allows subclasses to customize attribute transformation (e.g., dim -> axis)
         self.forge_attrs = self.convert_attrs_to_forge_attrs(self.attrs)
         self.forge_op_name = forge_op_name
+        # Shape-evaluation metadata used by inline shape resolver.
+        # Subclasses may override by defining class attribute `shape_eval_meta`.
+        class_meta = getattr(self.__class__, "shape_eval_meta", None)
+        if class_meta is not None and isinstance(class_meta, ShapeEvalMeta):
+            self.shape_eval_meta = class_meta
+        else:
+            self.shape_eval_meta = get_shape_eval_meta_for_op(self.op_type)
 
     def convert_attrs_to_forge_attrs(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -135,20 +144,50 @@ class TIRNode:
             return None
         return f"forge.op.{self.forge_op_name}"
 
+    @abstractmethod
     def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
         Execute the node operation using PyTorch.
 
+        Every concrete TIRNode subclass **must** implement this method.  Failing
+        to do so raises ``TypeError`` at class-definition time (not at call time),
+        making missing implementations an early, hard error rather than a silent
+        runtime failure.
+
         Args:
-            input_tensors: Dictionary mapping input names to PyTorch tensors
+            input_tensors: Dictionary mapping input names to PyTorch tensors.
 
         Returns:
-            Dictionary mapping output names to result tensors
-
-        Raises:
-            NotImplementedError: Must be implemented by subclasses
+            Dictionary mapping output names to result tensors.
         """
-        raise NotImplementedError("Subclasses must implement eval")
+
+    @staticmethod
+    def _has_unknown_dimension(shape: Optional[Tuple]) -> bool:
+        if shape is None:
+            return True
+        for dim in shape:
+            if dim is None or isinstance(dim, str):
+                return True
+            if isinstance(dim, int) and dim < 0:
+                return True
+        return False
+
+    def infer_output_shapes(self, tensor_shapes: Dict[str, Tuple]) -> Optional[Dict[str, Tuple]]:
+        """
+        Infer output shapes from known input shapes.
+
+        Default behavior is conservative: if output TensorInfo already has a
+        fully-known shape, return it; otherwise return None and let fallback
+        paths handle it.  Subclasses override this to provide efficient
+        formula-based shape inference without executing the operation.
+        """
+        inferred = {}
+        for out_name, out_info in self.outputs.items():
+            out_shape = out_info.shape
+            if self._has_unknown_dimension(out_shape):
+                return None
+            inferred[out_name] = tuple(out_shape)
+        return inferred if inferred else None
 
     def emit(self) -> Dict[str, Any]:
         """
@@ -181,6 +220,24 @@ class TIRNode:
                 f"using pattern callbacks before code generation."
             )
 
+        # Convert input order if needed (e.g., EmbeddingNode has inverse order)
+        input_names = self.input_names
+        if hasattr(self, "convert_inputs_to_forge_order"):
+            input_names = self.convert_inputs_to_forge_order(self.input_names)
+
+        # Build input_shapes and input_dtypes lists matching the converted input_names order
+        input_shapes_list = []
+        input_dtypes_list = []
+        for name in input_names:
+            if name in self.inputs:
+                info = self.inputs[name]
+                input_shapes_list.append(info.shape if info.shape else [])
+                input_dtypes_list.append(info.torch_dtype if info.torch_dtype else None)
+            else:
+                # Fallback: use original order if name not found
+                input_shapes_list.append([])
+                input_dtypes_list.append(None)
+
         # Return metadata dictionary matching ForgeWriter's Operation structure
         # This allows code generators to produce consistent Forge module code
         return {
@@ -189,10 +246,11 @@ class TIRNode:
             # output_name is first output for backward compatibility with single-output operations
             "output_name": self.output_names[0] if len(self.outputs) > 0 else None,
             "output_names": self.output_names,
-            "input_names": self.input_names,
+            "input_names": input_names,  # Use converted input order
             # Convert None shapes to empty lists for code generation compatibility
-            "input_shapes": [info.shape if info.shape else [] for info in self.inputs.values()],
-            "input_dtypes": [info.torch_dtype if info.torch_dtype else None for info in self.inputs.values()],
+            # Note: input_shapes and input_dtypes match input_names order
+            "input_shapes": input_shapes_list,
+            "input_dtypes": input_dtypes_list,
             "args": self.forge_attrs,
             "src_layer": self.src_layer,
         }

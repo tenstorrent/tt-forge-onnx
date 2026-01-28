@@ -9,6 +9,8 @@ from datasets import load_dataset
 from transformers import ResNetForImageClassification, AutoImageProcessor
 
 import forge
+from forge.verify.config import DeprecatedVerifyConfig
+from forge.config import CompilerConfig
 from forge.verify.verify import verify
 from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
@@ -23,7 +25,8 @@ variants = [
 @pytest.mark.pr_models_regression
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", variants, ids=variants)
-def test_resnet_onnx(variant, forge_tmp_path):
+@pytest.mark.parametrize("use_transpiler", [False, True], ids=["tvm", "transpiler"])
+def test_resnet_onnx(variant, forge_tmp_path, use_transpiler):
     random.seed(0)
 
     # Record model details
@@ -33,6 +36,7 @@ def test_resnet_onnx(variant, forge_tmp_path):
         variant="50",
         source=Source.HUGGINGFACE,
         task=Task.CV_IMAGE_CLASSIFICATION,
+        suffix="_transpiler" if use_transpiler else "_tvm",
     )
 
     # Load processor and Model
@@ -55,9 +59,35 @@ def test_resnet_onnx(variant, forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
+    # Configure compiler and verification based on compilation path
+    if use_transpiler:
+        # Transpiler path configuration
+        compiler_cfg = CompilerConfig(
+            compile_transpiler_to_python=True,  # Enable transpiler path
+            compile_tvm_to_python=False,  # Disable TVM path
+            transpiler_enable_debug=True,  # Enable debug mode for transpiler (ONNX Runtime comparison)
+        )
+
+        # Create verify config with all verification flags enabled for transpiler
+        verify_cfg = DeprecatedVerifyConfig(
+            # Transpiler-specific verification
+            verify_transpiler_graph=True,  # Compare Framework output vs TIR graph output after transpiler conversion
+            verify_forge_codegen_vs_framework=True,  # Compare Framework output vs Forge codegen outputs
+        )
+    else:
+        # TVM path configuration (default)
+        compiler_cfg = CompilerConfig()
+        verify_cfg = DeprecatedVerifyConfig(verify_forge_codegen_vs_framework=True)
+
     # Compile model
     input_sample = [input_sample]
-    compiled_model = forge.compile(onnx_model, input_sample, module_name=module_name)
+    compiled_model = forge.compile(
+        framework_model,
+        sample_inputs=input_sample,
+        module_name=module_name,
+        compiler_cfg=compiler_cfg,
+        verify_cfg=verify_cfg,
+    )
 
     # Model Verification and Inference
     _, co_out = verify(

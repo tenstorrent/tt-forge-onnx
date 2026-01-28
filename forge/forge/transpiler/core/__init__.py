@@ -7,7 +7,14 @@ Core transpiler functionality - framework-agnostic.
 from forge.transpiler.core.graph import TIRGraph
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo, onnx_dtype_to_torch_dtype
-from forge.transpiler.core.exceptions import TranspilerError, ConversionError, ValidationError, DebugValidationError
+from forge.transpiler.utils.exceptions import (
+    TranspilerError,
+    ConversionError,
+    ValidationError,
+    DebugValidationError,
+    UnsupportedOperationError,
+    ONNXModelValidationError,
+)
 from forge.transpiler.utils.graph_printer import print_tir_graph
 
 __all__ = [
@@ -19,5 +26,7 @@ __all__ = [
     "ConversionError",
     "ValidationError",
     "DebugValidationError",
+    "UnsupportedOperationError",
+    "ONNXModelValidationError",
     "print_tir_graph",
 ]

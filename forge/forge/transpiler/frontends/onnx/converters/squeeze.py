@@ -44,6 +44,7 @@ class SqueezeConverter(OnnxOpConverter):
         attrs: Dict[str, Any],
         graph_proto=None,
         opset_version: int = 1,
+        tir_graph=None,
     ) -> Optional[List[int]]:
         """Extract and normalize axes from attribute (v1-v11) or input tensor (v13+).
 
@@ -59,7 +60,9 @@ class SqueezeConverter(OnnxOpConverter):
             raise ValueError(f"Cannot determine input rank for Squeeze node '{node_proto.name}'")
 
         if opset_version >= 13 and len(node_proto.input) > 1:
-            is_valid, axes, _ = validate_constant_input(node_proto, input_index=1, graph_proto=graph_proto)
+            is_valid, axes, _ = validate_constant_input(
+                node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
+            )
             if is_valid:
                 if axes is not None:
                     # Normalize and return (empty list means no squeeze)
@@ -96,7 +99,9 @@ class SqueezeConverter(OnnxOpConverter):
         node_name = node_proto.name or f"Squeeze_{node_index}"
 
         # Get and process axes
-        axes = cls._get_axes_to_squeeze(node_proto, input_tensors, attrs, graph_proto, opset_version)
+        axes = cls._get_axes_to_squeeze(
+            node_proto, input_tensors, attrs, graph_proto, opset_version, tir_graph=tir_graph
+        )
         # None means auto-detect all size-1 dims, [] means no squeeze (Identity)
         if axes is None:
             axes = [i for i, size in enumerate(input_shape) if size == 1]
@@ -135,6 +140,7 @@ class SqueezeConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Squeeze converter - single method handles all versions using opset parameter.

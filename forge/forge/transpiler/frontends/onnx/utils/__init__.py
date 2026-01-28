@@ -6,13 +6,16 @@ ONNX frontend utilities.
 
 This package contains utility modules for the ONNX frontend, including:
 - Naming utilities for node name sanitization
-- Custom exceptions for error handling
 - Attribute extraction utilities
 - Converter helper functions
 - Validation utilities
+
+Transpiler-level exceptions (``TranspilerError``, ``ConversionError``,
+``UnsupportedOperationError``, ``ONNXModelValidationError``, etc.) are defined
+in ``forge.transpiler.utils.exceptions`` and re-exported here for convenience.
 """
 from forge.transpiler.frontends.onnx.utils.naming import sanitize_name, ensure_unique_name
-from forge.transpiler.frontends.onnx.utils.exceptions import UnsupportedOperationError, ONNXModelValidationError
+from forge.transpiler.utils.exceptions import UnsupportedOperationError, ONNXModelValidationError
 from forge.transpiler.frontends.onnx.utils.attributes import (
     extract_attributes,
     extract_attr_value,
@@ -28,7 +31,7 @@ from forge.transpiler.frontends.onnx.utils.io_builder import (
     build_input_output_dicts,
 )
 from forge.transpiler.frontends.onnx.utils.validation import (
-    ValidationError,
+    ConverterValidationError,
     validate_attributes,
     validate_constant_input,
     handle_validation_error,
@@ -45,6 +48,7 @@ __all__ = [
     # Exceptions
     "UnsupportedOperationError",
     "ONNXModelValidationError",
+    "ConverterValidationError",
     # Attributes
     "extract_attributes",
     "extract_attr_value",
@@ -56,7 +60,6 @@ __all__ = [
     "torch_dtype_to_onnx_dtype",
     "build_input_output_dicts",
     # Validation
-    "ValidationError",
     "validate_attributes",
     "validate_constant_input",
     "handle_validation_error",

@@ -32,11 +32,8 @@ def test_mnist(forge_tmp_path, use_transpiler):
         model=ModelArch.MNIST,
         source=Source.GITHUB,
         task=Task.CV_IMAGE_CLASSIFICATION,
+        suffix="_transpiler" if use_transpiler else "_tvm",
     )
-
-    # Add suffix based on compilation path
-    path_suffix = "_transpiler" if use_transpiler else "_tvm"
-    module_name = module_name + path_suffix
 
     # Load model and input
     framework_model = load_model()

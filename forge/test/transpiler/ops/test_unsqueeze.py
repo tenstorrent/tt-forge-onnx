@@ -506,8 +506,8 @@ class TestUnsqueeze:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
 
         # ONNX validation might catch this first, or transpiler raises ConversionError
-        from forge.transpiler.core.exceptions import ConversionError
-        from forge.transpiler.frontends.onnx.utils.exceptions import ONNXModelValidationError
+        from forge.transpiler.utils.exceptions import ConversionError
+        from forge.transpiler.utils.exceptions import ONNXModelValidationError
 
         try:
             tir_graph = transpiler.transpile(onnx_model)
@@ -545,7 +545,7 @@ class TestUnsqueeze:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
 
         # Transpiler raises ConversionError when duplicate axes are detected
-        from forge.transpiler.core.exceptions import ConversionError
+        from forge.transpiler.utils.exceptions import ConversionError
 
         with pytest.raises(ConversionError, match="axes contains duplicate values"):
             transpiler.transpile(onnx_model)
@@ -573,8 +573,8 @@ class TestUnsqueeze:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=True)
 
         # Transpiler should raise ConversionError for out-of-range axes, or ONNX validation might catch it
-        from forge.transpiler.core.exceptions import ConversionError
-        from forge.transpiler.frontends.onnx.utils.exceptions import ONNXModelValidationError
+        from forge.transpiler.utils.exceptions import ConversionError
+        from forge.transpiler.utils.exceptions import ONNXModelValidationError
 
         try:
             tir_graph = transpiler.transpile(onnx_model)

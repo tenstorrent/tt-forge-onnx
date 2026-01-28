@@ -9,6 +9,7 @@ This module provides converters for ONNX activation operations:
 - Softmax, LogSoftmax: Normalization operations with dimension parameter
 - LeakyRelu: Parametric activation with negative slope
 - Dropout: Stochastic regularization operation with training/inference modes
+- Sqrt: Element-wise square root operation
 
 All converters follow the OnnxOpConverter pattern and handle opset version differences
 where applicable.
@@ -25,6 +26,7 @@ from forge.transpiler.operations.activation import (
     LogSoftmaxNode,
     LeakyReluNode,
     DropoutNode,
+    SqrtNode,
 )
 from forge.transpiler.operations.other import IdentityNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
@@ -50,6 +52,7 @@ class ReluConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX Relu operation to TIR ReluNode.
@@ -95,6 +98,7 @@ class SigmoidConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX Sigmoid operation to TIR SigmoidNode.
@@ -140,6 +144,7 @@ class TanhConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX Tanh operation to TIR TanhNode.
@@ -186,6 +191,7 @@ class SoftmaxConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX Softmax operation to TIR SoftmaxNode.
@@ -241,6 +247,7 @@ class LogSoftmaxConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX LogSoftmax operation to TIR LogSoftmaxNode.
@@ -295,6 +302,7 @@ class LeakyReluConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Convert ONNX LeakyRelu operation to TIR LeakyReluNode.
@@ -341,7 +349,9 @@ class DropoutConverter(OnnxOpConverter):
     """
 
     @classmethod
-    def _extract_ratio_from_input(cls, node_proto: NodeProto, graph_proto, default: float = 0.5) -> float:
+    def _extract_ratio_from_input(
+        cls, node_proto: NodeProto, graph_proto, default: float = 0.5, tir_graph=None
+    ) -> float:
         """
         Extract dropout ratio from input if provided (second input, index 1).
 
@@ -363,7 +373,9 @@ class DropoutConverter(OnnxOpConverter):
             return default
 
         # Check if ratio is provided as a constant input (opset v12+)
-        is_valid, ratio_value, _ = validate_constant_input(node_proto, input_index=1, graph_proto=graph_proto)
+        is_valid, ratio_value, _ = validate_constant_input(
+            node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
+        )
         if is_valid and ratio_value is not None:
             try:
                 return float(ratio_value)
@@ -376,7 +388,9 @@ class DropoutConverter(OnnxOpConverter):
         return default
 
     @classmethod
-    def _extract_training_mode_from_input(cls, node_proto: NodeProto, graph_proto, default: bool = False) -> bool:
+    def _extract_training_mode_from_input(
+        cls, node_proto: NodeProto, graph_proto, default: bool = False, tir_graph=None
+    ) -> bool:
         """
         Extract training mode from input if provided (third input, index 2).
 
@@ -399,7 +413,9 @@ class DropoutConverter(OnnxOpConverter):
             return default
 
         # Check if training_mode is provided as a constant input (opset v12+)
-        is_valid, training_mode_value, _ = validate_constant_input(node_proto, input_index=2, graph_proto=graph_proto)
+        is_valid, training_mode_value, _ = validate_constant_input(
+            node_proto, input_index=2, graph_proto=graph_proto, tir_graph=tir_graph
+        )
         if is_valid and training_mode_value is not None:
             try:
                 # Convert various types to bool (ONNX may use int/float for boolean)
@@ -488,6 +504,7 @@ class DropoutConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Dropout converter with version-specific dispatch.
@@ -512,8 +529,56 @@ class DropoutConverter(OnnxOpConverter):
         else:
             # v12+: ratio and training_mode as optional inputs
             seed = attrs.get("seed", 0)
-            ratio = cls._extract_ratio_from_input(node_proto, graph_proto, default=0.5)
-            training = cls._extract_training_mode_from_input(node_proto, graph_proto, default=False)
+            ratio = cls._extract_ratio_from_input(node_proto, graph_proto, default=0.5, tir_graph=tir_graph)
+            training = cls._extract_training_mode_from_input(
+                node_proto, graph_proto, default=False, tir_graph=tir_graph
+            )
 
         # Create node (with optimizations)
         return cls._create_dropout_node(node_proto, input_tensors, output_tensors, ratio, training, seed, node_index)
+
+
+class SqrtConverter(OnnxOpConverter):
+    """
+    Converter for ONNX Sqrt operation.
+
+    Converts ONNX Sqrt to TIR SqrtNode. Sqrt is an element-wise operation:
+    output = x^0.5. If x is negative, returns NaN.
+    """
+
+    @classmethod
+    def convert(
+        cls,
+        node_proto: NodeProto,
+        input_tensors: OrderedDict[str, TensorInfo],
+        output_tensors: OrderedDict[str, TensorInfo],
+        attrs: Dict[str, Any],
+        node_index: int,
+        graph_proto=None,
+        opset: int = 1,
+        tir_graph=None,
+    ) -> List:
+        """
+        Convert ONNX Sqrt operation to TIR SqrtNode.
+
+        Sqrt opset v1+: No version differences in converter logic.
+        The 'consumed_inputs' attribute in v1 is a legacy optimization attribute
+        and should be ignored. Type constraints (bfloat16 in v13+) are handled
+        by ONNX shape inference, not the converter.
+
+        Args:
+            node_proto: ONNX node protocol buffer
+            input_tensors: Dictionary mapping input names to TensorInfo
+            output_tensors: Dictionary mapping output names to TensorInfo
+            attrs: Extracted attributes (consumed_inputs is ignored)
+            node_index: Index of node in graph
+            graph_proto: ONNX graph protocol buffer (unused)
+            opset: Opset version (unused, no version differences)
+
+        Returns:
+            List containing a single SqrtNode
+        """
+        node_name = node_proto.name if node_proto.name else f"Sqrt_{node_index}"
+        input_dict, output_dict = build_input_output_dicts(node_proto, input_tensors, output_tensors)
+
+        return [SqrtNode.create(name=node_name, inputs=input_dict, outputs=output_dict)]

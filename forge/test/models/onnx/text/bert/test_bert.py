@@ -13,9 +13,10 @@ from transformers import (
 
 import forge
 from forge.verify.verify import verify
+from forge.verify.config import DeprecatedVerifyConfig
+from forge.config import CompilerConfig
 
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
-from test.models.models_utils import mean_pooling
 from test.utils import download_model
 
 
@@ -27,8 +28,9 @@ opset_versions = [17]
 @pytest.mark.pr_models_regression
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", ["bert-base-uncased"])
+@pytest.mark.parametrize("use_transpiler", [False, True], ids=["tvm", "transpiler"])
 @pytest.mark.parametrize("opset_version", opset_versions, ids=opset_versions)
-def test_bert_masked_lm_onnx(variant, forge_tmp_path, opset_version):
+def test_bert_masked_lm_onnx(variant, forge_tmp_path, opset_version, use_transpiler):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
@@ -36,6 +38,7 @@ def test_bert_masked_lm_onnx(variant, forge_tmp_path, opset_version):
         variant=variant,
         task=Task.NLP_MASKED_LM,
         source=Source.HUGGINGFACE,
+        suffix="_transpiler" if use_transpiler else "_tvm",
     )
 
     # Load Bert tokenizer and model from HuggingFace
@@ -66,8 +69,35 @@ def test_bert_masked_lm_onnx(variant, forge_tmp_path, opset_version):
     onnx.checker.check_model(onnx_model)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
+    # Configure compiler and verification based on compilation path
+    if use_transpiler:
+        # Transpiler path configuration
+        compiler_cfg = CompilerConfig(
+            compile_transpiler_to_python=True,  # Enable transpiler path
+            compile_tvm_to_python=False,  # Disable TVM path
+            transpiler_enable_debug=True,  # Enable debug mode for transpiler (ONNX Runtime comparison)
+            transpiler_resolve_dynamic_shapes=True,
+        )
+
+        # Create verify config with all verification flags enabled for transpiler
+        verify_cfg = DeprecatedVerifyConfig(
+            # Transpiler-specific verification
+            verify_transpiler_graph=True,  # Compare Framework output vs TIR graph output after transpiler conversion
+            verify_forge_codegen_vs_framework=True,  # Compare Framework output vs Forge codegen outputs
+        )
+    else:
+        # TVM path configuration (default)
+        compiler_cfg = CompilerConfig()
+        verify_cfg = DeprecatedVerifyConfig(verify_forge_codegen_vs_framework=True)
+
     # Forge compile framework model
-    compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
+    compiled_model = forge.compile(
+        framework_model,
+        sample_inputs=inputs,
+        module_name=module_name,
+        compiler_cfg=compiler_cfg,
+        verify_cfg=verify_cfg,
+    )
 
     # Model Verification
     _, co_out = verify(inputs, framework_model, compiled_model)

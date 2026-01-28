@@ -57,6 +57,7 @@ class UnsqueezeConverter(OnnxOpConverter):
         attrs: Dict[str, Any],
         graph_proto=None,
         opset_version: int = 1,
+        tir_graph=None,
     ) -> List[int]:
         """
         Extract, normalize, and validate axes for Unsqueeze operation.
@@ -83,7 +84,9 @@ class UnsqueezeConverter(OnnxOpConverter):
         # Extract axes from attribute (v1-v12) or input tensor (v13+)
         axes = None
         if opset_version >= 13 and len(node_proto.input) > 1:
-            is_valid, axes, error_msg = validate_constant_input(node_proto, input_index=1, graph_proto=graph_proto)
+            is_valid, axes, error_msg = validate_constant_input(
+                node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
+            )
             if not is_valid:
                 # Fallback to attribute for backward compatibility
                 axes = attrs.get("axes", None)
@@ -151,6 +154,7 @@ class UnsqueezeConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset_version: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Common processing logic for all opset versions.
@@ -167,7 +171,9 @@ class UnsqueezeConverter(OnnxOpConverter):
         node_name = node_proto.name or f"Unsqueeze_{node_index}"
 
         # Get and validate axes
-        axes = cls._get_and_validate_axes(node_proto, input_tensors, attrs, graph_proto, opset_version)
+        axes = cls._get_and_validate_axes(
+            node_proto, input_tensors, attrs, graph_proto, opset_version, tir_graph=tir_graph
+        )
 
         # Build OrderedDict for inputs and outputs
         # v13+ uses only data input, v1-v12 uses all inputs
@@ -266,6 +272,7 @@ class UnsqueezeConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Unsqueeze converter - single method handles all versions using opset parameter.
@@ -274,4 +281,6 @@ class UnsqueezeConverter(OnnxOpConverter):
         - Opset v11-v12: axes as attribute (supports negative indices)
         - Opset v13+: axes as input tensor (second input)
         """
-        return cls._process_unsqueeze(node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset)
+        return cls._process_unsqueeze(
+            node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset, tir_graph=tir_graph
+        )

@@ -25,7 +25,7 @@ from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
 from forge.transpiler.frontends.onnx.utils.validation import (
     validate_constant_input,
     handle_validation_error,
-    ValidationError,
+    ConverterValidationError,
 )
 from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
 
@@ -311,26 +311,26 @@ class PadConverter(OnnxOpConverter):
     def _validate_inputs(cls, node_proto: NodeProto, input_tensors: OrderedDict[str, TensorInfo]) -> None:
         """Validate that required inputs exist."""
         if not node_proto.input:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' has no inputs. " f"At least one input (data) is required."
             )
 
         data_input = node_proto.input[0]
         if data_input not in input_tensors:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' input '{data_input}' " f"not found in input_tensors."
             )
 
         tensor_info = input_tensors[data_input]
         if tensor_info.shape is None or len(tensor_info.shape) == 0:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' input '{data_input}' "
                 f"has invalid shape: {tensor_info.shape}"
             )
 
     @classmethod
     def _extract_and_validate_pads(
-        cls, node_proto: NodeProto, attrs: Dict[str, Any], graph_proto, input_index: int = 1
+        cls, node_proto: NodeProto, attrs: Dict[str, Any], graph_proto, input_index: int = 1, tir_graph=None
     ) -> List[int]:
         """
         Extract and validate pads from input or attribute.
@@ -339,11 +339,11 @@ class PadConverter(OnnxOpConverter):
             List of pad values as integers
 
         Raises:
-            ValidationError: If pads cannot be extracted or are invalid
+            ConverterValidationError: If pads cannot be extracted or are invalid
         """
         # Try to extract from input first
         is_valid, pads, error_msg = validate_constant_input(
-            node_proto, input_index=input_index, graph_proto=graph_proto
+            node_proto, input_index=input_index, graph_proto=graph_proto, tir_graph=tir_graph
         )
 
         if is_valid and pads is not None:
@@ -356,14 +356,14 @@ class PadConverter(OnnxOpConverter):
                 else:
                     pads = [int(pads)]
             except (ValueError, TypeError) as e:
-                raise ValidationError(
+                raise ConverterValidationError(
                     f"Pad node '{node_proto.name or 'unknown'}' pads input contains " f"non-integer values: {e}"
                 )
         else:
             # Fallback to attribute
             pads = attrs.get("pads", attrs.get("paddings", []))
             if not pads:
-                raise ValidationError(
+                raise ConverterValidationError(
                     f"Pad node '{node_proto.name or 'unknown'}' requires 'pads' input "
                     f"or attribute, but neither was found. {error_msg or ''}"
                 )
@@ -376,30 +376,36 @@ class PadConverter(OnnxOpConverter):
                 else:
                     pads = [int(pads)]
             except (ValueError, TypeError) as e:
-                raise ValidationError(
+                raise ConverterValidationError(
                     f"Pad node '{node_proto.name or 'unknown'}' pads attribute contains " f"non-integer values: {e}"
                 )
 
         # Validate pads format
         if len(pads) % 2 != 0:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' pads must have even length "
                 f"(got {len(pads)}). Format: [begin_0, begin_1, ..., end_0, end_1, ...]"
             )
 
         if len(pads) == 0:
-            raise ValidationError(f"Pad node '{node_proto.name or 'unknown'}' pads cannot be empty.")
+            raise ConverterValidationError(f"Pad node '{node_proto.name or 'unknown'}' pads cannot be empty.")
 
         return pads
 
     @classmethod
     def _extract_constant_value(
-        cls, node_proto: NodeProto, attrs: Dict[str, Any], graph_proto, input_index: int = 2, default: float = 0.0
+        cls,
+        node_proto: NodeProto,
+        attrs: Dict[str, Any],
+        graph_proto,
+        input_index: int = 2,
+        default: float = 0.0,
+        tir_graph=None,
     ) -> float:
         """Extract constant_value from input or attribute."""
         if len(node_proto.input) > input_index:
             is_valid, constant_value, _ = validate_constant_input(
-                node_proto, input_index=input_index, graph_proto=graph_proto
+                node_proto, input_index=input_index, graph_proto=graph_proto, tir_graph=tir_graph
             )
             if is_valid and constant_value is not None:
                 try:
@@ -423,12 +429,16 @@ class PadConverter(OnnxOpConverter):
             return default
 
     @classmethod
-    def _extract_axes(cls, node_proto: NodeProto, graph_proto, input_index: int = 3) -> Optional[List[int]]:
+    def _extract_axes(
+        cls, node_proto: NodeProto, graph_proto, input_index: int = 3, tir_graph=None
+    ) -> Optional[List[int]]:
         """Extract axes from input (opset 18+)."""
         if len(node_proto.input) <= input_index:
             return None
 
-        is_valid, axes_value, _ = validate_constant_input(node_proto, input_index=input_index, graph_proto=graph_proto)
+        is_valid, axes_value, _ = validate_constant_input(
+            node_proto, input_index=input_index, graph_proto=graph_proto, tir_graph=tir_graph
+        )
 
         if not is_valid or axes_value is None:
             return None
@@ -442,7 +452,7 @@ class PadConverter(OnnxOpConverter):
                 axes = [int(axes_value)]
             return axes
         except (ValueError, TypeError) as e:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' axes input contains " f"non-integer values: {e}"
             )
 
@@ -450,7 +460,7 @@ class PadConverter(OnnxOpConverter):
     def _validate_mode_for_opset(cls, mode: str, opset_version: int, node_name: str) -> None:
         """Validate that the mode is supported for the given opset version."""
         if mode == "wrap" and opset_version < 19:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_name}' uses 'wrap' mode which is only available "
                 f"in opset 19+, but model uses opset {opset_version}."
             )
@@ -459,14 +469,14 @@ class PadConverter(OnnxOpConverter):
     def _get_input_rank(cls, input_tensors: OrderedDict[str, TensorInfo], node_proto: NodeProto) -> int:
         """Get input rank from tensor info only. Throws error if rank cannot be determined."""
         if not input_tensors:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' cannot determine input rank: "
                 f"input_tensors is empty or None."
             )
 
         data_input = node_proto.input[0]
         if data_input not in input_tensors:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' cannot determine input rank: "
                 f"data input '{data_input}' not found in input_tensors. "
                 f"Available inputs: {list(input_tensors.keys())}"
@@ -474,7 +484,7 @@ class PadConverter(OnnxOpConverter):
 
         shape = input_tensors[data_input].shape
         if shape is None:
-            raise ValidationError(
+            raise ConverterValidationError(
                 f"Pad node '{node_proto.name or 'unknown'}' cannot determine input rank: "
                 f"shape is None for input '{data_input}'."
             )
@@ -491,6 +501,7 @@ class PadConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Pad converter with opset-based dispatch.
@@ -509,7 +520,7 @@ class PadConverter(OnnxOpConverter):
                 # v1: pads, mode, and value as attributes
                 pads = attrs.get("paddings", [])
                 if not pads:
-                    raise ValidationError(f"Pad node '{node_name}' (opset v1) requires 'paddings' attribute.")
+                    raise ConverterValidationError(f"Pad node '{node_name}' (opset v1) requires 'paddings' attribute.")
 
                 # Convert to list of integers
                 try:
@@ -520,11 +531,15 @@ class PadConverter(OnnxOpConverter):
                     else:
                         pads = [int(pads)]
                 except (ValueError, TypeError) as e:
-                    raise ValidationError(f"Pad node '{node_name}' paddings attribute contains non-integer values: {e}")
+                    raise ConverterValidationError(
+                        f"Pad node '{node_name}' paddings attribute contains non-integer values: {e}"
+                    )
 
                 # Validate pads format
                 if len(pads) % 2 != 0:
-                    raise ValidationError(f"Pad node '{node_name}' paddings must have even length (got {len(pads)}).")
+                    raise ConverterValidationError(
+                        f"Pad node '{node_name}' paddings must have even length (got {len(pads)})."
+                    )
 
                 # Extract mode and value
                 onnx_mode = attrs.get("mode", "constant")
@@ -532,22 +547,26 @@ class PadConverter(OnnxOpConverter):
                 axes = None
             elif opset < 18:
                 # v2-v17: pads and constant_value as inputs, mode as attribute
-                pads = cls._extract_and_validate_pads(node_proto, attrs, graph_proto, input_index=1)
-                value = cls._extract_constant_value(node_proto, attrs, graph_proto, input_index=2)
+                pads = cls._extract_and_validate_pads(
+                    node_proto, attrs, graph_proto, input_index=1, tir_graph=tir_graph
+                )
+                value = cls._extract_constant_value(node_proto, attrs, graph_proto, input_index=2, tir_graph=tir_graph)
                 onnx_mode = attrs.get("mode", "constant")
                 axes = None
             else:
                 # v18+: Adds axes input for selective axis padding
-                pads = cls._extract_and_validate_pads(node_proto, attrs, graph_proto, input_index=1)
+                pads = cls._extract_and_validate_pads(
+                    node_proto, attrs, graph_proto, input_index=1, tir_graph=tir_graph
+                )
                 onnx_mode = attrs.get("mode", "constant")
                 mode = onnx_mode_to_pytorch(onnx_mode)
 
                 # Extract constant_value and axes
-                value = cls._extract_constant_value(node_proto, attrs, graph_proto, input_index=2)
+                value = cls._extract_constant_value(node_proto, attrs, graph_proto, input_index=2, tir_graph=tir_graph)
                 if onnx_mode != "constant":
                     value = 0.0  # Not used for non-constant modes
 
-                axes = cls._extract_axes(node_proto, graph_proto, input_index=3)
+                axes = cls._extract_axes(node_proto, graph_proto, input_index=3, tir_graph=tir_graph)
 
             # Validate mode
             cls._validate_mode_for_opset(onnx_mode, opset, node_name)
@@ -559,11 +578,13 @@ class PadConverter(OnnxOpConverter):
             # Validate axes if provided (v18+)
             if axes is not None:
                 if len(axes) != len(set(axes)):
-                    raise ValidationError(f"Pad node '{node_name}' axes input contains duplicate values: {axes}")
+                    raise ConverterValidationError(
+                        f"Pad node '{node_name}' axes input contains duplicate values: {axes}"
+                    )
                 for axis in axes:
                     normalized = axis if axis >= 0 else input_rank + axis
                     if normalized < 0 or normalized >= input_rank:
-                        raise ValidationError(
+                        raise ConverterValidationError(
                             f"Pad node '{node_name}' axis {axis} is out of range. "
                             f"Input rank: {input_rank}, valid range: [{-input_rank}, {input_rank - 1}]"
                         )
@@ -586,6 +607,6 @@ class PadConverter(OnnxOpConverter):
                     value=value,
                 )
             ]
-        except (ValidationError, ValueError) as e:
+        except (ConverterValidationError, ValueError) as e:
             handle_validation_error(node_proto, str(e), strict=True)
             return []

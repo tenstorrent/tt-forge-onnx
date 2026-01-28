@@ -6,13 +6,14 @@ Reduction operations: ReduceSum, ReduceMean, ReduceMax
 """
 import torch
 from collections import OrderedDict
-from typing import Dict, Union, Tuple
+from typing import Dict, Tuple, Union
 
 from forge.transpiler.core.node import TIRNode
 from forge.transpiler.core.types import TensorInfo
+from forge.transpiler.operations.shape_mixins import ReductionShape
 
 
-class ReduceSumNode(TIRNode):
+class ReduceSumNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceSum operation.
     """
@@ -75,7 +76,7 @@ class ReduceSumNode(TIRNode):
         return {self.output_names[0]: torch.sum(x, dim=dim, keepdim=keepdim)}
 
 
-class ReduceMeanNode(TIRNode):
+class ReduceMeanNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceMean operation.
     """
@@ -138,7 +139,7 @@ class ReduceMeanNode(TIRNode):
         return {self.output_names[0]: torch.mean(x, dim=dim, keepdim=keepdim)}
 
 
-class ReduceMaxNode(TIRNode):
+class ReduceMaxNode(ReductionShape, TIRNode):
     """
     PyTorch-like ReduceMax operation.
     """

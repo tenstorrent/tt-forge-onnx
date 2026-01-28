@@ -37,6 +37,7 @@ class SplitConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Split converter with opset-based split extraction.
@@ -54,7 +55,7 @@ class SplitConverter(OnnxOpConverter):
         else:
             # v13+: split as input tensor (second input, optional)
             is_valid, split_sizes, error_msg = validate_constant_input(
-                node_proto, input_index=1, graph_proto=graph_proto
+                node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
             )
 
             # Convert split_sizes to list if it's a tuple or scalar

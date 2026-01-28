@@ -31,7 +31,7 @@ class ClipConverter(OnnxOpConverter):
 
     @classmethod
     def _extract_min_max_from_inputs(
-        cls, node_proto: NodeProto, graph_proto
+        cls, node_proto: NodeProto, graph_proto, tir_graph=None
     ) -> Tuple[Optional[float], Optional[float], Optional[str]]:
         """
         Extract min and max from optional input tensors (v11+).
@@ -61,7 +61,9 @@ class ClipConverter(OnnxOpConverter):
         # Extract from input[1] if present
         if len(input_names) > 1:
             input1_name = input_names[1].lower()
-            is_valid, val, error_msg = validate_constant_input(node_proto, input_index=1, graph_proto=graph_proto)
+            is_valid, val, error_msg = validate_constant_input(
+                node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
+            )
             if not is_valid:
                 return None, None, error_msg or "Failed to extract value from input[1]"
 
@@ -82,7 +84,9 @@ class ClipConverter(OnnxOpConverter):
         # Extract from input[2] if present
         if len(input_names) > 2:
             input2_name = input_names[2].lower()
-            is_valid, val, error_msg = validate_constant_input(node_proto, input_index=2, graph_proto=graph_proto)
+            is_valid, val, error_msg = validate_constant_input(
+                node_proto, input_index=2, graph_proto=graph_proto, tir_graph=tir_graph
+            )
             if not is_valid:
                 return None, None, error_msg or "Failed to extract value from input[2]"
 
@@ -112,6 +116,7 @@ class ClipConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset_version: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Common processing logic for Clip operation.
@@ -154,7 +159,7 @@ class ClipConverter(OnnxOpConverter):
 
         # v11+: min and max are optional input tensors
         else:
-            min_val, max_val, error_msg = cls._extract_min_max_from_inputs(node_proto, graph_proto)
+            min_val, max_val, error_msg = cls._extract_min_max_from_inputs(node_proto, graph_proto, tir_graph=tir_graph)
 
             if error_msg:
                 raise ValueError(f"Clip node '{node_name}': {error_msg}")
@@ -207,6 +212,7 @@ class ClipConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Clip converter - single method handles all versions using opset parameter.
@@ -215,4 +221,6 @@ class ClipConverter(OnnxOpConverter):
         - Opset v6-v10: min and max as attributes with explicit defaults
         - Opset v11+: min and max as optional input tensors
         """
-        return cls._process_clip(node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset)
+        return cls._process_clip(
+            node_proto, input_tensors, output_tensors, attrs, node_index, graph_proto, opset, tir_graph
+        )

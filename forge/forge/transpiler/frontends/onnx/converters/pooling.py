@@ -7,6 +7,7 @@ ONNX Pooling operation converters.
 This module provides converters for ONNX pooling operations:
 - MaxPool: Maximum pooling (1D, 2D, 3D)
 - AveragePool: Average pooling (1D, 2D, 3D)
+- GlobalAveragePool: Global average pooling (decomposes to ReduceMean)
 
 Key features:
 - Supports multiple opset versions with different attribute handling
@@ -14,6 +15,7 @@ Key features:
 - Converts ONNX padding to PyTorch format
 - Supports ceil_mode and dilation attributes
 - Handles optional indices output for MaxPool (opset 8+)
+- GlobalAveragePool decomposes to ReduceMean over spatial dimensions
 """
 from typing import List, Dict, Any, Union, Tuple
 from collections import OrderedDict
@@ -29,8 +31,10 @@ from forge.transpiler.operations.pooling import (
     AveragePool3dNode,
 )
 from forge.transpiler.operations.other import PadNode
+from forge.transpiler.operations.reduction import ReduceMeanNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
 from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
+from forge.transpiler.frontends.onnx.converters.reduction import create_multi_dim_reduction_nodes
 
 
 class MaxPoolConverter(OnnxOpConverter):
@@ -202,6 +206,7 @@ class MaxPoolConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         MaxPool converter - single method handles all versions using opset parameter.
@@ -555,6 +560,7 @@ class AveragePoolConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         AveragePool converter - single method handles all versions using opset parameter.
@@ -861,4 +867,123 @@ class AveragePoolConverter(OnnxOpConverter):
             raise ValueError(f"Unsupported AveragePool dimension: {kernel_dims}")
 
         nodes.append(pool_node)
+        return nodes
+
+
+class GlobalAveragePoolConverter(OnnxOpConverter):
+    """
+    Converter for ONNX GlobalAveragePool operation.
+
+    GlobalAveragePool performs average pooling across all spatial dimensions,
+    reducing each spatial dimension to size 1. It has no attributes and works
+    the same way across all opset versions.
+
+    Decomposition Strategy:
+    - Decomposes to ReduceMean over spatial dimensions with keepdim=True
+
+    Example:
+    - Input: [N, C, H, W] -> Output: [N, C, 1, 1]
+    - Input: [N, C, D, H, W] -> Output: [N, C, 1, 1, 1]
+    - Input: [N, C, W] -> Output: [N, C, 1]
+    """
+
+    @classmethod
+    def convert(
+        cls,
+        node_proto: NodeProto,
+        input_tensors: OrderedDict[str, TensorInfo],
+        output_tensors: OrderedDict[str, TensorInfo],
+        attrs: Dict[str, Any],
+        node_index: int,
+        graph_proto=None,
+        opset: int = 1,
+        tir_graph=None,
+    ) -> List:
+        """
+        Convert ONNX GlobalAveragePool to ReduceMean over spatial dimensions.
+
+        Args:
+            node_proto: ONNX node proto
+            input_tensors: Input tensor info dict
+            output_tensors: Output tensor info dict
+            attrs: Attributes dict (empty for GlobalAveragePool)
+            node_index: Node index
+            graph_proto: Graph proto (unused)
+            opset: Opset version (unused, no version differences)
+
+        Returns:
+            List containing ReduceMeanNode
+
+        Raises:
+            ValueError: If input shape cannot be determined or has insufficient dimensions
+        """
+        node_name = node_proto.name if node_proto.name else f"GlobalAveragePool_{node_index}"
+
+        # Validate inputs
+        if len(node_proto.input) == 0:
+            raise ValueError(f"GlobalAveragePool {node_name}: Expected 1 input, got 0")
+
+        data_input = node_proto.input[0]
+
+        # Validate input exists in input_tensors
+        if data_input not in input_tensors:
+            raise ValueError(f"GlobalAveragePool {node_name}: Input tensor '{data_input}' not found in input_tensors")
+
+        # Get input tensor info to determine spatial dimensions
+        input_info = input_tensors[data_input]
+        input_shape = input_info.shape
+
+        if input_shape is None:
+            raise ValueError(
+                f"GlobalAveragePool {node_name}: Cannot determine spatial dimensions "
+                f"from input shape {input_shape}. Shape inference may be required."
+            )
+
+        # Determine spatial dimension indices
+        # For shape [N, C, H, W] or [N, C, D, H, W], spatial dims start at index 2
+        # For shape [N, C, W], spatial dim is index 2
+        num_dims = len(input_shape)
+        if num_dims < 3:
+            raise ValueError(
+                f"GlobalAveragePool {node_name}: Input must have at least 3 dimensions "
+                f"(batch, channel, spatial...), got {num_dims}D input with shape {input_shape}"
+            )
+
+        # Spatial dimensions are all dimensions after batch and channel
+        # For [N, C, ...], spatial dims are indices [2, 3, ...]
+        spatial_dims = list(range(2, num_dims))
+
+        # Note: Forge's backend ReduceAvg operation only supports reducing over a single
+        # dimension at a time. Ideally, we would create a single ReduceMeanNode with
+        # dim as a tuple/list and handle the decomposition to multiple single-dimension
+        # ReduceMean nodes in the pattern callback phase (similar to TVM's pattern matching).
+        # However, since pattern callbacks are not yet implemented, we handle the
+        # decomposition here in the converter by chaining multiple ReduceMeanNode instances.
+        # TODO: Once pattern callbacks are implemented, refactor this to create a single
+        # ReduceMeanNode with dim as tuple and move the decomposition logic to the pattern
+        # callback phase.
+
+        # Chain multiple ReduceMean nodes, reducing from highest to lowest dimension
+        # to avoid dimension index shifting
+        # NOTE: Since forge.op.ReduceAvg only accepts dim as int (single dimension),
+        # we use create_multi_dim_reduction_nodes to create multiple ReduceMeanNode instances
+        # in a loop, one for each dimension. In the future, when forge.op.ReduceAvg accepts
+        # dim as List[int], we can simplify this to a single ReduceMeanNode call.
+        output_name = list(output_tensors.keys())[0]
+        current_outputs = OrderedDict(input_tensors)
+        # Ensure output tensor info exists in current_outputs
+        if output_name in output_tensors:
+            current_outputs[output_name] = output_tensors[output_name]
+
+        # Use unified helper to create multiple reduction nodes
+        nodes, _ = create_multi_dim_reduction_nodes(
+            node_name=node_name,
+            reduction_node_class=ReduceMeanNode,
+            input_name=data_input,
+            output_name=output_name,
+            dims=spatial_dims,
+            keepdim=True,
+            current_outputs=current_outputs,
+        )
+
         return nodes

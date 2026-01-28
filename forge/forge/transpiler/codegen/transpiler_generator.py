@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
 """
@@ -25,6 +25,7 @@ class TranspilerCodeGenerator:
         tir_graph: TIRGraph,
         class_name: str,
         delete_inputs=True,
+        computed_constants_file: str = None,
     ):
         """
         Initialize the code generator.
@@ -33,10 +34,15 @@ class TranspilerCodeGenerator:
             tir_graph: TIRGraph to convert to Python code
             class_name: Name for the generated ForgeModule class
             delete_inputs: If True, delete intermediate activations for memory optimization
+            computed_constants_file: Optional path to a PT file that holds constants
+                created during transpilation (ConstantOfShape outputs, Gather / LayerNorm
+                auxiliary scalars, ONNX Constant-node tensors).  When provided, the
+                generated process_framework_parameters() loads and sets those constants.
         """
         self.tir_graph = tir_graph
         self.class_name = class_name
         self.delete_inputs = delete_inputs
+        self.computed_constants_file = computed_constants_file
         self.lines = []
         self.indent = 0
         self.param_names = []
@@ -97,9 +103,19 @@ class TranspilerCodeGenerator:
                 f"dev_data_format={forge_df}))"
             )
 
-        # Generate constant declarations (non-trainable values)
-        # Constants don't need duplicate checking as they're typically unique
+        # Generate constant declarations (non-trainable values from ONNX initializers)
         for name, tensor in self.tir_graph.constants.items():
+            self.const_names.append(name)
+            shape = tuple(tensor.shape)
+            dtype = tensor.dtype
+            dtype_str = pytorch_df_from_str(dtype, name)
+            self.wl(f'self.add_constant("{name}", ' f"shape={shape}, dtype=torch.{dtype_str})")
+
+        # Generate constant declarations for computed constants (not from ONNX initializers).
+        # Values are loaded at runtime from the saved PT file via process_framework_parameters().
+        for name, tensor in self.tir_graph.computed_constants.items():
+            if name in self.const_names:
+                continue  # skip duplicate (original + sanitized alias)
             self.const_names.append(name)
             shape = tuple(tensor.shape)
             dtype = tensor.dtype
@@ -264,7 +280,14 @@ class TranspilerCodeGenerator:
         Write parameter loading method.
 
         Generates code for loading parameters from framework models.
-        Currently only supports ONNX. Matches ForgeWriter ONNX implementation.
+        Currently only supports ONNX.
+
+        Two sources are loaded:
+        1. ONNX model initializers (weights, biases, integer constants) — always present.
+        2. A PT file of computed constants — only when transpilation produced
+           constants that are NOT in the ONNX initializer list (e.g. ConstantOfShape
+           outputs, Gather auxiliary scalars, LayerNorm epsilon tensors, ONNX Constant
+           node outputs).  The PT file path is baked into the generated code.
         """
         self.indent = 1
 
@@ -273,6 +296,8 @@ class TranspilerCodeGenerator:
         self.wl("import onnx")
         self.wl("import onnx.numpy_helper")
         self.wl("import numpy as np")
+
+        # --- Part 1: load from ONNX model initializers ---
         self.wl("weights = model.graph.initializer")
         self.wl("")
         self.wl("for weight in weights:")
@@ -288,9 +313,7 @@ class TranspilerCodeGenerator:
         self.indent -= 1
         self.wl("elif name in self._constants:")
         self.indent += 1
-        # Handle scalar constants: reshape to (1, 1) for compatibility
-        # ONNX scalar constants (shape=()) need to be reshaped for Forge compatibility
-        # This generates: if torch.numel(tensor) == 1 and len(tensor.shape) == 0: ...
+        # Scalar constants (shape=()) must be reshaped for Forge compatibility
         self.wl("if torch.numel(tensor) == 1 and len(tensor.shape) == 0:")
         self.indent += 1
         self.wl("tensor = tensor.reshape((1, 1))")
@@ -303,6 +326,23 @@ class TranspilerCodeGenerator:
         self.wl('logger.warning(f"{name} not found in self._parameters and self._constants")')
         self.indent -= 1
         self.indent -= 1
+
+        # --- Part 2: load computed constants from saved PT file (if any) ---
+        if self.computed_constants_file:
+            self.wl("")
+            self.wl(f'computed = torch.load("{self.computed_constants_file}")')
+            self.wl("for name, tensor in computed.items():")
+            self.indent += 1
+            self.wl("if name in self._constants:")
+            self.indent += 1
+            self.wl("if torch.numel(tensor) == 1 and len(tensor.shape) == 0:")
+            self.indent += 1
+            self.wl("tensor = tensor.reshape((1, 1))")
+            self.indent -= 1
+            self.wl("tensor.requires_grad = False")
+            self.wl("self.set_constant(name, tensor)")
+            self.indent -= 1
+            self.indent -= 1
 
         self.indent = 0
         self.wl("")

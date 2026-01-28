@@ -5,11 +5,13 @@
 ONNX Shape operation converters.
 
 This module provides converters for ONNX shape manipulation operations:
+- Shape: Extract shape from input tensor and store as constant
 - Transpose: Permute dimensions according to a permutation vector
 - Cast: Convert tensor to a different data type
 - Reshape: Reshape tensor to a new shape (via ReshapeNode)
 
 Key features:
+- Shape extracts shape at compile time and stores as TIR graph constant
 - Transpose supports complex permutations decomposed into dimension swaps
 - Cast handles ONNX to PyTorch dtype conversion
 - Handles opset version differences in attribute handling
@@ -18,11 +20,18 @@ from typing import List, Dict, Any, Tuple
 from collections import OrderedDict
 from onnx import NodeProto
 import onnx
+import torch
+from loguru import logger
+
 from forge.transpiler.core.types import TensorInfo, onnx_dtype_to_torch_dtype
 from forge.transpiler.operations.shape import TransposeNode, ReshapeNode
 from forge.transpiler.operations.other import CastNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
-from forge.transpiler.frontends.onnx.utils.validation import validate_constant_input
+from forge.transpiler.frontends.onnx.converters.converter_result import ConstantResult
+from forge.transpiler.frontends.onnx.utils.validation import (
+    validate_constant_input,
+    ConverterValidationError,
+)
 from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
 
 
@@ -242,6 +251,7 @@ class TransposeConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Transpose opset v1+: No version differences.
@@ -271,6 +281,7 @@ class CastConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Cast converter with opset-based dtype extraction.
@@ -655,6 +666,7 @@ class FlattenConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Flatten converter with opset-based axis validation.
@@ -671,3 +683,213 @@ class FlattenConverter(OnnxOpConverter):
         axis = cls._extract_and_validate_axis(attrs, input_rank, opset, node_name)
 
         return cls._convert_flatten_impl(node_proto, input_tensors, output_tensors, axis, node_index)
+
+
+class ShapeConverter(OnnxOpConverter):
+    """
+    Converter for ONNX Shape operation.
+
+    Supports opset versions 1+.
+
+    Conversion strategy:
+    - Extract shape from input tensor's TensorInfo.shape (compile-time)
+    - Handle shape slicing for v13+ (start/end attributes)
+    - Store extracted shape as ConstantResult (stored in tir_graph.constants)
+    """
+
+    @classmethod
+    def convert(
+        cls,
+        node_proto: NodeProto,
+        input_tensors: OrderedDict[str, TensorInfo],
+        output_tensors: OrderedDict[str, TensorInfo],
+        attrs: Dict[str, Any],
+        node_index: int,
+        graph_proto=None,
+        opset: int = 1,
+        tir_graph=None,
+    ) -> ConstantResult:
+        """
+        Convert ONNX Shape operation to ConstantResult.
+
+        Args:
+            node_proto: ONNX node protocol buffer
+            input_tensors: Dictionary of input tensor information
+            output_tensors: Dictionary of output tensor information
+            attrs: Extracted attributes (may contain 'start' and 'end' for v13+)
+            node_index: Index of the node in the graph
+            graph_proto: Optional graph protocol buffer (unused)
+            opset: Opset version (1+)
+
+        Returns:
+            ConstantResult containing the extracted shape tensor
+
+        Raises:
+            ConverterValidationError: If inputs are invalid or shape cannot be extracted
+        """
+        node_name = node_proto.name or f"Shape_{node_index}"
+
+        try:
+            # Validate inputs
+            cls._validate_inputs(node_proto, input_tensors)
+
+            # Get input tensor info
+            data_input_name = node_proto.input[0]
+            input_info = input_tensors[data_input_name]
+
+            # Handle case where input shape is None (can happen for scalar inputs)
+            # Try to infer scalar input from output shape: if output is (0,), input is scalar ()
+            if input_info.shape is None:
+                output_name = node_proto.output[0]
+                if output_name in output_tensors:
+                    output_info = output_tensors[output_name]
+                    # If output shape is (0,), it indicates a scalar input
+                    if output_info.shape == (0,):
+                        # Create a new TensorInfo with scalar shape
+                        input_info = TensorInfo(
+                            name=input_info.name, shape=(), onnx_dtype=input_info.onnx_dtype  # Scalar shape
+                        )
+
+            # Handle zero-sized dimensions: ONNX shape inference converts (0,) to (None,)
+            # Try to recover original shape from graph_proto if available
+            if input_info.shape and any(dim is None for dim in input_info.shape) and graph_proto:
+                # Check original input shape before shape inference
+                for input_vi in graph_proto.input:
+                    if input_vi.name == data_input_name and input_vi.type.tensor_type.HasField("shape"):
+                        original_shape = []
+                        for dim in input_vi.type.tensor_type.shape.dim:
+                            if dim.dim_value is not None and dim.dim_value >= 0:
+                                original_shape.append(dim.dim_value)
+                            elif dim.dim_param:
+                                # Dynamic dimension - keep as None
+                                original_shape.append(None)
+                            else:
+                                # Unknown dimension - check if it might be zero-sized
+                                original_shape.append(None)
+
+                        # If we recovered a valid shape, use it
+                        if len(original_shape) == len(input_info.shape):
+                            # Replace None dimensions with recovered values (if available)
+                            recovered_shape = []
+                            for i, (orig_dim, inferred_dim) in enumerate(zip(original_shape, input_info.shape)):
+                                if inferred_dim is None and orig_dim is not None:
+                                    recovered_shape.append(orig_dim)
+                                elif inferred_dim is not None:
+                                    recovered_shape.append(inferred_dim)
+                                else:
+                                    # Both are None - keep as None (will fail validation)
+                                    recovered_shape.append(None)
+
+                            # Only use recovered shape if it's better (has fewer None values)
+                            if recovered_shape.count(None) < input_info.shape.count(None):
+                                input_info = TensorInfo(
+                                    name=input_info.name, shape=tuple(recovered_shape), onnx_dtype=input_info.onnx_dtype
+                                )
+                                break
+
+            # Extract and slice shape
+            shape_tensor = cls._extract_and_slice_shape(input_info, attrs, opset, node_name)
+
+            # Get output name
+            output_name = node_proto.output[0]
+
+            # Return ConstantResult - engine will store it in tir_graph.constants
+            return ConstantResult(value=shape_tensor, output_name=output_name)
+
+        except (ConverterValidationError, ValueError) as e:
+            logger.error(f"Shape node '{node_name}': {e}")
+            raise
+
+    @classmethod
+    def _validate_inputs(
+        cls,
+        node_proto: NodeProto,
+        input_tensors: OrderedDict[str, TensorInfo],
+    ) -> None:
+        """
+        Validate that required inputs are present.
+
+        Raises:
+            ConverterValidationError: If inputs are invalid
+        """
+        if len(node_proto.input) < 1:
+            raise ConverterValidationError("Shape requires 1 input (data tensor)")
+
+        data_input_name = node_proto.input[0]
+        if data_input_name not in input_tensors:
+            raise ConverterValidationError(f"Shape data input '{data_input_name}' not found in input_tensors")
+
+    @classmethod
+    def _extract_and_slice_shape(
+        cls,
+        input_info: TensorInfo,
+        attrs: Dict[str, Any],
+        opset: int,
+        node_name: str,
+    ) -> torch.Tensor:
+        """
+        Extract shape from input tensor and apply slicing if needed.
+
+        Args:
+            input_info: TensorInfo for input tensor
+            attrs: Node attributes (may contain start/end)
+            opset: Opset version
+            node_name: Node name for error messages
+
+        Returns:
+            torch.Tensor: Shape tensor with dtype=torch.int64
+
+        Raises:
+            ConverterValidationError: If input shape is unknown or invalid
+        """
+        input_shape = input_info.shape
+
+        # Validate that shape is known
+        # Note: input_shape can be None (unknown) or a tuple (known, possibly empty for scalar)
+        if input_shape is None:
+            raise ConverterValidationError(
+                f"Shape operation requires known input tensor shape. " f"Input shape is unknown (None)."
+            )
+
+        # Check for unknown dimensions (None values in the shape tuple)
+        # Empty tuple () is valid (represents scalar input)
+        if input_shape and any(dim is None for dim in input_shape):
+            raise ConverterValidationError(
+                f"Shape operation requires fully known input tensor shape. "
+                f"Input shape contains unknown dimensions: {input_shape}"
+            )
+
+        r = len(input_shape)
+
+        # Extract start/end parameters (v15+)
+        # Note: start/end attributes are only supported in opset 15+, not 13
+        start = 0
+        end = r
+
+        if opset >= 15:
+            start = attrs.get("start", 0)
+            end = attrs.get("end", r)
+
+            # Normalize negative indices
+            if start < 0:
+                start = start + r
+            if end is not None and end < 0:
+                end = end + r
+
+            # Clamp to valid range
+            start = max(0, min(start, r))
+            if end is not None:
+                end = max(0, min(end, r))
+            else:
+                end = r
+
+        # Extract shape slice
+        if start >= end:
+            shape_slice = []
+        else:
+            shape_slice = list(input_shape[start:end])
+
+        # Convert to int64 tensor
+        shape_tensor = torch.tensor(shape_slice, dtype=torch.int64)
+
+        return shape_tensor

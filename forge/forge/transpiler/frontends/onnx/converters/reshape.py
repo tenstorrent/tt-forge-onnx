@@ -25,6 +25,7 @@ from forge.transpiler.operations.other import FullNode, IdentityNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
 from forge.transpiler.frontends.onnx.utils.validation import validate_constant_input, handle_validation_error
 from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
+from forge.transpiler.frontends.onnx.utils.shape_finder import validate_no_unknown_dimensions
 
 
 class ReshapeConverter(OnnxOpConverter):
@@ -96,6 +97,7 @@ class ReshapeConverter(OnnxOpConverter):
 
         shape = list(shape)
         input_shape = tuple(input_shape) if input_shape else ()
+        validate_no_unknown_dimensions(input_shape, "Reshape _resolve_shape input")
 
         # Validate that shape doesn't contain both -1 and 0
         has_neg_one = -1 in shape
@@ -105,10 +107,10 @@ class ReshapeConverter(OnnxOpConverter):
                 f"Shape cannot contain both -1 (inferred dimension) and 0 (copy/explicit zero). " f"Shape: {shape}"
             )
 
-        # Calculate total elements from input
+        # Calculate total elements from input (already validated to have no unknown dims)
         total_elements = 1
         for dim in input_shape:
-            total_elements *= dim if dim is not None else 1
+            total_elements *= dim
 
         # Handle 0 dimensions based on allowzero
         has_zero_kept = False  # Track if we kept a 0 with allowzero=1
@@ -120,8 +122,9 @@ class ReshapeConverter(OnnxOpConverter):
                     has_zero_kept = True
                 else:
                     # Copy from input (default behavior, backward compatible)
-                    if i < len(input_shape) and input_shape[i] is not None:
-                        shape[i] = input_shape[i]
+                    if i < len(input_shape):
+                        input_dim = input_shape[i]
+                        shape[i] = input_dim
                     else:
                         raise ValueError(f"Cannot copy dimension {i} from input shape {input_shape}")
 
@@ -137,11 +140,15 @@ class ReshapeConverter(OnnxOpConverter):
             known_product = 1
             for i, s in enumerate(shape):
                 if i != inferred_idx:
+                    if isinstance(s, str) or s is None:
+                        raise ValueError(
+                            f"Cannot infer -1: shape contains unknown dimension at index {i}: {s}. "
+                            f"Unknown dimensions are not supported."
+                        )
                     known_product *= s if s > 0 else 1
 
             if known_product == 0:
                 raise ValueError(f"Cannot infer dimension when product of other dimensions is 0. " f"Shape: {shape}")
-
             # Calculate inferred dimension
             inferred_dim = total_elements // known_product
             if total_elements % known_product != 0:
@@ -155,6 +162,8 @@ class ReshapeConverter(OnnxOpConverter):
         if -1 not in shape and not (has_zero_kept and allowzero == 1):
             resolved_product = 1
             for s in shape:
+                if isinstance(s, str) or s is None:
+                    raise ValueError(f"Shape contains unknown dimension: {s}. Unknown dimensions are not supported.")
                 resolved_product *= s if s > 0 else 1
 
             if resolved_product != total_elements:
@@ -246,6 +255,7 @@ class ReshapeConverter(OnnxOpConverter):
         input_tensors: OrderedDict[str, TensorInfo],
         output_tensors: OrderedDict[str, TensorInfo],
         graph_proto,
+        tir_graph=None,
     ) -> Tuple[Tuple, Optional[str]]:
         """
         Extract and normalize shape from input tensor (for opset >= 5).
@@ -255,18 +265,12 @@ class ReshapeConverter(OnnxOpConverter):
             If error_message is not None, extraction failed
         """
         # Validate and extract shape from constant input (second input)
-        is_valid, shape_value, error_msg = validate_constant_input(node_proto, input_index=1, graph_proto=graph_proto)
+        is_valid, shape_value, error_msg = validate_constant_input(
+            node_proto, input_index=1, graph_proto=graph_proto, tir_graph=tir_graph
+        )
 
         if not is_valid:
-            # If shape input is optional and not provided, try to get from output shape
-            if shape_value is None and len(node_proto.output) > 0:
-                output_info = output_tensors.get(node_proto.output[0])
-                if output_info and output_info.shape:
-                    shape_value = output_info.shape
-                else:
-                    return None, error_msg or "Shape input required"
-            else:
-                return None, error_msg or "Shape input required"
+            return None, error_msg or "Shape input required"
 
         # Normalize shape_value to tuple
         shape = cls._normalize_shape_value(shape_value)
@@ -282,6 +286,7 @@ class ReshapeConverter(OnnxOpConverter):
         node_index: int,
         graph_proto=None,
         opset: int = 1,
+        tir_graph=None,
     ) -> List:
         """
         Reshape converter with opset-based shape extraction and allowzero handling.
@@ -303,7 +308,9 @@ class ReshapeConverter(OnnxOpConverter):
             allowzero = 0
         else:
             # v5+: shape as input tensor
-            shape, error_msg = cls._extract_shape_from_input(node_proto, input_tensors, output_tensors, graph_proto)
+            shape, error_msg = cls._extract_shape_from_input(
+                node_proto, input_tensors, output_tensors, graph_proto, tir_graph=tir_graph
+            )
             if shape is None:
                 handle_validation_error(node_proto, error_msg, strict=True)
                 return []

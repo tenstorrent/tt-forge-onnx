@@ -21,6 +21,10 @@ from forge.transpiler.operations.activation import (
     LogSoftmaxNode,
     LeakyReluNode,
     DropoutNode,
+    SqrtNode,
+    ErfNode,
+    ReciprocalNode,
+    PowNode,
 )
 from forge.transpiler.operations.conv import Conv1dNode, Conv2dNode, Conv3dNode
 from forge.transpiler.operations.pooling import (
@@ -36,6 +40,8 @@ from forge.transpiler.operations.shape import (
     TransposeNode,
     SqueezeNode,
     UnsqueezeNode,
+    BroadcastNode,
+    SplitNode,
 )
 from forge.transpiler.operations.reduction import (
     ReduceSumNode,
@@ -46,8 +52,25 @@ from forge.transpiler.operations.other import (
     ConcatNode,
     ClipNode,
     CastNode,
+    PadNode,
     IdentityNode,
     FullNode,
+    WhereNode,
+)
+from forge.transpiler.operations.comparison import (
+    EqualNode,
+    GreaterNode,
+    LessNode,
+    GreaterOrEqualNode,
+    LessOrEqualNode,
+)
+from forge.transpiler.operations.indexing import (
+    EmbeddingNode,
+    IndexSelectNode,
+    IndexNode,
+)
+from forge.transpiler.operations.normalization import (
+    LayerNormNode,
 )
 
 __all__ = [
@@ -69,6 +92,10 @@ __all__ = [
     "LogSoftmaxNode",
     "LeakyReluNode",
     "DropoutNode",
+    "SqrtNode",
+    "ErfNode",
+    "ReciprocalNode",
+    "PowNode",
     # Pooling
     "MaxPool1dNode",
     "MaxPool2dNode",
@@ -81,6 +108,8 @@ __all__ = [
     "TransposeNode",
     "SqueezeNode",
     "UnsqueezeNode",
+    "BroadcastNode",
+    "SplitNode",
     # Reduction
     "ReduceSumNode",
     "ReduceMeanNode",
@@ -89,6 +118,20 @@ __all__ = [
     "ConcatNode",
     "ClipNode",
     "CastNode",
+    "PadNode",
     "IdentityNode",
     "FullNode",
+    "WhereNode",
+    # Comparison
+    "EqualNode",
+    "GreaterNode",
+    "LessNode",
+    "GreaterOrEqualNode",
+    "LessOrEqualNode",
+    # Indexing
+    "EmbeddingNode",
+    "IndexSelectNode",
+    "IndexNode",
+    # Normalization
+    "LayerNormNode",
 ]

@@ -10,7 +10,7 @@ import numpy as np
 import onnx
 
 from forge.transpiler.frontends.onnx.engine import ONNXToForgeTranspiler
-from forge.transpiler.core.exceptions import ConversionError
+from forge.transpiler.utils.exceptions import ConversionError
 from test.transpiler.test_utils import (
     create_onnx_model,
     compare_tir_with_onnx,
@@ -356,7 +356,7 @@ class TestConcat:
         transpiler = ONNXToForgeTranspiler(debug=True, validate_model=False)
 
         # Should raise ConversionError because axis is required
-        from forge.transpiler.core.exceptions import ConversionError
+        from forge.transpiler.utils.exceptions import ConversionError
 
         with pytest.raises(ConversionError) as exc_info:
             tir_graph = transpiler.transpile(onnx_model)
