@@ -197,4 +197,3 @@ The documentation generator parses docstrings using these rules:
 3. **Document defaults**: Explicitly state default values in descriptions
 4. **Use consistent terminology**: Use "Tensor" not "tensor", "Forge" not "TTIR"
 5. **Keep it concise**: Balance detail with readability
-
