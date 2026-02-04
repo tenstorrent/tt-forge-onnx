@@ -153,11 +153,15 @@ def test_adam(shape, betas, weight_decay):
         golden_model.parameters(), lr=learning_rate, eps=eps, betas=betas, weight_decay=weight_decay
     )
 
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-cpu-hoisted-const-eval=false")
+
     tt_model = forge.compile(
         framework_model,
         sample_inputs=[torch.randn(batch_size, shape[0])],
         optimizer=tt_optimizer,
         training=True,
+        compiler_cfg=forge.CompilerConfig(mlir_config=mlir_config),
     )
 
     loss_fn = nn.MSELoss()

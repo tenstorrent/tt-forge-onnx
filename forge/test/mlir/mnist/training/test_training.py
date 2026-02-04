@@ -624,6 +624,7 @@ def test_e2e_device(dtype):
     if dtype == torch.bfloat16:
         data_format_override = DataFormat.Float16_b
         compiler_cfg.default_df_override = data_format_override
+        compiler_cfg.mlir_config = forge.config.MLIRConfig().set_custom_config("enable-cpu-hoisted-const-eval=false")
 
     verify_cfg = DeprecatedVerifyConfig()
     verify_cfg.stages_for_intermediate_verification = {CompileDepth.AUTOGRAD}
