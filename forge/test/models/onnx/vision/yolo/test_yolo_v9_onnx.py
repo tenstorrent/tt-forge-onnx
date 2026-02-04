@@ -57,11 +57,15 @@ def test_yolov9(forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     onnx_module = forge.OnnxModule(module_name, onnx_model)
 
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-cpu-hoisted-const-eval=false")
+
     # Forge compile ONNX model
     compiled_model = forge.compile(
         onnx_model,
         sample_inputs=inputs,
         module_name=module_name,
+        compiler_cfg=forge.CompilerConfig(mlir_config=mlir_config),
     )
 
     # Model Verification
