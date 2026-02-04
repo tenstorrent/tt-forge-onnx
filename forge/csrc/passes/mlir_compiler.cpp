@@ -28,12 +28,21 @@
 
 // MLIR headers
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Bufferization/Transforms/FuncBufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
+#include "mlir/Dialect/Linalg/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Linalg/Transforms/SubsetInsertionOpInterfaceImpl.h"
 #include "mlir/Dialect/MLProgram/IR/MLProgram.h"
+#include "mlir/Dialect/SCF/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Tensor/Transforms/SubsetInsertionOpInterfaceImpl.h"
+#include "mlir/Dialect/Vector/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Target/LLVMIR/Dialect/All.h"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-local-typedef"
@@ -79,6 +88,24 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
 
     // Register the LLVM dialect inliner extension
     mlir::LLVM::registerInlinerInterface(registry);
+
+    // Register BufferizableOpInterface for dialects that may be used during bufferization.
+    // This is required for bufferization passes that run during CPU-hoisting const-eval.
+    mlir::arith::registerBufferizableOpInterfaceExternalModels(registry);
+    mlir::bufferization::func_ext::registerBufferizableOpInterfaceExternalModels(registry);
+    mlir::linalg::registerBufferizableOpInterfaceExternalModels(registry);
+    mlir::scf::registerBufferizableOpInterfaceExternalModels(registry);
+    mlir::tensor::registerBufferizableOpInterfaceExternalModels(registry);
+    mlir::vector::registerBufferizableOpInterfaceExternalModels(registry);
+
+    // Register SubsetInsertionOpInterface for dialects that support subset operations.
+    // This is also required for bufferization passes during CPU-hoisting const-eval.
+    mlir::linalg::registerSubsetOpInterfaceExternalModels(registry);
+    mlir::tensor::registerSubsetOpInterfaceExternalModels(registry);
+
+    // Register LLVM translation interfaces for all dialects.
+    // This is required to convert MLIR operations to LLVM IR
+    mlir::registerAllToLLVMIRTranslations(registry);
 
     // Create a context with all registered dialects.
     mlir::MLIRContext context(registry);
