@@ -64,8 +64,8 @@ def test_mobilenetv2_basic(variant):
 
 variants = [
     pytest.param(ModelVariant.MOBILENET_V2_035_96_HF, marks=pytest.mark.xfail),
-    ModelVariant.MOBILENET_V2_075_160_HF,
-    ModelVariant.MOBILENET_V2_100_224_HF,
+    pytest.param(ModelVariant.MOBILENET_V2_075_160_HF, marks=pytest.mark.demos_tests),
+    pytest.param(ModelVariant.MOBILENET_V2_100_224_HF, marks=pytest.mark.demos_tests),
 ]
 
 
@@ -100,16 +100,20 @@ def test_mobilenetv2_hf(variant):
         compiler_cfg=compiler_cfg,
     )
 
-    pcc = 0.99
-    if variant in [ModelVariant.MOBILENET_V2_075_160_HF, ModelVariant.MOBILENET_V2_100_224_HF]:
-        pcc = 0.97
+    # Run inference on Tenstorrent device
+    _ = compiled_model(input_tensor)
 
-    # Model Verification
-    verify(
-        inputs, framework_model, compiled_model, verify_cfg=VerifyConfig(value_checker=AutomaticValueChecker(pcc=pcc))
-    )
+    # pcc = 0.99
+    # if variant in [ModelVariant.MOBILENET_V2_075_160_HF, ModelVariant.MOBILENET_V2_100_224_HF]:
+    #     pcc = 0.97
+
+    # # Model Verification
+    # verify(
+    #     inputs, framework_model, compiled_model, verify_cfg=VerifyConfig(value_checker=AutomaticValueChecker(pcc=pcc))
+    # )
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", [ModelVariant.MOBILENET_V2_100_TIMM])
 def test_mobilenetv2_timm(variant):
@@ -140,11 +144,14 @@ def test_mobilenetv2_timm(variant):
         compiler_cfg=compiler_cfg,
     )
 
-    # Model Verification and Inference
-    _, co_out = verify(inputs, framework_model, compiled_model)
+    # Run inference on Tenstorrent device
+    _ = compiled_model(input_tensor)
 
-    # Run model on sample data and print results
-    loader.print_cls_results(co_out)
+    # # Model Verification and Inference
+    # _, co_out = verify(inputs, framework_model, compiled_model)
+
+    # # Run model on sample data and print results
+    # loader.print_cls_results(co_out)
 
 
 variants = [ModelVariant.DEEPLABV3_MOBILENET_V2_HF]

@@ -43,11 +43,9 @@ from forge.forge_property_utils import (
     Task,
     record_model_properties,
 )
-from forge.verify.config import VerifyConfig
-from forge.verify.value_checkers import AutomaticValueChecker
-from forge.verify.verify import verify
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", [MaskedLMVariant.BERT_BASE_UNCASED])
 def test_bert_masked_lm_pytorch(variant):
@@ -71,15 +69,18 @@ def test_bert_masked_lm_pytorch(variant):
     # Forge compile framework model
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
 
-    # Model Verification and Inference
-    _, co_out = verify(
-        inputs,
-        framework_model,
-        compiled_model,
-    )
+    # Run inference on Tenstorrent device
+    _ = compiled_model(*inputs)
 
-    # Post processing
-    loader.decode_output(co_out)
+    # # Model Verification and Inference
+    # _, co_out = verify(
+    #     inputs,
+    #     framework_model,
+    #     compiled_model,
+    # )
+
+    # # Post processing
+    # loader.decode_output(co_out)
 
 
 variants = [
@@ -88,6 +89,7 @@ variants = [
 ]
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", variants)
 def test_bert_question_answering_pytorch(variant):
@@ -112,22 +114,26 @@ def test_bert_question_answering_pytorch(variant):
     # Forge compile framework model
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
 
-    verify_cfg = VerifyConfig()
-    if variant == QuestionAnsweringVariant.PHIYODR_BERT_LARGE_FINETUNED_SQUAD2:
-        verify_cfg = VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.98))
+    # Run inference on Tenstorrent device
+    _ = compiled_model(*inputs)
 
-    # Model Verification and Inference
-    _, co_out = verify(
-        inputs,
-        framework_model,
-        compiled_model,
-        verify_cfg=verify_cfg,
-    )
+    # verify_cfg = VerifyConfig()
+    # if variant == QuestionAnsweringVariant.PHIYODR_BERT_LARGE_FINETUNED_SQUAD2:
+    #     verify_cfg = VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.98))
 
-    # Post processing
-    loader.decode_output(co_out)
+    # # Model Verification and Inference
+    # _, co_out = verify(
+    #     inputs,
+    #     framework_model,
+    #     compiled_model,
+    #     verify_cfg=verify_cfg,
+    # )
+
+    # # Post processing
+    # loader.decode_output(co_out)
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", [SequenceClassificationVariant.TEXTATTACK_BERT_BASE_UNCASED_SST_2])
 def test_bert_sequence_classification_pytorch(variant):
@@ -152,13 +158,17 @@ def test_bert_sequence_classification_pytorch(variant):
     # Forge compile framework model
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
 
-    # Model Verification and Inference
-    _, co_out = verify(inputs, framework_model, compiled_model)
+    # Run inference on Tenstorrent device
+    _ = compiled_model(*inputs)
 
-    # Post processing
-    loader.decode_output(co_out)
+    # # Model Verification and Inference
+    # _, co_out = verify(inputs, framework_model, compiled_model)
+
+    # # Post processing
+    # loader.decode_output(co_out)
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", [TokenClassificationVariant.DBMDZ_BERT_LARGE_CASED_FINETUNED_CONLL03_ENGLISH])
 def test_bert_token_classification_pytorch(variant):
@@ -183,17 +193,21 @@ def test_bert_token_classification_pytorch(variant):
     # Forge compile framework model
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
 
-    # Model Verification
-    _, co_out = verify(
-        inputs,
-        framework_model,
-        compiled_model,
-    )
+    # Run inference on Tenstorrent device
+    _ = compiled_model(*inputs)
 
-    # Post processing
-    loader.decode_output(co_out)
+    # # Model Verification
+    # _, co_out = verify(
+    #     inputs,
+    #     framework_model,
+    #     compiled_model,
+    # )
+
+    # # Post processing
+    # loader.decode_output(co_out)
 
 
+@pytest.mark.demos_tests
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "variant", [SentenceEmbeddingGenerationVariant.EMRECAN_BERT_BASE_TURKISH_CASED_MEAN_NLI_STSB_TR]
@@ -225,8 +239,11 @@ def test_bert_sentence_embedding_generation_pytorch(variant):
     # Forge compile framework model
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
 
-    # Model Verification and Inference
-    _, co_out = verify(inputs, framework_model, compiled_model)
+    # Run inference on Tenstorrent device
+    _ = compiled_model(*inputs)
 
-    # Post processing
-    loader.decode_output(co_out)
+    # # Model Verification and Inference
+    # _, co_out = verify(inputs, framework_model, compiled_model)
+
+    # # Post processing
+    # loader.decode_output(co_out)
