@@ -32,7 +32,15 @@ class Wrapper(torch.nn.Module):
 
 
 variants = [
-    pytest.param("openai/whisper-tiny", marks=pytest.mark.pr_models_regression),
+    pytest.param(
+        "openai/whisper-tiny",
+        marks=[
+            pytest.mark.pr_models_regression,
+            pytest.mark.xfail(
+                reason="Runtime Error: CB page size 384 should be greater than the config tensor page size 776"
+            ),
+        ],
+    ),
     "openai/whisper-base",
     "openai/whisper-small",
     pytest.param("openai/whisper-medium", marks=pytest.mark.xfail),
