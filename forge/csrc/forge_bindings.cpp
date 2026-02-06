@@ -53,7 +53,6 @@ PYBIND11_MODULE(_C, m)
 
     py::enum_<tt::ARCH>(m, "Arch")
         .value("JAWBRIDGE", tt::ARCH::JAWBRIDGE)
-        .value("GRAYSKULL", tt::ARCH::GRAYSKULL)
         .value("WORMHOLE", tt::ARCH::WORMHOLE)
         .value("WORMHOLE_B0", tt::ARCH::WORMHOLE_B0)
         .value("BLACKHOLE", tt::ARCH::BLACKHOLE)

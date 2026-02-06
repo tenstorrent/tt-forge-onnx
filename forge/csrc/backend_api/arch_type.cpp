@@ -13,7 +13,6 @@ std::string to_string_arch(ARCH arch)
 {
     switch (arch)
     {
-        case ARCH::GRAYSKULL: return "GRAYSKULL";
         case ARCH::WORMHOLE_B0: return "WORMHOLE_B0";
         case ARCH::BLACKHOLE: return "BLACKHOLE";
         default: throw std::runtime_error("Unsupported ARCH enum: " + std::to_string(static_cast<int>(arch)));
@@ -25,11 +24,7 @@ std::string to_string_arch_lower(ARCH arch) { return tt::utils::to_lower_string(
 ARCH to_arch_type(const std::string& arch_string)
 {
     std::string arch_string_lower = tt::utils::to_upper_string(arch_string);
-    if (arch_string_lower == "GRAYSKULL")
-    {
-        return ARCH::GRAYSKULL;
-    }
-    else if (arch_string_lower == "WORMHOLE_B0")
+    if (arch_string_lower == "WORMHOLE_B0")
     {
         return ARCH::WORMHOLE_B0;
     }

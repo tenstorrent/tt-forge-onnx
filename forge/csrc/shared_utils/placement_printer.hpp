@@ -17,7 +17,6 @@ class PlacementPrinter
    public:
     enum class DeviceType
     {
-        Grayskull,
         Wormhole
     };
 
@@ -30,10 +29,6 @@ class PlacementPrinter
 
         switch (device)
         {
-            case DeviceType::Grayskull:
-                this->height = 10;
-                this->width = 12;
-                break;
             case DeviceType::Wormhole:
                 this->height = 10;
                 this->width = 8;

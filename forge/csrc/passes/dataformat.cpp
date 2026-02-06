@@ -210,12 +210,11 @@ void cast_and_resolve_input_data_formats(
 // Fix illegal situations
 //
 // Current rules:
-// 1. On Grayskull, the output can convert from a to b exponent for FP16, or when writing out FP32. On Wormhole,
-//    BFP* formats can also convert from a to b when packing.
+// 1. On Wormhole, BFP* formats can convert from a to b when packing.
 // 2. Intermediate format is currently only used for matmul, but for non-matmul we should follow the rule that
 //    intermed df == output df
 // 3. Matmul is a special case where operand 1, intermed df, and output df must all match
-// 4. Acc_df must match math format on Grayskull, but can be either math format or FP32 on Wormhole
+// 4. Acc_df can be either math format or FP32 on Wormhole
 // 5. Untilize op can't be in Bfp* formats
 //
 // When fixing, try not to change formats that were specifically overriden by the user

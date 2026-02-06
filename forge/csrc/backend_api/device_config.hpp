@@ -221,9 +221,6 @@ struct DeviceConfig
     // we temporarily treat it as equivalent to the Wormhole_b0 architecture.
     inline bool is_wormhole_b0() const { return arch == ARCH::WORMHOLE_B0 || is_blackhole(); }
 
-    // Get if the device is a grayskull
-    inline bool is_grayskull() const { return arch == ARCH::GRAYSKULL; }
-
     template <typename T>
     T get(std::string const& param, const bool system_level_command) const;
     void load_system_level_params();
@@ -265,7 +262,7 @@ struct DeviceConfig
     std::uint32_t get_dram_num_subchannels() const
     {
         // TODO - get from backend, but backend needs to add it
-        return is_grayskull() ? 1 : 3;
+        return 3;
     }
     std::uint32_t get_dram_channel_capacity() const { return get<std::uint32_t>("dram-channel_capacity", false); }
     std::size_t get_dram_bandwidth_per_block_theoretical() const
@@ -291,7 +288,7 @@ struct DeviceConfig
     CoreCoord get_dram_core_coord(std::uint32_t channel, std::uint32_t subchannel) const
     {
         // Emulation device has only one dram channel
-        if (is_grayskull() || this->backend_type == "emulation")
+        if (this->backend_type == "emulation")
         {
             return get<CoreCoord>("dram-core_xy_chan" + std::to_string(channel), false);
         }
@@ -399,7 +396,7 @@ struct DeviceConfig
         return ret;
     }
 
-    bool supports_fp32_accumulation() const { return not is_grayskull(); }
+    bool supports_fp32_accumulation() const { return true; }
     bool supports_stochastic_rounding() const { return is_wormhole_b0(); }
     std::unordered_map<std::uint32_t, std::set<std::uint32_t>> get_chip_connections() const
     {

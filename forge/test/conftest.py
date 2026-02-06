@@ -315,7 +315,7 @@ def pytest_addoption(parser):
         "--versim", action="store_true", default=False, help="run versim tests"
     )
     parser.addoption(
-        "--arch", action="store", default="grayskull", help="run tests on different arch"
+        "--arch", action="store", default="wormhole_b0", help="run tests on different arch"
     )
     parser.addoption(
         "--microbatch-size", action="store", default=8,
@@ -473,7 +473,7 @@ def pytest_generate_tests(metafunc):
 
     if "_test_device_not_implemented" in metafunc.fixturenames:
         # if "test_device" in metafunc.fixturenames:
-        names = ["Golden", "Model", "Versim", "Emulation", "Grayskull", "Wormhole_B0", "Blackhole"]
+        names = ["Golden", "Model", "Versim", "Emulation", "Wormhole_B0", "Blackhole"]
 
         # Set device-mode for the test
         compile_only = metafunc.config.getoption("--compile-only")
