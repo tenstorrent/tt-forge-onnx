@@ -13,7 +13,7 @@ repos:
     rev: 22.3.0
     hooks:
       - id: black
-        language_version: python3.11
+        language_version: python3.12
         args: ["--line-length=120","-W 4"]
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v18.1.7

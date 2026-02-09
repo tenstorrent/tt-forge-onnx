@@ -19,7 +19,7 @@ function (add_unittest TEST_DIR)
     target_compile_options(${TEST_NAME} PRIVATE
         ${TTFORGE_CSRC_CFLAGS}
         ${CXXFLAGS}
-        # Suppress deprecation warnings for pybind11 embed issues with Python 3.11 Issue Link:  https://github.com/tenstorrent/tt-forge-onnx/issues/2935#issuecomment-3297927503
+        # Suppress deprecation warnings for pybind11 embed issues with Python 3.12 Issue Link:  https://github.com/tenstorrent/tt-forge-onnx/issues/2935#issuecomment-3297927503
         -Wno-deprecated-declarations
     )
     target_link_libraries(

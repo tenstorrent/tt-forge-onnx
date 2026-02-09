@@ -7,7 +7,7 @@ SHELL ["/bin/bash", "-c"]
 ENV PROJECT_NAME=tt-forge-onnx
 ENV TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain
 ENV TTFORGE_TOOLCHAIN_DIR=/opt/ttforge-toolchain
-ENV TTMLIR_PYTHON_VERSION=python3.11
+ENV TTMLIR_PYTHON_VERSION=python3.12
 
 # Create a directory for the build and toolchain
 ARG BUILD_DIR=/home/build

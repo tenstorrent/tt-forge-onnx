@@ -17,9 +17,10 @@ numpy==1.26.4
 onnx>=1.15.0
 onnxruntime>=1.16.3
 opencv-python-headless==4.11.0.86
-# This is needed to avoid issue https://yyz-gitlab.local.tenstorrent.com/devops/devops/-/issues/95
-pandas==1.5.3
-pybind11==2.6.2
+# Updated to 2.2.0 for Python 3.12 compatibility (pandas 1.5.3 only supports up to Python 3.11)
+pandas>=2.2.0
+# Updated to 2.13.6 for Python 3.12 compatibility (pybind11 2.6.2 only supports up to Python 3.11)
+pybind11>=2.13.6
 pyinstrument>=4.1.1
 scipy>=1.8.0
 tensorflow==2.19.0

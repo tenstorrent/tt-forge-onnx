@@ -39,8 +39,8 @@ set_evn_flags() {
     export HF_TOKEN="your access token" # Replace with your huggingface token
     export PYTEST_ADDOPTS=" -svv"
     export IRD_LF_CACHE=http://aus2-lfcache.aus2.tenstorrent.com/
-    export TTMLIR_PYTHON_VERSION=python3.11
-    export TTFORGE_PYTHON_VERSION=python3.11
+    export TTMLIR_PYTHON_VERSION=python3.12
+    export TTFORGE_PYTHON_VERSION=python3.12
 }
 
 # If any build issues, it will show build error and exit

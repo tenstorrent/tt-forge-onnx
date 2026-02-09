@@ -8,7 +8,7 @@
 -Irbg
 -I.
 -Ithird_party/pybind11/include
--I/usr/include/python3.11
+-I/usr/include/python3.12
 -Igui_lib
 -Ithird_party/json
 -Iforge/csrc

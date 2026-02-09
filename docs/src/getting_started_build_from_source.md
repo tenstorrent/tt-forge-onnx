@@ -42,7 +42,7 @@ The prerequisites for building TT-Forge-ONNX from source are:
 * Clang 17
 * Ninja
 * CMake (latest)
-* Python 3.11
+* Python 3.12
 
 On Ubuntu 22.04 systems, you can install these dependencies using the following commands:
 
@@ -88,16 +88,16 @@ sudo apt install ninja-build
 ```
 
 ### Checking Python Version
-Make sure you have Python 3.11 installed:
+Make sure you have Python 3.12 installed:
 
 ```bash
 python3 --version
 ```
 
-If you do not have Python 3.11 installed:
+If you do not have Python 3.12 installed:
 
 ```bash
-sudo apt install python3.11
+sudo apt install python3.12
 ```
 
 ### Installing CMake
@@ -284,4 +284,4 @@ This section goes over some useful environment variables for use with the [Build
 * `TTMLIR_VENV_DIR` - Specifies the virtual environment directory for TTMLIR. Defaults to `/opt/ttmlir-toolchain/venv` if not defined.
 * `TTFORGE_TOOLCHAIN_DIR` - Specifies the directory where tt-forge dependencies will be installed. Defaults to `/opt/ttforge-toolchain` if not defined.
 * `TTFORGE_VENV_DIR` - Specifies the virtual environment directory for tt-forge. Defaults to `/opt/ttforge-toolchain/venv` if not defined.
-* `TTFORGE_PYTHON_VERSION` - Specifies the Python version to use. Defaults to `python3.11` if not defined.
+* `TTFORGE_PYTHON_VERSION` - Specifies the Python version to use. Defaults to `python3.12` if not defined.
