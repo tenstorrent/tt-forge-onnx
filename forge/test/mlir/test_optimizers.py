@@ -153,6 +153,8 @@ def test_adam(shape, betas, weight_decay):
         golden_model.parameters(), lr=learning_rate, eps=eps, betas=betas, weight_decay=weight_decay
     )
 
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/6915
+    # Once the issue is fixed, CPU Hoisted Const Eval should be enabled
     mlir_config = forge.config.MLIRConfig()
     mlir_config.set_custom_config("enable-cpu-hoisted-const-eval=false")
 

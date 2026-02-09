@@ -36,13 +36,23 @@ variants = [
         "openai/whisper-tiny",
         marks=[
             pytest.mark.pr_models_regression,
-            pytest.mark.xfail(
-                reason="Runtime Error: CB page size 384 should be greater than the config tensor page size 776"
-            ),
+            pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-mlir/issues/6937"),
         ],
     ),
-    "openai/whisper-base",
-    "openai/whisper-small",
+    pytest.param(
+        "openai/whisper-base",
+        marks=[
+            pytest.mark.pr_models_regression,
+            pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-mlir/issues/6937"),
+        ],
+    ),
+    pytest.param(
+        "openai/whisper-small",
+        marks=[
+            pytest.mark.pr_models_regression,
+            pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-mlir/issues/6937"),
+        ],
+    ),
     pytest.param("openai/whisper-medium", marks=pytest.mark.xfail),
     pytest.param("openai/whisper-large", marks=pytest.mark.xfail),
 ]

@@ -624,6 +624,9 @@ def test_e2e_device(dtype):
     if dtype == torch.bfloat16:
         data_format_override = DataFormat.Float16_b
         compiler_cfg.default_df_override = data_format_override
+
+        # Issue: https://github.com/tenstorrent/tt-mlir/issues/6915
+        # Once the issue is fixed, CPU Hoisted Const Eval should be enabled
         compiler_cfg.mlir_config = forge.config.MLIRConfig().set_custom_config("enable-cpu-hoisted-const-eval=false")
 
     verify_cfg = DeprecatedVerifyConfig()

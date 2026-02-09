@@ -95,6 +95,8 @@ def test_yolo_v6_pytorch(variant, forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     onnx_module = forge.OnnxModule(module_name, onnx_model)
 
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/6915
+    # Once the issue is fixed, CPU Hoisted Const Eval should be enabled
     mlir_config = forge.config.MLIRConfig()
     mlir_config.set_custom_config("enable-cpu-hoisted-const-eval=false")
 
