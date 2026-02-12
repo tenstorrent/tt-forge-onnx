@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import subprocess
 import sys
+import os
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -15,9 +16,32 @@ def run_pytest(args=None):
     # Delete .pytest_current_test_executing file if it exists
     Path(".pytest_current_test_executing").unlink(missing_ok=True)
 
+    # Setup environment for C++ cache deletion monitoring
+    env = os.environ.copy()
+
+    # Add LD_PRELOAD for C++ deletion monitoring if interceptor exists
+    # test_runner.py lives in .github/workflows/, so go up 3 levels to repo root
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    interceptor_path = repo_root / "build" / "libcache_interceptor.so"
+
+    if interceptor_path.exists():
+        existing_preload = env.get("LD_PRELOAD", "")
+        if existing_preload:
+            env["LD_PRELOAD"] = f"{existing_preload}:{interceptor_path}"
+        else:
+            env["LD_PRELOAD"] = str(interceptor_path)
+        print(f"[test_runner] C++ cache deletion monitoring enabled: {interceptor_path}")
+    else:
+        print(f"[test_runner] C++ interceptor not found at {interceptor_path}, skipping C++ monitoring")
+        print(f"[test_runner] Build it with: cmake --build build --target cache_interceptor")
+
+    # Enable Python cache deletion monitoring if requested
+    if env.get("TT_METAL_CACHE_DELETION_MONITORING"):
+        print(f"[test_runner] Python cache deletion monitoring enabled")
+
     try:
         # Redirect both stdout and stderr to the same stream
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
 
         output = []
         # Print output line by line in real-time

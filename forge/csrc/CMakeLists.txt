@@ -48,6 +48,7 @@ add_subdirectory(runtime)
 add_subdirectory(test)
 add_subdirectory(verif)
 add_subdirectory(ops)
+add_subdirectory(cache_monitoring)
 
 ### ttforge_csrc_objs ###
 

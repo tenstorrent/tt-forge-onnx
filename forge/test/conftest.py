@@ -697,3 +697,122 @@ def pytest_runtest_call(item):
         # Prevent pytest from treating this as an error
         # the exception is swallowed, so the call phase ends cleanly
         pass
+
+
+# Cache monitoring and cleanup fixtures
+# Import cache deletion monitor - comprehensive deletion tracking with full tracebacks
+try:
+    from test.cache_utils.cache_deletion_monitor import CacheDeletionMonitor, get_cache_paths
+    from test.cache_utils.cache_cleanup import cleanup_cache
+    CACHE_DELETION_MONITOR_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Failed to import cache deletion monitor: {e}")
+    CACHE_DELETION_MONITOR_AVAILABLE = False
+    CacheDeletionMonitor = None
+    get_cache_paths = None
+    cleanup_cache = None
+
+# Keep old cache monitor for backwards compatibility (but use deletion monitor by default)
+try:
+    from test.cache_utils.cache_monitor import CacheMonitor
+    CACHE_UTILS_AVAILABLE = True
+except ImportError:
+    CACHE_UTILS_AVAILABLE = False
+    CacheMonitor = None
+
+
+# Global variable to track monitoring state across the session
+_monitor_instance = None
+_monitoring_started = False
+
+
+@pytest.fixture(autouse=True, scope="session")
+def monitor_tt_metal_cache_deletion(request):
+    """
+    Comprehensive tt-metal-cache deletion monitoring fixture.
+
+    This fixture provides complete deletion tracking with full Python tracebacks:
+
+    Features:
+    - Monkey-patches ALL Python deletion functions (shutil.rmtree, os.remove, os.rmdir, Path.unlink, etc.)
+    - Captures full stack traces at the EXACT moment of deletion
+    - Shows complete call chain: test -> compile -> deletion
+    - Detects deletions from C++/external processes (tt-metal, tt-mlir)
+    - Generic approach - catches ANY deletion method
+    - Minimal noise - only logs creation and deletion events
+
+    Environment variables:
+    - TT_METAL_CACHE_DELETION_MONITORING=1 (enable, default)
+    - TT_METAL_CACHE_DELETION_MONITORING=0 (disable)
+
+    Yields:
+        CacheDeletionMonitor instance, or None if monitoring unavailable
+    """
+    global _monitor_instance, _monitoring_started
+
+    if not CACHE_DELETION_MONITOR_AVAILABLE or CacheDeletionMonitor is None:
+        logger.warning("[CACHE_DELETION_MONITOR] Deletion monitor not available")
+        yield None
+        return
+
+    # Check if monitoring is enabled via environment variable
+    monitoring_enabled = os.environ.get("TT_METAL_CACHE_DELETION_MONITORING", "1") != "0"
+    if not monitoring_enabled:
+        logger.info("[CACHE_DELETION_MONITOR] Monitoring disabled via environment variable")
+        yield None
+        return
+
+    # Get all possible cache paths (monitoring starts regardless of whether cache exists yet)
+    cache_paths = get_cache_paths()
+
+    # Create and start the deletion monitor
+    _monitor_instance = CacheDeletionMonitor(cache_paths, enable_creation_tracking=True)
+
+    logger.info("[CACHE_DELETION_MONITOR] Starting comprehensive deletion monitoring for session")
+    logger.info(f"[CACHE_DELETION_MONITOR] Will monitor: {cache_paths}")
+
+    if _monitor_instance.start():
+        _monitoring_started = True
+        logger.info("[CACHE_DELETION_MONITOR] Successfully installed deletion monitoring hooks")
+        logger.info("[CACHE_DELETION_MONITOR] Monitoring is active - will capture all cache deletions with full tracebacks")
+    else:
+        logger.error("[CACHE_DELETION_MONITOR] Failed to start deletion monitoring")
+        _monitor_instance = None
+
+    # Run all tests in the session
+    yield _monitor_instance
+
+    # Stop monitoring and show summary
+    if _monitor_instance is not None and _monitoring_started:
+        try:
+            import time
+            time.sleep(0.2)  # Brief pause to capture final events
+
+            # Stop monitoring (will log summary)
+            _monitor_instance.stop()
+
+            # Get events
+            deletion_events = _monitor_instance.get_deletion_events()
+            creation_events = _monitor_instance.get_creation_events()
+
+            logger.info(f"\n{'='*80}")
+            logger.info(f"[CACHE_DELETION_MONITOR] Final Session Statistics")
+            logger.info(f"  Total cache creations detected: {len(creation_events)}")
+            logger.info(f"  Total cache deletions detected: {len(deletion_events)}")
+
+            if deletion_events:
+                logger.info(f"\n  Deletion Summary:")
+                for i, event in enumerate(deletion_events, 1):
+                    logger.info(f"    {i}. Type: {event.get('deletion_type', '?')}")
+                    logger.info(f"       Test: {event.get('test', '?')}")
+                    logger.info(f"       Time: {event.get('timestamp', '?')}")
+
+            logger.info(f"{'='*80}\n")
+
+        except Exception as e:
+            logger.error(f"[CACHE_DELETION_MONITOR] Error stopping monitoring: {e}")
+            if _monitor_instance:
+                try:
+                    _monitor_instance.stop()
+                except Exception:
+                    pass
