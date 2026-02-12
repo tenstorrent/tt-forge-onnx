@@ -43,7 +43,7 @@ You should see the Tenstorrent System Management Interface. It allows you to vie
 
 ![TT-SMI](./imgs/tt_smi.png)
 
-5. You can now deactivate the virtual environment.
+6. You can now deactivate the virtual environment.
 
 ## Setting up the Docker Container
 

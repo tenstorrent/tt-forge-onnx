@@ -37,7 +37,7 @@ tt-smi
 You should see the Tenstorrent System Management Interface. It allows you to view real-time stats, diagnostics, and health info about your Tenstorrent device.
 
 ## Prerequisites
-The prerequisites for building TT-Forge-ONNX from souce are:
+The prerequisites for building TT-Forge-ONNX from source are:
 
 * Clang 17
 * Ninja
@@ -149,7 +149,7 @@ This is a one off step to build the toolchain and create a virtual environment f
 1. First, it's required to create toolchain directories. The proposed example creates directories using the default paths. You can change the paths if you want to use different locations (see the [Useful Build Environment Variables](#useful-build-environment-variables) section below).
 
 ```bash
-# FFE related toolchain (dafault path)
+# FFE related toolchain (default path)
 sudo mkdir -p /opt/ttforge-toolchain
 sudo chown -R $USER /opt/ttforge-toolchain
 

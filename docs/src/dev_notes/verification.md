@@ -98,7 +98,7 @@ For this checker you can set:
 # default behavior
 verify(inputs, framework_model, compiled_model)
 # this will result same as the default behavior
-verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=AutomaticValueChecker())
+verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=AutomaticValueChecker()))
 # setting pcc and rtol
 verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.95, rtol=1e-03)))
 ```
@@ -133,7 +133,7 @@ For this checker you can set:
 **Examples of usage:**
 ```python
 # setting full checker with default values
-verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=FullValueChecker())
+verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=FullValueChecker()))
 # setting full checker with custom values
 verify(inputs, framework_model, compiled_model, VerifyConfig(value_checker=FullValueChecker(pcc=0.95, rtol=1e-03)))
 ```
