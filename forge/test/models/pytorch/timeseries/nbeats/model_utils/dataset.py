@@ -26,13 +26,17 @@ Electricity Dataset
 
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Tuple
 
 import numpy as np
 import patoolib
 from tqdm import tqdm
+
+from third_party.tt_forge_models.tools.utils import get_file
 
 from .http_utils import download, url_file_name
 from .sampler import TimeseriesSampler
@@ -48,6 +52,10 @@ https://github.com/rofuyu/exp-trmf-nips16/blob/master/python/exp-scripts/dataset
 """
 
 DATASET_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/00321/LD2011_2014.txt.zip"
+
+
+NBEATS_ELECTRICITY_NPZ_DEFAULT = "test_images/nbeats/dataset/electricity/electricity.npz"
+NBEATS_DATES_NPZ_DEFAULT = "test_images/nbeats/dataset/electricity/dates.npz"
 
 DATASET_DIR = os.path.join(DATASETS_PATH, "electricity")
 DATASET_FILE_PATH = os.path.join(DATASET_DIR, url_file_name(DATASET_URL))
@@ -135,11 +143,32 @@ class ElectricityDataset:
     @staticmethod
     def download():
         """
-        Download Electricity dataset.
+        Download Electricity dataset with fallback.
+
+        Primary: Use get_file to download pre-processed electricity.npz and dates.npz
+        from S3 (via NBEATS_ELECTRICITY_NPZ_URL and NBEATS_DATES_NPZ_URL env vars).
+        Fallback: If primary fails, download raw zip from UCI, extract, and parse.
         """
-        if os.path.isdir(DATASET_DIR):
-            logging.info(f"skip: {DATASET_DIR} directory already exists.")
+        os.makedirs(DATASET_DIR, exist_ok=True)
+
+        if os.path.isfile(CACHE_FILE_PATH) and os.path.isfile(DATES_CACHE_FILE_PATH):
+            logging.info(f"skip: cache already exists at {CACHE_FILE_PATH}")
             return
+
+        # Primary: try get_file for pre-processed npz (S3/LF cache or env override)
+        try:
+            logging.info("Downloading pre-processed npz files via get_file...")
+            electricity_path = Path(get_file(NBEATS_ELECTRICITY_NPZ_DEFAULT))
+            dates_path = Path(get_file(NBEATS_DATES_NPZ_DEFAULT))
+            shutil.copy(electricity_path, CACHE_FILE_PATH)
+            shutil.copy(dates_path, DATES_CACHE_FILE_PATH)
+            logging.info(f"Saved electricity.npz and dates.npz to {DATASET_DIR}")
+            return
+        except Exception as e:
+            logging.warning(f"Primary download (get_file) failed: {e}. " "Falling back to raw zip download and parse.")
+
+        # Fallback: download raw zip, extract, and parse
+        logging.info("Using fallback: downloading raw zip from UCI...")
         download(DATASET_URL, DATASET_FILE_PATH)
         patoolib.extract_archive(DATASET_FILE_PATH, outdir=DATASET_DIR)
         with open(RAW_DATA_FILE_PATH, "r") as f:

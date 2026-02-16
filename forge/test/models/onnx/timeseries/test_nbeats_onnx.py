@@ -50,7 +50,7 @@ def test_nbeats_with_seasonality_basis_onnx(variant, forge_tmp_path):
     )
     torch_model.eval()
 
-    inputs = [x, x_mask]
+    inputs = [x.contiguous(), x_mask.contiguous()]
 
     # Export model to ONNX
     onnx_path = f"{forge_tmp_path}/{variant}.onnx"

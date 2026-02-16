@@ -133,6 +133,66 @@ def fetch_model(
     return model
 
 
+def paddlenlp_from_pretrained(
+    load_fn,
+    variant,
+    max_retries=3,
+    base_delay_sec=2.0,
+    max_delay_sec=60.0,
+    jitter=True,
+    **kwargs,
+):
+    """
+    Load PaddleNLP model/tokenizer with retry for transient network failures
+    (e.g. RemoteDisconnected, connection timeouts).
+    """
+    retriable = (
+        OSError,
+        ConnectionError,
+        TimeoutError,
+    )
+    try:
+        import urllib3.exceptions
+
+        retriable += (urllib3.exceptions.ProtocolError, urllib3.exceptions.MaxRetryError)
+    except ImportError:
+        logger.trace("urllib3 is not installed; skipping urllib3-specific retriable exceptions.")
+    try:
+        import requests.exceptions
+
+        retriable += (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ReadTimeout,
+            requests.exceptions.ChunkedEncodingError,
+        )
+    except ImportError:
+        logger.trace("requests not available; skipping requests-specific retriable exceptions.")
+
+    last_error = None
+    load_kwargs = dict(kwargs)
+
+    for attempt in range(max_retries):
+        try:
+            return load_fn(variant, **load_kwargs)
+        except retriable as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = min(base_delay_sec * (2**attempt), max_delay_sec)
+                if jitter:
+                    delay *= 0.5 + random.random()
+                time.sleep(delay)
+            else:
+                break
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(
+        f"paddlenlp_from_pretrained: exhausted {max_retries} retries for '{variant}' "
+        "without capturing a retriable error. This is unexpected — the loader neither "
+        "succeeded nor raised a recognized retriable exception."
+    )
+
+
 def fetch_paddle_model(url, save_dir):
     model_name = os.path.splitext(os.path.basename(url))[0]
     file_names = ["inference.pdiparams", "inference.pdiparams.info", "inference.pdmodel"]

@@ -10,6 +10,7 @@ from forge.verify.verify import verify
 from forge.tvm_calls.forge_utils import paddle_trace
 
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
+from test.utils import paddlenlp_from_pretrained
 
 from paddlenlp.transformers import (
     BertForSequenceClassification,
@@ -56,9 +57,13 @@ def test_bert_sequence_classification(variant, input):
         source=Source.PADDLENLP,
     )
 
-    # Load Model and Tokenizer
-    model = BertForSequenceClassification.from_pretrained(variant, num_classes=2)
-    tokenizer = BertTokenizer.from_pretrained(variant)
+    # Load Model and Tokenizer (with retry for transient network failures)
+    model = paddlenlp_from_pretrained(
+        BertForSequenceClassification.from_pretrained,
+        variant,
+        num_classes=2,
+    )
+    tokenizer = paddlenlp_from_pretrained(BertTokenizer.from_pretrained, variant)
 
     # Load sample
     encoded_input = tokenizer(input, return_token_type_ids=True, return_position_ids=True, return_attention_mask=True)
@@ -84,9 +89,9 @@ def test_bert_maskedlm(variant, input):
         source=Source.PADDLENLP,
     )
 
-    # Load Model and Tokenizer
-    model = BertForMaskedLM.from_pretrained(variant)
-    tokenizer = BertTokenizer.from_pretrained(variant)
+    # Load Model and Tokenizer (with retry for transient network failures)
+    model = paddlenlp_from_pretrained(BertForMaskedLM.from_pretrained, variant)
+    tokenizer = paddlenlp_from_pretrained(BertTokenizer.from_pretrained, variant)
 
     # Load sample
     encoded_input = tokenizer(input, return_token_type_ids=True, return_position_ids=True, return_attention_mask=True)
@@ -119,9 +124,9 @@ def test_bert_question_answering(variant, input):
         source=Source.PADDLENLP,
     )
 
-    # Load Model and Tokenizer
-    model = BertForQuestionAnswering.from_pretrained(variant)
-    tokenizer = BertTokenizer.from_pretrained(variant)
+    # Load Model and Tokenizer (with retry for transient network failures)
+    model = paddlenlp_from_pretrained(BertForQuestionAnswering.from_pretrained, variant)
+    tokenizer = paddlenlp_from_pretrained(BertTokenizer.from_pretrained, variant)
 
     # Load sample
     encoded_input = tokenizer(input, return_token_type_ids=True, return_position_ids=True, return_attention_mask=True)
