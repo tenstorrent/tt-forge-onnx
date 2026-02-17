@@ -12,6 +12,17 @@ from forge.verify.value_checkers import AllCloseValueChecker
 import forge
 
 
+class NLLLossWrapper(torch.nn.Module):
+    def __init__(self, reduction):
+        super().__init__()
+        self.loss_fn = torch.nn.NLLLoss(reduction=reduction)
+
+    def forward(self, prediction, target_one_hot):
+        # Forge passes one-hot targets, but Torch NLLLoss expects class indices.
+        target_index = torch.argmax(target_one_hot, dim=-1)
+        return self.loss_fn(prediction, target_index)
+
+
 @pytest.mark.parametrize(
     "prediction_shape",
     [
@@ -158,7 +169,7 @@ def test_mse_loss(prediction_shape, reduction):
 @pytest.mark.parametrize("reduction", ["mean", "sum"])
 def test_nll_loss(prediction_shape, reduction):
     forge_loss = forge.op.loss.NLLLoss("nll_loss", reduction=reduction)
-    torch_loss = torch.nn.NLLLoss(reduction=reduction)
+    torch_loss = NLLLossWrapper(reduction=reduction)
 
     prediction = torch.randn(prediction_shape, requires_grad=True)
     prediction = nn.functional.log_softmax(prediction, dim=-1)
@@ -175,15 +186,16 @@ def test_nll_loss(prediction_shape, reduction):
 
     if batch_size == 1:  # Handle 1D case, remove the batch dimension
         target_one_hot = target_one_hot.squeeze(0)
-        target = target.squeeze(0)
 
     target_forge = forge.tensor.Tensor.create_from_torch(target_one_hot)
 
     forge_loss = forge.compile(forge_loss, sample_inputs=[prediction_forge, target_forge])
-    forge_loss_out = forge_loss(prediction, target_one_hot)
-    torch_loss_out = torch_loss(prediction, target)
-
-    assert torch.allclose(torch_loss_out, forge_loss_out[0], rtol=11e-3)
+    verify(
+        inputs=[prediction, target_one_hot],
+        framework_model=torch_loss,
+        compiled_model=forge_loss,
+        verify_cfg=VerifyConfig(verify_shape=False, value_checker=AllCloseValueChecker(rtol=11e-3)),
+    )
 
 
 @pytest.mark.parametrize(
