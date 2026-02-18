@@ -29,9 +29,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.mlir_override }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.mlir_override }}
+#   cancel-in-progress: true
 
 permissions:
   packages: write

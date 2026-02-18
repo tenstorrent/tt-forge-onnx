@@ -3,6 +3,8 @@ name: On nightly
 on:
   schedule:
     - cron: '0 0 * * *' # Runs at 00:00 UTC every day
+  push:
+    branches: [ "pchandrasekaran/fix_flakyness" ]
 
 permissions:
   packages: write
