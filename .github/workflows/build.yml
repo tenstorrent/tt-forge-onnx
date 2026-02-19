@@ -246,6 +246,19 @@ jobs:
           -DCODE_COVERAGE=ON
           cmake --build ${{ steps.strings.outputs.build-output-dir }}
 
+      - name: Build C++ cache interceptor
+        shell: bash
+        run: |
+          source env/activate
+          cmake --build ${{ steps.strings.outputs.build-output-dir }} --target cache_interceptor
+
+      - name: Upload C++ cache interceptor
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: cache-interceptor
+          path: ${{ steps.strings.outputs.build-output-dir }}/libcache_interceptor.so
+
       - name: Run Unit Tests
         shell: bash
         run: |

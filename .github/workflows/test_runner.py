@@ -19,18 +19,25 @@ def run_pytest(args=None):
     # Setup environment for C++ cache deletion monitoring
     env = os.environ.copy()
 
-    # Add LD_PRELOAD for C++ deletion monitoring if interceptor exists
-    # test_runner.py lives in .github/workflows/, so go up 3 levels to repo root
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    interceptor_path = repo_root / "build" / "libcache_interceptor.so"
+    # Add LD_PRELOAD for C++ deletion monitoring if interceptor exists.
+    # Prefer explicit path from CI env (wheel-based jobs); fall back to local source build path.
+    env_interceptor_path = env.get("TT_CACHE_INTERCEPTOR_PATH")
+    if env_interceptor_path:
+        interceptor_path = Path(env_interceptor_path).resolve()
+    else:
+        # test_runner.py lives in .github/workflows/ — go up 3 levels to repo root
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        interceptor_path = repo_root / "build" / "libcache_interceptor.so"
 
     if interceptor_path.exists():
         existing_preload = env.get("LD_PRELOAD", "")
+        # Always use the resolved (no ./ or ..) absolute path so ld.so accepts it.
+        resolved_str = str(interceptor_path.resolve())
         if existing_preload:
-            env["LD_PRELOAD"] = f"{existing_preload}:{interceptor_path}"
+            env["LD_PRELOAD"] = f"{existing_preload}:{resolved_str}"
         else:
-            env["LD_PRELOAD"] = str(interceptor_path)
-        print(f"[test_runner] C++ cache deletion monitoring enabled: {interceptor_path}")
+            env["LD_PRELOAD"] = resolved_str
+        print(f"[test_runner] C++ cache deletion monitoring enabled: {resolved_str}")
     else:
         print(f"[test_runner] C++ interceptor not found at {interceptor_path}, skipping C++ monitoring")
         print(f"[test_runner] Build it with: cmake --build build --target cache_interceptor")

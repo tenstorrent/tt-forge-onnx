@@ -155,6 +155,29 @@ jobs:
           run_id: ${{ inputs.run_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download C++ cache interceptor
+        if: ${{ inputs.run_id }}
+        continue-on-error: true
+        uses: tenstorrent/tt-forge/.github/actions/download-artifact@main
+        with:
+          name: cache-interceptor
+          run_id: ${{ inputs.run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find and download C++ cache interceptor
+        if: ${{ !inputs.run_id }}
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          workflow_conclusion: success
+          workflow_search: true
+          workflow: on-pr.yml
+          name: cache-interceptor
+          repo: tenstorrent/tt-forge-onnx
+          check_artifacts: true
+          search_artifacts: true
+
       - name: Find and download forge wheel
         if: ${{ !inputs.run_id }}
         uses: dawidd6/action-download-artifact@v9
@@ -174,6 +197,21 @@ jobs:
           source env/activate
           pip install tt_tvm*.whl --upgrade
           pip install tt_forge_onnx*.whl --upgrade
+
+      - name: Configure C++ cache interceptor env
+        shell: bash
+        run: |
+          interceptor_path=$(find . -type f -name libcache_interceptor.so | head -n 1 || true)
+          if [ -n "$interceptor_path" ] && [ -f "$interceptor_path" ]; then
+            # Use realpath to produce a clean absolute path with no ./ or .. components.
+            # ld.so rejects LD_PRELOAD paths that contain relative path components.
+            abs_path=$(realpath "$interceptor_path")
+            echo "TT_CACHE_INTERCEPTOR_PATH=$abs_path" >> $GITHUB_ENV
+            echo "LD_PRELOAD=$abs_path" >> $GITHUB_ENV
+            echo "Configured C++ cache interceptor: $abs_path"
+          else
+            echo "C++ cache interceptor artifact not found; C++ monitoring may be disabled."
+          fi
 
       - name: Download Generated Models Ops Tests
         if: ${{ inputs.run_models_ops_tests }}
