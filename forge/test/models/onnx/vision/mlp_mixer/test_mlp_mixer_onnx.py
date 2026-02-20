@@ -40,10 +40,7 @@ varaints = [
         "mixer_b16_224_miil_in21k",
         marks=[pytest.mark.xfail],
     ),
-    pytest.param(
-        "mixer_b32_224",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_b32_224"),
     pytest.param(
         "mixer_l16_224",
         marks=[pytest.mark.xfail],
@@ -52,18 +49,12 @@ varaints = [
         "mixer_l16_224_in21k",
         marks=[pytest.mark.xfail],
     ),
-    pytest.param(
-        "mixer_l32_224",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_l32_224"),
     pytest.param(
         "mixer_s16_224",
         marks=pytest.mark.pr_models_regression,
     ),
-    pytest.param(
-        "mixer_s32_224",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_s32_224"),
     pytest.param(
         "mixer_b16_224.goog_in21k",
         marks=[pytest.mark.xfail],
