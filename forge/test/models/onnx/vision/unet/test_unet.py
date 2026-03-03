@@ -9,6 +9,7 @@ import onnx
 from forge.verify.verify import verify
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 from test.models.onnx.vision.unet.model_utils.utils import load_inputs
+from test.utils import download_model
 
 
 @pytest.mark.nightly
@@ -24,13 +25,16 @@ def test_unet_onnx(forge_tmp_path):
     )
 
     # Load the torch model
-    torch_model = torch.hub.load(
+    # trust_repo=True bypasses GitHub API validation that triggers rate limit (403) in CI/shared envs
+    torch_model = download_model(
+        torch.hub.load,
         "mateuszbuda/brain-segmentation-pytorch",
         "unet",
         in_channels=3,
         out_channels=1,
         init_features=32,
         pretrained=True,
+        trust_repo=True,
     )
     torch_model.eval()
 
