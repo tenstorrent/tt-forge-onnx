@@ -3,8 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import torch
-import onnx
 import forge
 from forge.forge_property_utils import (
     Framework,
@@ -15,7 +13,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 from test.models.models_utils import print_cls_results, preprocess_inputs
-from test.utils import download_model
+from test.models.onnx.vision.alexnet.model_utils.alexnet_utils import load_model
 
 
 @pytest.mark.pr_models_regression
@@ -30,20 +28,11 @@ def test_alexnet_onnx(forge_tmp_path):
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Load model
-    torch_model = download_model(torch.hub.load, "pytorch/vision:v0.10.0", "alexnet", pretrained=True)
-    torch_model.eval()
-
     # Load input
     inputs = preprocess_inputs()
 
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/alexnet.onnx"
-    torch.onnx.export(torch_model, inputs[0], onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model
+    onnx_model = load_model(forge_tmp_path, inputs)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Compile model
