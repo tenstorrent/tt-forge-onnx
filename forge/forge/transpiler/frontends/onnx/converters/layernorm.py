@@ -15,6 +15,7 @@ import onnx
 
 from forge.transpiler.core.types import TensorInfo, onnx_dtype_to_torch_dtype
 from forge.transpiler.frontends.onnx.utils.onnx_graph import torch_dtype_to_onnx_dtype
+from forge.transpiler.operations.arithmetic import PowNode
 from forge.transpiler.operations.normalization import LayerNormNode
 from forge.transpiler.operations.other import FullNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
@@ -224,8 +225,8 @@ class LayerNormalizationConverter(OnnxOpConverter):
         # Multiple outputs: decompose into multiple TIR nodes
         # Import required node classes
         from forge.transpiler.operations.reduction import ReduceMeanNode
-        from forge.transpiler.operations.arithmetic import SubNode, MulNode, AddNode
-        from forge.transpiler.operations.activation import SqrtNode, ReciprocalNode, PowNode
+        from forge.transpiler.operations.arithmetic import SubNode, MulNode, AddNode, PowNode
+        from forge.transpiler.operations.activation import SqrtNode, ReciprocalNode
         from forge.transpiler.operations.other import IdentityNode
         from forge.transpiler.frontends.onnx.converters.reduction import create_multi_dim_reduction_nodes
 
@@ -326,14 +327,24 @@ class LayerNormalizationConverter(OnnxOpConverter):
         current_outputs.update(d_output_dict)
 
         # Stage 3: Compute variance
-        # DD = Pow(D, 2.0) - use Pow instead of Mul(D, D) to avoid duplicate input issue
+        # DD = Pow(D, 2.0)
+        # PowNode is purely binary: both X and Y must be tensor inputs.
+        # Create the exponent constant 2.0 as a scalar FullNode (same pattern
+        # as epsilon), then wire it as the second input to PowNode.
+        exponent_const_name = f"{node_name}_exponent_2"
+        exponent_full_node, exponent_tensor_value = cls._create_constant_from_fullnode(
+            exponent_const_name, 2.0, dtype, current_outputs
+        )
+        exponent_full_node.attrs["constant_value"] = exponent_tensor_value
+        nodes.append(exponent_full_node)
+
         dd_output_name = f"{node_name}_squared"
         dd_output_tensors = {dd_output_name: TensorInfo(name=dd_output_name, shape=x_shape, onnx_dtype=onnx_dtype)}
         dd_input_dict, dd_output_dict = build_input_output_dicts(
             node_proto,
             current_outputs,
             dd_output_tensors,
-            input_names=[d_output_name],
+            input_names=[d_output_name, exponent_const_name],
             output_names=[dd_output_name],
             check_output_tensors=True,
         )
@@ -342,7 +353,6 @@ class LayerNormalizationConverter(OnnxOpConverter):
             name=f"{node_name}_squared",
             inputs=dd_input_dict,
             outputs=dd_output_dict,
-            exponent=2.0,
         )
         nodes.append(dd_node)
         current_outputs.update(dd_output_dict)

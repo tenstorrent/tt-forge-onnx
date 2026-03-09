@@ -86,7 +86,7 @@ def export_to_onnx(
 
         opset = onnx_model.opset_import[0].version
         n_nodes = len(onnx_model.graph.node)
-        print(f"\n✓ ONNX export complete: opset={opset}, nodes={n_nodes}")
+        print(f"\n[OK] ONNX export complete: opset={opset}, nodes={n_nodes}")
 
         yield onnx_model
 
@@ -121,7 +121,7 @@ def run_tir_transpilation(onnx_model: "onnx.ModelProto", title: str, debug: bool
         op_type_counts[node.op_type] = op_type_counts.get(node.op_type, 0) + 1
 
     print(
-        f"\n✓ TIRGraph: {len(tir_graph.nodes)} nodes, "
+        f"\n[OK] TIRGraph: {len(tir_graph.nodes)} nodes, "
         f"{len(tir_graph.params)} params, "
         f"{len(tir_graph.constants)} constants"
     )
@@ -162,12 +162,12 @@ def run_onnx_comparison(
         for err in comparison["errors"]:
             print(f"    - {err}")
     else:
-        print("  ✓ No errors")
+        print("  [OK] No errors")
 
     if all(comparison["matches"].values()):
-        print("  ✓ All outputs match")
+        print("  [OK] All outputs match")
     else:
-        print("  ⚠ Output mismatches:")
+        print("  [WARN] Output mismatches:")
         for output_name, matched in comparison["matches"].items():
             if not matched:
                 print(f"    - {output_name}")

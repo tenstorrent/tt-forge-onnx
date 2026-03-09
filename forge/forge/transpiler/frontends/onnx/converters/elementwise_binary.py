@@ -5,7 +5,7 @@
 ONNX Element-wise Binary operation converters.
 
 This module provides converters for ONNX element-wise binary operations:
-- Arithmetic: Add, Sub, Mul, Div - Element-wise binary operations with broadcasting support
+- Arithmetic: Add, Sub, Mul, Div, Pow - Element-wise binary operations with broadcasting support
 - Comparison: Equal, Greater, Less, GreaterOrEqual, LessOrEqual - Element-wise comparison operations returning boolean tensors
 - MatMul: Matrix multiplication operation
 
@@ -21,8 +21,9 @@ from typing import List, Dict, Any, Optional, Tuple
 from collections import OrderedDict
 from onnx import NodeProto
 from forge.transpiler.core.types import TensorInfo
-from forge.transpiler.operations.arithmetic import AddNode, SubNode, MulNode, DivNode, MatMulNode
+from forge.transpiler.operations.arithmetic import AddNode, SubNode, MulNode, DivNode, PowNode, MatMulNode
 from forge.transpiler.operations.comparison import EqualNode, GreaterNode, LessNode, GreaterOrEqualNode, LessOrEqualNode
+from forge.transpiler.operations.other import CastNode
 from forge.transpiler.frontends.onnx.converters.base import OnnxOpConverter
 from forge.transpiler.frontends.onnx.utils.io_builder import build_input_output_dicts
 from forge.transpiler.frontends.onnx.utils.shape_finder import validate_no_unknown_dimensions
@@ -407,3 +408,182 @@ class MatMulConverter(OnnxOpConverter):
         # - N-dimensional batched matrix multiplication
         # - Broadcasting of batch dimensions automatically
         return [MatMulNode.create(name=node_name, inputs=input_dict, outputs=output_dict)]
+
+
+class PowConverter(OnnxOpConverter):
+    """
+    Converter for ONNX Pow operation: Z = X ^ Y.
+
+    Both X (base) and Y (exponent) are wired as tensor inputs to
+    :class:`PowNode`, mapping to ``forge.op.Power`` (binary) and
+    ``ttir.pow(%lhs, %rhs)``.
+
+    Opset version differences
+    -------------------------
+    * **v1-v6**: Broadcasting is *opt-in* via ``broadcast=1`` attribute.
+      The ``axis`` attribute specifies where to align Y within X.
+      X and Y must share the same float type.
+    * **v7-v11**: Multidirectional (NumPy-style) broadcasting always enabled.
+      ``broadcast`` and ``axis`` attributes were removed.
+      X and Y still share the same type.
+    * **v12+**: Heterogeneous type constraints — X has type T, Y has type T1
+      (may differ).  Output Z always has type T (same as X).  Y is cast to
+      X's dtype via an explicit :class:`~forge.transpiler.operations.other.CastNode`
+      inserted *before* the :class:`PowNode` in the TIR graph.
+    * **v13, v15**: Broadened T and T1 type sets; behaviour is otherwise
+      identical to v12.
+    """
+
+    @classmethod
+    def convert(
+        cls,
+        node_proto: NodeProto,
+        input_tensors: OrderedDict[str, TensorInfo],
+        output_tensors: OrderedDict[str, TensorInfo],
+        attrs: Dict[str, Any],
+        node_index: int,
+        graph_proto=None,
+        opset: int = 1,
+        tir_graph=None,
+    ) -> List:
+        """
+        Convert an ONNX Pow node to a TIR :class:`PowNode`.
+
+        Steps performed (mirroring :class:`BinaryOpConverter`):
+
+        1. Validate the number of inputs.
+        2. Validate broadcasting compatibility using
+           :func:`validate_broadcast_attributes` (handles v1-6 *broadcast* /
+           *axis* attributes and v7+ multidirectional rules).
+        3. Compute the output shape with
+           :func:`compute_broadcasted_shape` (v7+) or preserve the ONNX
+           shape-inferred shape (v1-6).
+        4. Set output dtype to X's type (enforces T == Z for all opsets).
+        5. **Cast injection**: if Y's dtype differs from X's dtype, insert a
+           :class:`~forge.transpiler.operations.other.CastNode` (Y → X dtype)
+           *before* the :class:`PowNode` in the TIR graph so that both inputs
+           are type-matched when ``PowNode.eval()`` calls ``torch.pow``.  A
+           ``TRACE`` log is emitted for expected opset-12+ heterogeneous types;
+           a ``WARNING`` is emitted for older opsets where spec requires
+           homogeneous types.
+        6. Build input/output dicts and create :class:`PowNode`.
+
+        Args:
+            node_proto: ONNX node protocol buffer.
+            input_tensors: Dictionary mapping input names to TensorInfo.
+            output_tensors: Dictionary mapping output names to TensorInfo.
+            attrs: Extracted node attributes (``broadcast``, ``axis`` for v1-6).
+            node_index: Position of this node in the graph.
+            graph_proto: ONNX graph proto (unused; kept for API consistency).
+            opset: Opset version — drives broadcasting and type-check behaviour.
+            tir_graph: Partially-built TIR graph (unused; kept for API consistency).
+
+        Returns:
+            List containing a :class:`PowNode`, optionally preceded by a
+            :class:`~forge.transpiler.operations.other.CastNode` when Y's dtype
+            differs from X's dtype.
+
+        Raises:
+            ValueError: If fewer than 2 inputs are provided, or shapes are
+                incompatible for broadcasting under the active opset rules.
+        """
+        node_name = node_proto.name if node_proto.name else f"Pow_{node_index}"
+
+        if len(node_proto.input) < 2:
+            raise ValueError(f"Pow node '{node_name}': expected 2 inputs (X, Y), " f"got {len(node_proto.input)}.")
+
+        x_name = node_proto.input[0]
+        y_name = node_proto.input[1]
+        tensor_x = input_tensors.get(x_name)
+        tensor_y = input_tensors.get(y_name)
+
+        # ── Step 1: Validate broadcasting (opset-aware) ───────────────────────
+        validate_broadcast_attributes(
+            op_type="Pow",
+            attrs=attrs,
+            input_tensors=input_tensors,
+            opset=opset,
+        )
+
+        x_onnx_dtype = tensor_x.onnx_dtype if tensor_x is not None else None
+        y_onnx_dtype = tensor_y.onnx_dtype if tensor_y is not None else None
+
+        # ── Step 2: Compute output shape and dtype ────────────────────────────
+        output_dtype = x_onnx_dtype
+
+        if tensor_x is not None and tensor_y is not None:
+            shape_x = tensor_x.shape
+            shape_y = tensor_y.shape
+
+            if opset >= 7:
+                output_shape = compute_broadcasted_shape(shape_x, shape_y)
+            else:
+                output_shape = list(output_tensors.values())[0].shape if output_tensors else shape_x
+
+            if output_shape is not None and output_tensors:
+                out_name = list(output_tensors.keys())[0]
+                output_tensors[out_name] = TensorInfo(
+                    name=out_name,
+                    shape=output_shape,
+                    onnx_dtype=output_dtype,
+                )
+        elif output_dtype is not None and output_tensors:
+            out_name = list(output_tensors.keys())[0]
+            existing = output_tensors[out_name]
+            output_tensors[out_name] = TensorInfo(
+                name=out_name,
+                shape=existing.shape,
+                onnx_dtype=output_dtype,
+            )
+
+        # ── Step 3: Inject CastNode for Y when dtypes differ ─────────────────
+        nodes = []
+        pow_y_name = y_name
+
+        if x_onnx_dtype is not None and y_onnx_dtype is not None and x_onnx_dtype != y_onnx_dtype:
+            from forge.transpiler.core.types import onnx_dtype_to_torch_dtype
+
+            level = "trace" if opset >= 12 else "warning"
+            getattr(logger, level)(
+                f"Pow node '{node_name}' (opset {opset}): Y dtype={y_onnx_dtype} (T1) differs "
+                f"from X dtype={x_onnx_dtype} (T). Inserting CastNode Y → X's dtype."
+            )
+
+            cast_name = f"{node_name}_cast_y"
+            cast_out_name = f"{cast_name}_output"
+            x_torch_dtype = onnx_dtype_to_torch_dtype(x_onnx_dtype)
+
+            cast_out_info = TensorInfo(
+                name=cast_out_name,
+                shape=tensor_y.shape,
+                onnx_dtype=x_onnx_dtype,
+            )
+            cast_input_dict, cast_output_dict = build_input_output_dicts(
+                node_proto,
+                input_tensors,
+                {cast_out_name: cast_out_info},
+                input_names=[y_name],
+                output_names=[cast_out_name],
+            )
+            nodes.append(
+                CastNode.create(
+                    name=cast_name,
+                    inputs=cast_input_dict,
+                    outputs=cast_output_dict,
+                    dtype=x_torch_dtype,
+                )
+            )
+
+            input_tensors = OrderedDict(input_tensors)
+            input_tensors[cast_out_name] = cast_out_info
+            pow_y_name = cast_out_name
+
+        # ── Step 4: Build PowNode ─────────────────────────────────────────────
+        input_dict, output_dict = build_input_output_dicts(
+            node_proto,
+            input_tensors,
+            output_tensors,
+            input_names=[x_name, pow_y_name],
+        )
+        nodes.append(PowNode.create(name=node_name, inputs=input_dict, outputs=output_dict))
+        return nodes

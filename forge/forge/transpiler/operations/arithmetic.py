@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Arithmetic operations: Add, Sub, Mul, Div, MatMul, Gemm
+Arithmetic operations: Add, Sub, Mul, Div, Pow, MatMul, Gemm
 """
 import torch
 from typing import Dict
@@ -15,6 +15,86 @@ from forge.transpiler.operations.shape_mixins import (
     BinaryBroadcastShape,
     MatMulShape,
 )
+
+
+class PowNode(BinaryBroadcastShape, TIRNode):
+    """
+    Element-wise power operation: Z = X ^ Y.
+
+    Both the base (X) and the exponent (Y) are tensor inputs, matching
+    ``forge.op.Power`` (binary) and ``ttir.pow(%lhs, %rhs)`` which both
+    require two tensor operands.
+
+    **Dtype handling (ONNX v12+ heterogeneous types):**
+    From opset 12, X has type T and Y has type T1 — they may differ.
+    Output Z always has the same type as X (type T).
+    When Y's dtype differs from X's dtype, :class:`PowConverter` inserts a
+    :class:`~forge.transpiler.operations.other.CastNode` *before* this node
+    in the TIR graph so that both inputs share the same dtype by the time
+    ``eval()`` is called.  No runtime coercion is performed here.
+
+    Shape inference follows NumPy multidirectional broadcasting rules via
+    :class:`BinaryBroadcastShape`.
+
+    Maps to ``forge.op.Power(name, X, Y)`` → ``OpType::Power`` → string
+    ``"power"`` → MLIR ``ttir.pow(%lhs, %rhs)``.
+    """
+
+    @staticmethod
+    def create(
+        name: str,
+        inputs: OrderedDict[str, TensorInfo],
+        outputs: OrderedDict[str, TensorInfo],
+    ) -> "PowNode":
+        """
+        Create a PowNode.
+
+        Args:
+            name: Node name.
+            inputs: OrderedDict with two entries — X (base) and Y (exponent).
+                Y may be a constant initializer or a runtime activation.
+            outputs: OrderedDict mapping output name to TensorInfo.
+
+        Returns:
+            PowNode instance.
+        """
+        return PowNode(
+            name=name,
+            op_type="Pow",
+            inputs=inputs,
+            outputs=outputs,
+            attrs={},
+            forge_op_name="Power",
+        )
+
+    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Evaluate the power operation using PyTorch.
+
+        Both X and Y are expected to have the same dtype when this node is
+        reached.  If Y originally had a different type (ONNX v12+ heterogeneous
+        T / T1), the :class:`PowConverter` inserts an explicit
+        :class:`~forge.transpiler.operations.other.CastNode` for Y *before*
+        this node so that the dtype contract is already satisfied here.
+
+        Args:
+            input_tensors: Mapping from input name to tensor.
+                Must contain entries for both X (base) and Y (exponent).
+
+        Returns:
+            Mapping from output name to result tensor.
+
+        Raises:
+            ValueError: If fewer than 2 tensor inputs are provided.
+        """
+        if len(self.input_names) < 2:
+            raise ValueError(
+                f"PowNode '{self.name}' requires 2 inputs (base X and exponent Y) "
+                f"but only has {len(self.input_names)}: {self.input_names}."
+            )
+        x = input_tensors[self.input_names[0]]
+        y = input_tensors[self.input_names[1]]
+        return {self.output_names[0]: torch.pow(x, y)}
 
 
 class AddNode(BinaryBroadcastShape, TIRNode):

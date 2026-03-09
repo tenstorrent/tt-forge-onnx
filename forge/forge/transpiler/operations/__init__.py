@@ -11,6 +11,7 @@ from forge.transpiler.operations.arithmetic import (
     SubNode,
     MulNode,
     DivNode,
+    PowNode,
     MatMulNode,
 )
 from forge.transpiler.operations.activation import (
@@ -24,7 +25,6 @@ from forge.transpiler.operations.activation import (
     SqrtNode,
     ErfNode,
     ReciprocalNode,
-    PowNode,
 )
 from forge.transpiler.operations.conv import Conv1dNode, Conv2dNode, Conv3dNode
 from forge.transpiler.operations.pooling import (
@@ -79,6 +79,7 @@ __all__ = [
     "SubNode",
     "MulNode",
     "DivNode",
+    "PowNode",
     "MatMulNode",
     # Convolution
     "Conv1dNode",
@@ -95,7 +96,6 @@ __all__ = [
     "SqrtNode",
     "ErfNode",
     "ReciprocalNode",
-    "PowNode",
     # Pooling
     "MaxPool1dNode",
     "MaxPool2dNode",

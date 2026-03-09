@@ -157,7 +157,11 @@ def compare_tir_with_onnx(
 
     # Run ONNX model
     try:
-        sess = ort.InferenceSession(onnx_model.SerializeToString())
+        _opts = ort.SessionOptions()
+        _opts.log_severity_level = 3
+        _opts.inter_op_num_threads = 1
+        _opts.intra_op_num_threads = 1
+        sess = ort.InferenceSession(onnx_model.SerializeToString(), sess_options=_opts)
         onnx_inputs = {name: data for name, data in input_data.items()}
         onnx_outputs = sess.run(None, onnx_inputs)
 

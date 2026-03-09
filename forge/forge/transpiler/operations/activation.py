@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 """
-Activation operations: Relu, Sigmoid, Tanh, Softmax, LogSoftmax, LeakyRelu, Dropout, Sqrt, Erf
+Activation operations: Relu, Sigmoid, Tanh, Softmax, LogSoftmax, LeakyRelu, Dropout, Sqrt, Erf, Reciprocal
 """
 import torch
 import torch.nn.functional as F
@@ -445,60 +445,3 @@ class ReciprocalNode(ElementwiseUnaryShape, TIRNode):
         """
         x = input_tensors[self.input_names[0]]
         return {self.output_names[0]: torch.reciprocal(x)}
-
-
-class PowNode(ElementwiseUnaryShape, TIRNode):
-    """
-    PyTorch-like Pow operation.
-
-    Performs element-wise power: y = x^exponent
-    Maps to forge.op.Pow.
-    """
-
-    @staticmethod
-    def create(
-        name: str,
-        inputs: OrderedDict[str, TensorInfo],
-        outputs: OrderedDict[str, TensorInfo],
-        exponent: float,
-    ) -> "PowNode":
-        """
-        Static factory method to create a PowNode.
-
-        Args:
-            name: Node name
-            inputs: OrderedDict mapping input names to TensorInfo
-            outputs: OrderedDict mapping output names to TensorInfo
-            exponent: Exponent value (float or int)
-        """
-        return PowNode(
-            name=name,
-            op_type="Pow",
-            inputs=inputs,
-            outputs=outputs,
-            attrs={"exponent": float(exponent)},
-            forge_op_name="Pow",
-        )
-
-    def convert_attrs_to_forge_attrs(self, attrs):
-        """Convert exponent attribute for Forge."""
-        return {"exponent": attrs["exponent"]}
-
-    def eval(self, input_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """
-        Evaluate Pow operation using PyTorch.
-
-        Args:
-            input_tensors: Dictionary mapping input names to tensors
-
-        Returns:
-            Dictionary mapping output name to result tensor
-
-        Raises:
-            ValueError: If 'exponent' attribute is missing
-        """
-        if "exponent" not in self.attrs:
-            raise ValueError(f"PowNode '{self.name}': 'exponent' attribute is required but not found")
-        exponent = self.attrs["exponent"]
-        x = input_tensors[self.input_names[0]]
-        return {self.output_names[0]: torch.pow(x, exponent)}

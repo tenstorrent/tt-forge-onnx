@@ -34,7 +34,11 @@ from forge.transpiler.frontends.onnx.converters.expand import ExpandConverter
 from forge.transpiler.frontends.onnx.converters.concat import ConcatConverter
 from forge.transpiler.frontends.onnx.converters.clip import ClipConverter
 from forge.transpiler.frontends.onnx.converters.conv import ConvConverter
-from forge.transpiler.frontends.onnx.converters.elementwise_binary import BinaryOpConverter, MatMulConverter
+from forge.transpiler.frontends.onnx.converters.elementwise_binary import (
+    BinaryOpConverter,
+    MatMulConverter,
+    PowConverter,
+)
 from forge.transpiler.frontends.onnx.converters.elementwise_unary import UnaryOpConverter
 from forge.transpiler.frontends.onnx.converters.gemm import GemmConverter
 from forge.transpiler.frontends.onnx.converters.gather import GatherConverter
@@ -848,6 +852,7 @@ class ONNXToForgeTranspiler:
             "Sigmoid": SigmoidConverter.get_converter(opset),
             "Tanh": TanhConverter.get_converter(opset),
             "Sqrt": SqrtConverter.get_converter(opset),
+            "Pow": PowConverter.get_converter(opset),
             "Erf": UnaryOpConverter.get_converter(opset),
             "Softmax": SoftmaxConverter.get_converter(opset),
             "LogSoftmax": LogSoftmaxConverter.get_converter(opset),
