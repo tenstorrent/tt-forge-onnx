@@ -14,49 +14,64 @@
 
 <br>
 
-**TT-Forge ONNX** is a graph compiler designed to optimize and transform computational graphs for deep learning models, enhancing their performance and efficiency.
+**TT-Forge ONNX** is a graph compiler for running **ONNX**, **TensorFlow**, and **PaddlePaddle** models on Tenstorrent hardware, optimizing computational graphs for performance and efficiency.
+
+> **Part of the [TT-Forge](https://github.com/tenstorrent/tt-forge) AI compiler ecosystem.**
 
 </div>
 
 <br>
 
 -----
+# Run a Model
+
+Install TT-Forge-ONNX and run an ONNX model on Tenstorrent hardware:
+
+```bash
+pip install tt_forge --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+pip install onnx
+```
+
+```python
+import torch, onnx, forge
+
+# Load any ONNX model
+onnx_model = onnx.load("resnet50.onnx")
+input_tensor = torch.randn(1, 3, 224, 224)
+
+# Compile and run on Tenstorrent
+compiled_model = forge.compile(onnx_model, [input_tensor])
+output = compiled_model(input_tensor)
+
+predicted_class = output[0].argmax(dim=-1).item()
+print(f"Predicted ImageNet class: {predicted_class}")
+```
+
+Any `.onnx` file works — export from PyTorch, TensorFlow, PaddlePaddle, or grab one from the [ONNX Model Zoo](https://github.com/onnx/models). See the full [Getting Started Guide](docs/src/getting_started.md) for Docker and build-from-source options.
+
+-----
 # Quick Links
 - [Getting Started / How to Run a Model](docs/src/getting_started.md)
-- [Build](docs/src/getting_started_build_from_source.md) - Use these instructions if you plan to do development work.
+- [Build from Source](docs/src/getting_started_build_from_source.md) — For development work
+- [Demos](https://github.com/tenstorrent/tt-forge/tree/main/demos/tt-forge-onnx) — Ready-to-run models
+- [Supported Operations](https://docs.tenstorrent.com/tt-forge-onnx/operations.html) — 70+ supported ops
 
 -----
 # What is this Repo?
 
-TT-Forge-ONNX is a front end component within the broader TT-Forge ecosystem, which is designed to compile and execute machine learning models on Tenstorrent hardware platforms like Wormhole and Blackhole. TT-Forge-ONNX can ingest models from various machine learning frameworks including ONNX and TensorFlow through the TVM Intermediate Representation (IR). It can also ingest models from PyTorch, however it is recommended that you use TT-XLA to do this. TT-Forge-ONNX does not support multi-chip configurations; it is for single-chip projects only.
+TT-Forge-ONNX is a TVM-based frontend within the TT-Forge ecosystem. It compiles models from ONNX, TensorFlow, and PaddlePaddle for Tenstorrent hardware (Wormhole, Blackhole). It also supports PyTorch, though [TT-XLA](https://github.com/tenstorrent/tt-xla) is recommended for PyTorch and JAX models. TT-Forge-ONNX is for **single-chip configurations only**.
 
------
-# Current AI Framework Front End Projects
-- [TT-XLA](https://github.com/tenstorrent/tt-xla)
-  - TT-XLA is the primary frontend for running PyTorch and JAX models. It leverages a PJRT interface to integrate JAX (and in the future other frameworks), TT-MLIR, and Tenstorrent hardware. It supports ingestion of JAX models via jit compile, providing StableHLO (SHLO) graph to TT-MLIR compiler. TT-XLA can be used for single and multi-chip projects.
-  - See the [TT-XLA docs pages](https://docs.tenstorrent.com/tt-xla) for an overview and getting started guide.
-
-- [TT-Forge-ONNX](https://github.com/tenstorrent/tt-forge-onnx)
-  - A TVM based graph compiler designed to optimize and transform computational graphs for deep learning models. Supports ingestion of ONNX, TensorFlow, PaddlePaddle and similar ML frameworks via TVM ([TT-TVM](https://github.com/tenstorrent/tt-tvm)). It also supports ingestion of PyTorch, however it is recommended that you use TT-XLA. TT-Forge-ONNX does not support multi-chip configurations; it is for single-chip projects only.
-  - See the [TT-Forge-ONNX docs pages](https://docs.tenstorrent.com/tt-forge-onnx/getting-started.html) for an overview and getting started guide.
-
-- [TT-Torch](https://github.com/tenstorrent/tt-torch) - (deprecated)
-  - A MLIR-native, open-source, PyTorch 2.X and torch-mlir based front-end. It provides stableHLO (SHLO) graphs to TT-MLIR. Supports ingestion of PyTorch models via PT2.X compile and ONNX models via torch-mlir (ONNX->SHLO)
-  - See the [TT-Torch docs pages](https://docs.tenstorrent.com/tt-torch) for an overview and getting started guide.
-
------
-# Getting Started Guide
-
-You can run a demo using the [TT-Forge-ONNX Getting Started](https://docs.tenstorrent.com/tt-forge-onnx/getting-started.html) page.
+| Frontend | Use For | Chip Support |
+|----------|---------|-------------|
+| **[TT-XLA](https://github.com/tenstorrent/tt-xla)** | PyTorch, JAX | Single & Multi-chip |
+| **TT-Forge-ONNX** (this repo) | ONNX, TensorFlow, PaddlePaddle | Single-chip |
 
 -----
 # Related Tenstorrent Projects
-- [TT-XLA](https://github.com/tenstorrent/tt-xla) - (single and multi-chip) For use with PyTorch and JAX
-- [TT-Forge-ONNX](https://github.com/tenstorrent/tt-forge-onnx) - (single chip only) For use with TensorFlow, ONNX, and PaddlePaddle, it also runs PyTorch, however it is recommended to use TT-XLA for PyTorch
-- [TT-MLIR](https://github.com/tenstorrent/tt-mlir) - Open source compiler framework for compiling and optimizing machine learning models for Tenstorrent hardware
-- [TT-Metal](https://github.com/tenstorrent/tt-metal) - Low-level programming model, enabling kernel development for Tenstorrent hardware
-- [TT-TVM](https://github.com/tenstorrent/tt-tvm) - A compiler stack for deep learning systems designed to close the gap between the productivity-focused deep learning frameworks, and the performance and efficiency-focused hardware backends
-- [TT-Torch](https://github.com/tenstorrent/tt-torch) - (Deprecated) Previously for use with PyTorch. It is recommended that you use TT-XLA for PyTorch.
+- [TT-Forge](https://github.com/tenstorrent/tt-forge) — Central hub for the TT-Forge compiler project (demos, benchmarks, releases)
+- [TT-XLA](https://github.com/tenstorrent/tt-xla) — Primary frontend for PyTorch and JAX (single and multi-chip)
+- [TT-MLIR](https://github.com/tenstorrent/tt-mlir) — Core MLIR-based compiler framework for Tenstorrent hardware
+- [TT-Metal](https://github.com/tenstorrent/tt-metal) — Low-level programming model and kernel development for Tenstorrent hardware
 
 
 # Tenstorrent Bounty Program Terms and Conditions
