@@ -21,7 +21,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.autoencoder.model_utils.linear_autoencoder import (
+from test.models.onnx.vision.autoencoder.model_utils.linear_autoencoder import (
     LinearAE,
 )
 

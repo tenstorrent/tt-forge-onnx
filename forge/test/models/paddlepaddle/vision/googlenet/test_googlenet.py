@@ -9,7 +9,7 @@ from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import verify
 
-from paddle.vision.models import googlenet
+from third_party.tt_forge_models.googlenet.image_classification.paddlepaddle import ModelLoader
 
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
@@ -17,7 +17,8 @@ from forge.forge_property_utils import Framework, Source, Task, ModelArch, recor
 @pytest.mark.pr_models_regression
 @pytest.mark.nightly
 def test_googlenet():
-    # Record model details
+
+    # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.PADDLE,
         model=ModelArch.GOOGLENET,
@@ -25,21 +26,27 @@ def test_googlenet():
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
+    # Load inputs
+    loader = ModelLoader()
+    input_sample = loader.load_inputs()
+
     # Load framework model
-    framework_model = googlenet(pretrained=True)
+    framework_model = loader.load_model()
 
     # Compile model
-    input_sample = [paddle.rand([1, 3, 224, 224])]
     compiled_model = forge.compile(
         framework_model,
         sample_inputs=input_sample,
         module_name=module_name,
     )
 
-    # Verify data on sample input
-    verify(
+    # Model Verification and Inference
+    _, co_out = verify(
         input_sample,
         framework_model,
         compiled_model,
         VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.95)),
     )
+
+    # Print classification results
+    loader.print_results(co_out)

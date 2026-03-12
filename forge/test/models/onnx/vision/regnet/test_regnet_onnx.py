@@ -76,5 +76,5 @@ def test_regnet_img_classification_onnx(variant, forge_tmp_path):
     # Verify
     _, co_out = verify(inputs, framework_model, compiled_model)
 
-    # Post-processing (from loader)
-    loader.post_processing(co_out)
+    # Post-processing
+    loader.output_postprocess(co_out)

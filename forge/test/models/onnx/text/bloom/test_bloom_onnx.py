@@ -15,8 +15,17 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 from test.utils import download_model
-from test.models.pytorch.text.bloom.test_bloom import Wrapper
 import onnx
+
+# Wrapper to get around past key values
+class Wrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids, attention_mask):
+        output = self.model(input_ids, None, attention_mask)
+        return output
 
 
 @pytest.mark.xfail

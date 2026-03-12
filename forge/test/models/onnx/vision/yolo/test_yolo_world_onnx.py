@@ -10,7 +10,7 @@ import onnx
 import forge
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.yolo.model_utils.yolovx_utils import WorldModelWrapper, get_test_input, load_world_model
+from test.models.onnx.vision.yolo.model_utils.yolovx_utils import WorldModelWrapper, get_test_input, load_world_model
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
 

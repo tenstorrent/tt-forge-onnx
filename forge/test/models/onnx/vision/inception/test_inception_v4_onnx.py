@@ -16,7 +16,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.inception.model_utils.model_utils import (
+from test.models.onnx.vision.inception.model_utils.model_utils import (
     preprocess_timm_model,
 )
 from test.utils import download_model

@@ -18,7 +18,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.ssd300_resnet50.model_utils.image_utils import (
+from test.models.onnx.vision.ssd300_resnet50.model_utils.image_utils import (
     prepare_input,
 )
 from test.utils import download_model

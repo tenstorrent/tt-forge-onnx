@@ -8,7 +8,7 @@ import torch
 import forge
 from forge.verify.verify import verify
 import onnx
-from test.models.pytorch.multimodal.stable_diffusion.model_utils.model import (
+from test.models.onnx.multimodal.stable_diffusion.model_utils.model import (
     load_pipe,
     stable_diffusion_preprocessing_xl,
 )

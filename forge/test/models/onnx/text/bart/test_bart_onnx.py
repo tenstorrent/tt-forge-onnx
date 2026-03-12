@@ -18,8 +18,17 @@ from forge.forge_property_utils import (
 from forge.verify.verify import verify
 
 from test.utils import download_model
-from test.models.pytorch.text.bart.test_bart import BartWrapper
 import onnx
+
+
+class BartWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids, attention_mask, decoder_input_ids):
+        out = self.model(input_ids, attention_mask, decoder_input_ids)[0]
+        return out
 
 
 @pytest.mark.xfail

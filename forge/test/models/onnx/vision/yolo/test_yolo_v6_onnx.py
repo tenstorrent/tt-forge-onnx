@@ -20,7 +20,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.yolo.model_utils.yolov6_utils import (
+from test.models.onnx.vision.yolo.model_utils.yolov6_utils import (
     check_img_size,
     process_image,
 )

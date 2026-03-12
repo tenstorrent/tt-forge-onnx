@@ -14,8 +14,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.xception.model_utils.utils import post_processing
-from test.models.pytorch.vision.xception.test_xception import generate_model_xception_imgcls_timm
+from test.models.onnx.vision.xception.model_utils.utils import post_processing, generate_model_xception_imgcls_timm
 import onnx
 
 variants = [pytest.param("xception65", marks=pytest.mark.pr_models_regression), "xception71.tf_in1k"]

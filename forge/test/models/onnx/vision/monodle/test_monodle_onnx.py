@@ -14,7 +14,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.monodle.model_utils.model import CenterNet3D
+from test.models.onnx.vision.monodle.model_utils.model import CenterNet3D
 import onnx
 from test.models.models_utils import preprocess_inputs
 

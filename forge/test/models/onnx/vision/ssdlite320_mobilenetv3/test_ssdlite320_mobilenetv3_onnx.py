@@ -15,7 +15,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.vision_utils.utils import load_vision_model_and_input
+from test.models.onnx.vision.vision_utils.utils import load_vision_model_and_input
 
 variants_with_weights = {
     "ssdlite320_mobilenet_v3_large": "SSDLite320_MobileNet_V3_Large_Weights",

@@ -15,7 +15,7 @@ from forge.forge_property_utils import (
     record_model_properties,
 )
 from forge.verify.verify import verify
-from test.models.pytorch.vision.yolo.model_utils.yolov4_utils import (
+from test.models.onnx.vision.yolo.model_utils.yolov4_utils import (
     Wrapper,
 )
 from third_party.tt_forge_models.yolov4.pytorch import ModelLoader  # isort:skip

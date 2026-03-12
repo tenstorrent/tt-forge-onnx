@@ -29,7 +29,7 @@ from forge.forge_property_utils import (
 from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import VerifyConfig, verify
 
-from test.models.pytorch.vision.yolo.model_utils.yolox_utils import (
+from test.models.onnx.vision.yolo.model_utils.yolox_utils import (
     print_detection_results,
 )
 

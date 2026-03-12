@@ -17,7 +17,7 @@ from forge.forge_property_utils import (
 from forge.verify.verify import VerifyConfig, verify
 from forge.verify.value_checkers import AutomaticValueChecker
 
-from test.models.pytorch.vision.monodepth2.model_utils.utils import (
+from test.models.onnx.vision.monodepth2.model_utils.utils import (
     download_model,
     load_input,
     load_model,

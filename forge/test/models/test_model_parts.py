@@ -11,7 +11,7 @@ from forge.verify.verify import verify, DeprecatedVerifyConfig
 import math
 import onnx
 from torchvision.models.detection import _utils as det_utils
-from test.models.pytorch.vision.vision_utils.utils import load_vision_model_and_input
+from test.models.onnx.vision.vision_utils.utils import load_vision_model_and_input
 from transformers import BartForSequenceClassification
 
 
@@ -618,7 +618,6 @@ def test_gather_onnx(shape, axis, index):
 
 
 @pytest.mark.skip_model_analysis
-@pytest.mark.xfail
 @pytest.mark.nightly
 def test_shift_tokens_right():
     class ShiftTokensRight(nn.Module):

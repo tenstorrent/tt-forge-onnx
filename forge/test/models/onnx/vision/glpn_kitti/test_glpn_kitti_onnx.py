@@ -15,7 +15,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.glpn_kitti.model_utils.utils import (
+from test.models.onnx.vision.glpn_kitti.model_utils.utils import (
     load_input,
     load_model,
 )

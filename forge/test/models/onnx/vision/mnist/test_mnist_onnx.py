@@ -18,7 +18,7 @@ from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 
 from test.models.models_utils import print_cls_results
-from test.models.pytorch.vision.mnist.model_utils.utils import load_input, load_model
+from test.models.onnx.vision.mnist.model_utils.utils import load_input, load_model
 
 
 @pytest.mark.pr_models_regression

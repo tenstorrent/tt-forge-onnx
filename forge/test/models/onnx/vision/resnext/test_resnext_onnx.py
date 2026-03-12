@@ -16,7 +16,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.resnext.model_utils.utils import (
+from test.models.onnx.vision.resnext.model_utils.utils import (
     get_image_tensor,
     post_processing,
 )

@@ -13,7 +13,7 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.beit.model_utils.utils import load_input, load_model
+from test.models.onnx.vision.beit.model_utils.utils import load_input, load_model
 import torch
 import onnx
 

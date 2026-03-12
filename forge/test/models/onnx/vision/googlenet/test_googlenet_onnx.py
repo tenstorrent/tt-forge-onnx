@@ -3,68 +3,43 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import torch
-import torch.onnx
-import onnx
 
 import forge
 from forge.verify.verify import verify
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
-from third_party.tt_forge_models.googlenet.pytorch import ModelLoader, ModelVariant
+from third_party.tt_forge_models.googlenet.image_classification.onnx import ModelLoader, ModelVariant
 
 
-@pytest.mark.parametrize(
-    "variant",
-    [
-        pytest.param(ModelVariant.GOOGLENET, marks=pytest.mark.pr_models_regression),
-    ],
-)
+@pytest.mark.parametrize("variant", [ModelVariant.GOOGLENET])
 @pytest.mark.nightly
-def test_googlenet_onnx_export_from_pytorch(variant, forge_tmp_path):
+def test_googlenet_onnx(variant, forge_tmp_path):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.GOOGLENET,
-        variant=variant,
+        variant=variant.value,
         source=Source.TORCHVISION,
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Load model and input
+    # Load inputs
     loader = ModelLoader(variant=variant)
-    torch_model = loader.load_model(dtype_override=torch.float32)
-    input_tensor = loader.load_inputs(dtype_override=torch.float32)
-    sample_inputs = [input_tensor]
+    inputs = loader.load_inputs().contiguous()
 
-    # Export to ONNX
-    onnx_path = f"{forge_tmp_path}/googlenet_{variant.name.lower()}.onnx"
-    torch.onnx.export(
-        torch_model,
-        input_tensor,
-        onnx_path,
-        export_params=True,
-        opset_version=17,
-        do_constant_folding=True,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
-    )
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
-    framework_model = forge.OnnxModule(module_name, onnx_model, onnx_path)
+    # Load framework model
+    framework_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    framework_model = forge.OnnxModule(module_name, framework_model)
 
     # Compile model
     compiled_model = forge.compile(
         framework_model,
-        sample_inputs=sample_inputs,
+        [inputs],
         module_name=module_name,
     )
 
-    # Verify model
-    _, co_out = verify(sample_inputs, framework_model, compiled_model)
+    # Model Verification and Inference
+    _, co_out = verify([inputs], framework_model, compiled_model)
 
     # Print classification results
     loader.print_cls_results(co_out)

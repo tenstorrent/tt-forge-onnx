@@ -11,7 +11,7 @@ import forge
 from forge.forge_property_utils import Framework, ModelArch, Source, Task, record_model_properties
 from forge.verify.verify import verify
 
-from test.models.pytorch.multimodal.phi3.model_utils.utils import load_input
+from test.models.onnx.text.phi3.model_utils.utils import load_input
 from test.utils import download_model
 
 

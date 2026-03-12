@@ -22,7 +22,7 @@ from transformers import (
     ViltForQuestionAnswering,
     ViltProcessor,
 )
-from test.models.pytorch.multimodal.vilt.model_utils.model import (
+from test.models.onnx.multimodal.vilt.model_utils.model import (
     ViLtEmbeddingWrapper,
     ViltModelWrapper,
 )

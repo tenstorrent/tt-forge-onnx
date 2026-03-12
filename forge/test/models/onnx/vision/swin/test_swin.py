@@ -12,8 +12,8 @@ import onnx
 import torch
 import forge
 
-from test.models.pytorch.vision.swin.model_utils.image_utils import load_image
-from test.models.pytorch.vision.vision_utils.utils import load_vision_model_and_input
+from test.models.onnx.vision.swin.model_utils.image_utils import load_image
+from test.models.onnx.vision.vision_utils.utils import load_vision_model_and_input
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
 

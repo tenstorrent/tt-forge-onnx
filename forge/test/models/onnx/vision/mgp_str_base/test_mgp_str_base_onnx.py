@@ -19,7 +19,7 @@ from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import verify
 
-from test.models.pytorch.vision.mgp_str_base.model_utils.utils import (
+from test.models.onnx.vision.mgp_str_base.model_utils.utils import (
     load_input,
     load_model,
 )

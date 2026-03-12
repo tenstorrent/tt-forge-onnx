@@ -17,7 +17,7 @@ from forge.forge_property_utils import (
 from forge.verify.verify import verify
 
 from test.models.onnx.vision.ssd300_vgg16.model_utils.model_utils import SSDWrapper
-from test.models.pytorch.vision.vision_utils.utils import load_vision_model_and_input
+from test.models.onnx.vision.vision_utils.utils import load_vision_model_and_input
 
 variants_with_weights = {
     "ssd300_vgg16": "SSD300_VGG16_Weights",

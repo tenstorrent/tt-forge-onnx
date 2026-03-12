@@ -15,8 +15,23 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 import onnx
-from test.models.pytorch.text.nanogpt.test_nanogpt import GPTModelWrapper
 from third_party.tt_forge_models.nanogpt.pytorch import ModelLoader
+from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
+
+
+class GPTModelWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids, attention_mask):
+        inputs_embeds = self.model.wte(input_ids)
+        past_key_values_length = 0
+        causal_attention_mask = _prepare_4d_causal_attention_mask(
+            attention_mask, input_ids.shape, inputs_embeds, past_key_values_length
+        )
+        output = self.model(attention_mask=causal_attention_mask, inputs_embeds=inputs_embeds)
+        return output
 
 
 @pytest.mark.nightly
