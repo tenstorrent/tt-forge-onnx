@@ -66,8 +66,11 @@ def test_bert_masked_lm_onnx(variant, forge_tmp_path, opset_version):
     onnx.checker.check_model(onnx_model)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
+    data_format_override = forge._C.DataFormat.Float16_b
+    compiler_cfg = forge.config.CompilerConfig(default_df_override=data_format_override)
+
     # Forge compile framework model
-    compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
+    compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name, compiler_cfg=compiler_cfg)
 
     # Model Verification
     _, co_out = verify(inputs, framework_model, compiled_model)

@@ -14,6 +14,8 @@ from forge.forge_property_utils import (
     record_model_properties,
 )
 from forge.verify.verify import verify
+from forge.verify.config import VerifyConfig
+from forge.verify.value_checkers import AutomaticValueChecker
 
 from test.models.models_utils import print_cls_results
 from test.models.pytorch.vision.mnist.model_utils.utils import load_input, load_model
@@ -52,11 +54,16 @@ def test_mnist(forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
+    # Set data format override
+    data_format_override = forge._C.DataFormat.Float16_b
+    compiler_cfg = forge.config.CompilerConfig(default_df_override=data_format_override)
+
     # Forge compile ONNX model
     compiled_model = forge.compile(
         onnx_model,
         sample_inputs=inputs,
         module_name=module_name,
+        compiler_cfg=compiler_cfg,
     )
 
     # Model verification and inference
@@ -64,6 +71,7 @@ def test_mnist(forge_tmp_path):
         inputs,
         framework_model,
         compiled_model,
+        verify_cfg=VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.98)),
     )
 
     # Post Processing

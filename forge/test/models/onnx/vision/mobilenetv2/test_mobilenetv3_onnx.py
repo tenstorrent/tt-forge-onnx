@@ -48,15 +48,15 @@ def test_mobilenetv3_basic(variant, forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
+    # Set data format override
+    data_format_override = forge._C.DataFormat.Float16_b
+    compiler_cfg = forge.config.CompilerConfig(default_df_override=data_format_override)
+
     # Compile model
-    compiled_model = forge.compile(onnx_model, inputs, module_name=module_name)
+    compiled_model = forge.compile(onnx_model, inputs, module_name=module_name, compiler_cfg=compiler_cfg)
 
     # Model Verification and Inference
-    _, co_out = verify(
-        inputs,
-        framework_model,
-        compiled_model,
-    )
+    _, co_out = verify(inputs, framework_model, compiled_model)
 
     # Post processing
     post_processing(co_out)

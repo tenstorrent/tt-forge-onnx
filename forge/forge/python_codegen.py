@@ -128,6 +128,7 @@ class ForgeWriter(PythonWriter):
         module_directory="generated_modules",
         contains_incompatible_np_floats=False,
         delete_inputs=True,
+        df_override_dtype=None,
     ):
         super().__init__(module_name, module_directory)
 
@@ -138,6 +139,7 @@ class ForgeWriter(PythonWriter):
         self.contains_incompatible_np_floats = contains_incompatible_np_floats
         self.delete_inputs = delete_inputs
         self.dev = "TTDevice"
+        self.df_override_dtype = df_override_dtype
 
     def write_header(self, include_pytest_imports=False):
         self.wl("import forge")
@@ -638,6 +640,16 @@ class ForgeWriter(PythonWriter):
 
             self.wl("tensor = torch.tensor(weight_numpy)")
 
+            # onnx.numpy_helper.to_array() returns a float32 NumPy array even when the
+            # ONNX model stores bfloat16 weights, because NumPy has no bfloat16 dtype.
+            # When a lower-precision override is active we must cast the float32 tensor to
+            # the requested dtype so the ForgeModule parameters match the compiled model.
+            if self.df_override_dtype is not None:
+                self.wl("if torch.is_floating_point(tensor):")
+                self.indent += 1
+                self.wl(f"tensor = tensor.to({str(self.df_override_dtype)})")
+                self.indent -= 1
+
             self.wl("if name in flattened_to_hierarchical_map:")
             self.indent += 1
             self.wl("layer_name, param_name = flattened_to_hierarchical_map[name]")
@@ -692,7 +704,11 @@ class ForgeWriter(PythonWriter):
                 self.wl(f"for name, torch_param in serialized_params.items():")
                 self.indent += 1
                 self.wl("tensor = torch_param.data")
-
+                if self.df_override_dtype is not None:
+                    self.wl("if torch.is_floating_point(tensor):")
+                    self.indent += 1
+                    self.wl(f"tensor = tensor.to({str(self.df_override_dtype)})")
+                    self.indent -= 1
                 self.wl("if name in flattened_to_hierarchical_map:")
                 self.indent += 1
                 self.wl("layer_name, param_name = flattened_to_hierarchical_map[name]")

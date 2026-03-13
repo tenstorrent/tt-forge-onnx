@@ -1824,6 +1824,9 @@ def generate_forge_module(
 
     pytorch_inputs = to_pt_tensors(inputs)
 
+    if compiler_cfg.default_df_override is not None and isinstance(framework_mod, OnnxModule):
+        framework_mod.set_data_format_override(compiler_cfg.default_df_override)
+
     if graph_name is None:
         graph_name = framework_mod.name
 
@@ -1947,6 +1950,14 @@ def compile_tvm_to_python(
         input_names=input_names,
     )
     logger.info("TVM graph compilation completed")
+
+    df_override_dtype = None
+    if compiler_cfg.default_df_override is not None and framework == "onnx":
+        df_override_dtype = forge_dataformat_to_pytorch_dtype(compiler_cfg.default_df_override)
+        flattened_pytorch_inputs = [
+            inp.to(df_override_dtype) if isinstance(inp, torch.Tensor) and torch.is_floating_point(inp) else inp
+            for inp in flattened_pytorch_inputs
+        ]
 
     def _determine_node_dtype(node):
         if "framework_dtype" in node["attrs"].keys() and node["attrs"]["framework_dtype"] != "N/A":
@@ -2432,6 +2443,7 @@ def compile_tvm_to_python(
                 framework,
                 contains_incompatible_np_floats=contains_incompatible_np_floats,
                 delete_inputs=delete_inputs,
+                df_override_dtype=df_override_dtype,
             )
         else:
             writer = PyTorchWriter(current_module_name, source_framework=framework)

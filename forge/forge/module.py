@@ -2,7 +2,7 @@
 
 # SPDX-License-Identifier: Apache-2.0
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, List, Dict, TypeAlias
+from typing import Optional, Tuple, List, Dict, TypeAlias, Union
 from collections import OrderedDict
 import itertools
 
@@ -372,13 +372,20 @@ class OnnxModule(Module):
             onnx module
         onnx_path: Optional[str]
             Path to the ONNX model file. Used to directly load the model when its size exceeds 2GB (with external data).
+        data_format_override: Optional[Union[forge.DataFormat, torch.dtype]]
+            Data format or dtype to override the default data format of the module.
+            This is set by the compiler pipeline (generate_forge_module) when default_df_override
+            requests a lower precision that ONNXRuntime CPUExecutionProvider cannot natively run.
+            Accepts either a forge.DataFormat (e.g. DataFormat.Float16_b) or a torch.dtype
+            (e.g. torch.bfloat16); get_parameters() resolves forge.DataFormat automatically.
         """
         super().__init__(name)
 
         if not isinstance(module, onnx.onnx_ml_pb2.ModelProto):
             raise RuntimeError("onnx.onnx_ml_pb2.ModelProto module expected, got " + str(type(module)))
-        self.module = module
-        self.onnx_path = onnx_path
+        self.module: onnx.onnx_ml_pb2.ModelProto = module
+        self.onnx_path: Optional[str] = onnx_path
+        self.data_format_override: Optional[Union[forge._C.DataFormat, torch.dtype]] = None
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -442,7 +449,23 @@ class OnnxModule(Module):
 
         outputs = flatten_structured_output(framework_outputs)
 
-        return to_pt_tensors(outputs)
+        outputs = to_pt_tensors(outputs)
+
+        # ONNXRuntime CPUExecutionProvider does not support bfloat16, so the session always
+        # runs in float32.  When a lower-precision override has been requested (e.g. bfloat16),
+        # cast the float32 outputs to the target dtype so that the golden reference matches the
+        # dtype produced by the compiled Forge model.  Integer tensors are left unchanged.
+        if self.data_format_override is not None:
+            if isinstance(self.data_format_override, forge.DataFormat):
+                data_format_override_dtype = forge_dataformat_to_pytorch_dtype(self.data_format_override)
+            else:
+                data_format_override_dtype = self.data_format_override
+            outputs = [
+                o.to(data_format_override_dtype) if isinstance(o, torch.Tensor) and torch.is_floating_point(o) else o
+                for o in outputs
+            ]
+
+        return outputs
 
     def cpu_eval_forward(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -453,11 +476,25 @@ class OnnxModule(Module):
     def set_parameters(self, **kwargs):
         raise NotImplementedError
 
+    def set_data_format_override(self, data_format_override: Union[forge._C.DataFormat, torch.dtype]):
+        self.data_format_override = data_format_override
+
     def get_parameters(self) -> List[Parameter]:
         params = []
         for param in self.module.graph.initializer:
+            # numpy_helper.to_array() always returns a float32 array even when the ONNX
+            # model stores bfloat16 weights, because NumPy has no bfloat16 dtype.  When a
+            # lower-precision override is active we therefore cast the resulting tensor to
+            # the requested dtype so the Forge graph receives correctly-typed parameters.
             param_data = numpy_helper.to_array(param)
-            forge_param = Parameter(torch.tensor(param_data), requires_grad=False, name=param.name)
+            tensor = torch.tensor(param_data)
+            if self.data_format_override is not None and torch.is_floating_point(tensor):
+                if isinstance(self.data_format_override, forge._C.DataFormat):
+                    data_format_override_dtype = forge_dataformat_to_pytorch_dtype(self.data_format_override)
+                else:
+                    data_format_override_dtype = self.data_format_override
+                tensor = tensor.to(data_format_override_dtype)
+            forge_param = Parameter(tensor, requires_grad=False, name=param.name)
             params.append(forge_param)
         return params
 

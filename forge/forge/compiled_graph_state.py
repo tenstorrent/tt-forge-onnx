@@ -7,10 +7,11 @@ from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json
 from loguru import logger
 import torch
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 
-from forge._C import ForgeGraphModule
+from forge._C import ForgeGraphModule, DataFormat
+from forge.tensor import forge_dataformat_to_pytorch_dtype
 from forge._C.graph import Graph
 import forge._C.graph as pygraph
 from forge._C.runtime import (
@@ -200,6 +201,8 @@ class CompiledModel:
 
     attached_module: Optional["CompiledModel"]
 
+    df_override_dtype: Optional[Union[torch.dtype, DataFormat]] = None
+
     def __init__(
         self,
         forge_graph_module: ForgeGraphModule,
@@ -209,6 +212,7 @@ class CompiledModel:
         compiled_binary: Binary,
         framework_module: AnyModule,
         attached_module: Optional["CompiledModel"] = None,
+        df_override_dtype: Optional[Union[torch.dtype, DataFormat]] = None,
     ):
         self.forge_graph_module = forge_graph_module
 
@@ -235,6 +239,7 @@ class CompiledModel:
         self.outputs = {}
         self.attached_module = attached_module
         self.gradient_outputs = []
+        self.df_override_dtype = df_override_dtype
 
     def create_persistent_inputs(self, tensor_pool: TensorPool, compiled_graph_state: CompiledGraphState):
         persistent_inputs = []
@@ -286,6 +291,20 @@ class CompiledModel:
         List[Tensor]
             Output tensors
         """
+        # If a lower-precision data-format override was requested at compile time (e.g. bfloat16
+        # for ONNX models where ONNXRuntime cannot run CPUExecutionProvider in bfloat16), cast
+        # all floating-point input tensors to the target dtype before runtime dispatch.
+        # Integer / boolean tensors are left unchanged.
+        if self.df_override_dtype is not None:
+            if isinstance(self.df_override_dtype, DataFormat):
+                df_override_dtype = forge_dataformat_to_pytorch_dtype(self.df_override_dtype)
+            else:
+                df_override_dtype = self.df_override_dtype
+            inputs = [
+                t.to(df_override_dtype) if isinstance(t, torch.Tensor) and torch.is_floating_point(t) else t
+                for t in inputs
+            ]
+
         # Handle mixed inputs: torch tensors and CTensors
         inputs_runtime = []
         for t in inputs:

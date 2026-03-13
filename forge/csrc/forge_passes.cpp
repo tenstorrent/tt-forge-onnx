@@ -157,7 +157,10 @@ std::vector<std::pair<graphlib::NodeId, graphlib::NodeId>> run_post_autograd_gra
     std::shared_ptr<void> compiler_cfg = make_shared_py_object(compiler_cfg_object);
 
     passes::print_graph(graph, "POST_AUTOGRAD");
-    return decompose_tt_forge_graph<DecomposeEpoch::PostAutograd>(graph, compiler_cfg);
+    auto inserted_node_id_mapping = decompose_tt_forge_graph<DecomposeEpoch::PostAutograd>(graph, compiler_cfg);
+    passes::apply_user_data_format_override(graph, compiler_cfg_object);
+
+    return inserted_node_id_mapping;
 }
 
 // ********** Run pre-lowering passes **********

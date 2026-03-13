@@ -52,11 +52,16 @@ def test_yolo_v3(forge_tmp_path):
     onnx.checker.check_model(onnx_model)
     onnx_module = forge.OnnxModule(module_name, onnx_model)
 
+    # Set data format override
+    data_format_override = forge._C.DataFormat.Float16_b
+    compiler_cfg = forge.config.CompilerConfig(default_df_override=data_format_override)
+
     # Forge compile ONNX model
     compiled_model = forge.compile(
         onnx_model,
         sample_inputs=[input_sample],
         module_name=module_name,
+        compiler_cfg=compiler_cfg,
     )
 
     # Model Verification

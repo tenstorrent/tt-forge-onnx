@@ -47,11 +47,16 @@ def test_yolov5_320x320(size, forge_tmp_path):
     # Create ONNX module and compile
     onnx_module = forge.OnnxModule(module_name, onnx_model)
 
+    # Set data format override
+    data_format_override = forge._C.DataFormat.Float16_b
+    compiler_cfg = forge.config.CompilerConfig(default_df_override=data_format_override)
+
     # Compile ONNX
     compiled_model = forge.compile(
         onnx_module,
         sample_inputs=inputs,
         module_name=module_name,
+        compiler_cfg=compiler_cfg,
     )
 
     # Verify

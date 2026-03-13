@@ -29,6 +29,7 @@ from ..tensor import (
     forge_dataformat_to_pytorch_dtype,
 )
 from .config import DeprecatedVerifyConfig, VerifyConfig, should_waive_gradient
+import forge
 import forge._C.graph as pygraph
 from forge._C.runtime import Tensor as CTensor, ProgramType, testutils
 from forge.compiled_graph_state import CompiledModel
@@ -509,6 +510,19 @@ def verify(
     # - push tensors to cpu, perform any reshape if necessary,
     fw_out = to_pt_tensors(fw_out)
     fw_out = tuple(convert_to_supported_pytorch_dtype(o) for o in fw_out)
+
+    if isinstance(framework_model, forge.module.OnnxModule) and compiled_model.df_override_dtype is not None:
+        if isinstance(compiled_model.df_override_dtype, forge._C.DataFormat):
+            df_override_dtype = forge_dataformat_to_pytorch_dtype(compiled_model.df_override_dtype)
+        else:
+            df_override_dtype = compiled_model.df_override_dtype
+        logger.info(
+            "The framework model is an OnnxModule and the compiled model has a df_override_dtype. Casting the framework outputs to the df_override_dtype: {} to avoid verification failure",
+            df_override_dtype,
+        )
+        fw_out = [
+            o.to(df_override_dtype) if isinstance(o, torch.Tensor) and torch.is_floating_point(o) else o for o in fw_out
+        ]
 
     assert all(isinstance(co, torch.Tensor) for co in co_out), f"Compiled model output is not a list of torch.Tensor"
 

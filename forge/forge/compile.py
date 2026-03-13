@@ -395,6 +395,16 @@ def forge_compile_from_context(context: CompileContext) -> CompiledModel:
 
     assert context.compiled_binary is not None
 
+    # Pass default_df_override to CompiledModel so it is available at inference time.
+    #
+    # For ONNX models with a lower-precision override (e.g. DataFormat.Float16_b / bfloat16):
+    #   - ONNXRuntime's CPUExecutionProvider does not support bfloat16, so the TVM relay
+    #     graph is always constructed in float32 and the ONNX session runs in float32.
+    #   - The Forge graph passes (apply_user_data_format_override) rewrite all node dtypes
+    #     to the requested lower precision after TVM compilation, producing a TTNN binary
+    #     that expects bfloat16 inputs and returns bfloat16 outputs.
+    #   - CompiledModel.__call__() therefore uses this field to cast any float32 inputs
+    #     to bfloat16 before dispatching to the compiled TTNN binary at runtime.
     compiled_module = CompiledModel(
         context.forge_module,
         fwd_compiled_graph_state,
@@ -403,6 +413,7 @@ def forge_compile_from_context(context: CompileContext) -> CompiledModel:
         context.compiled_binary,
         context.modules[0],
         context.attach_to,
+        context.compiler_cfg.default_df_override,
     )
 
     if context.optimizer_on_device():
