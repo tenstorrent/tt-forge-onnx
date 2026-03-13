@@ -33,6 +33,23 @@ static void insert_cast_on_const_input_nodes(graphlib::Graph *graph, DataFormat 
             is_integer_data_format(node->output_df()))
             continue;
 
+        // If every consumer of this constant input node is already a Cast op whose output
+        // data format equals df_override, the required cast is already present in the graph.
+        // Inserting another Cast node here would create a redundant double-cast, so skip.
+        std::vector<Node *> consumers = graph->data_users(node);
+        bool all_consumers_already_cast =
+            !consumers.empty() && std::all_of(
+                                      consumers.begin(),
+                                      consumers.end(),
+                                      [df_override](Node *consumer)
+                                      {
+                                          return consumer->node_type() == graphlib::NodeType::kPyOp &&
+                                                 consumer->as<graphlib::PyOpNode>()->op_type() == ops::OpType::Cast &&
+                                                 consumer->output_df() == df_override;
+                                      });
+        if (all_consumers_already_cast)
+            continue;
+
         ops::Op op_type = ops::Op(ops::OpType::Cast, {{"dtype", static_cast<int>(df_override)}});
 
         Node *cast_node = graph->add_node(
@@ -111,7 +128,14 @@ void configure_output_data_formats(graphlib::Graph *graph, std::optional<DataFor
             }
         }
 
-        if (default_df_override && !node_is_int && (!node_is_input || node_input_parameter))
+        // Rewrite the node's output dtype to the lower-precision override when ALL of:
+        //   • default_df_override is set (a lower-precision format was requested).
+        //   • The node is not an integer dtype (integer nodes must never be cast to float).
+        //   • The node is not an input node, OR it is a parameter input node.
+        //   • The node's current output_df differs from the override (skip nodes that are
+        //     already at the target dtype to avoid redundant writes.
+        if (default_df_override && !node_is_int && (!node_is_input || node_input_parameter) &&
+            node->output_df() != *default_df_override)
         {
             node->set_output_df(preserve_lower_precision_cast(node->output_df(), *default_df_override));
         }
