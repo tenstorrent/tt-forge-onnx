@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG TT_METAL_DEPENDENCIES_COMMIT=e1d6113542dba5683fed6e0e2363fbf26042631e
 
 # Install system dependencies and Python 3.12 in one layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -qq update && apt-get install -y -qq --no-install-recommends \
     software-properties-common \
     build-essential \
     git \
@@ -45,22 +45,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv tool for managing Python packages
-RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+RUN curl -sSfL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 # Upgrade pip, setuptools, wheel
-RUN pip install --upgrade pip setuptools wheel cmake pytest
+# Note: Using --break-system-packages is safe in Docker containers where we control the entire environment
+RUN pip install -q --break-system-packages --upgrade pip setuptools wheel cmake pytest
 
 # Setup / install metal dependencies and cleanup
-RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
+RUN wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
     chmod u+x sfpi-info.sh install_dependencies.sh && \
     bash install_dependencies.sh --docker && \
     rm -f install_dependencies.sh sfpi-info.sh sfpi-version
 
 # Install clang 17 and cleanup
-RUN wget https://apt.llvm.org/llvm.sh && \
+RUN wget -q https://apt.llvm.org/llvm.sh && \
     chmod u+x llvm.sh && \
     ./llvm.sh 17 && \
-    apt-get install -y --no-install-recommends libc++-17-dev libc++abi-17-dev && \
+    apt-get install -y -qq --no-install-recommends libc++-17-dev libc++abi-17-dev && \
     ln -s /usr/bin/clang-17 /usr/bin/clang && \
     ln -s /usr/bin/clang++-17 /usr/bin/clang++ && \
     rm -f llvm.sh && \
