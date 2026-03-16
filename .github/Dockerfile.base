@@ -47,9 +47,9 @@ RUN apt-get -qq update && apt-get install -y -qq --no-install-recommends \
 # Install uv tool for managing Python packages
 RUN curl -sSfL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-# Upgrade pip, setuptools, wheel
+# Install Python packages (skip pip upgrade since it's managed by debian)
 # Note: Using --break-system-packages is safe in Docker containers where we control the entire environment
-RUN pip install -q --break-system-packages --upgrade pip setuptools wheel cmake pytest
+RUN pip install -q --break-system-packages --upgrade setuptools wheel cmake pytest
 
 # Setup / install metal dependencies and cleanup
 RUN wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
