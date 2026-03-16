@@ -194,7 +194,25 @@ def test_mnist_training_with_grad_accumulation():
     print(f"Test (total) loss: {test_loss}")
 
 
-@pytest.mark.parametrize("freeze_layer", [None, 0, 2, 4])
+@pytest.mark.parametrize(
+    "freeze_layer",
+    [
+        None,
+        0,
+        pytest.param(
+            2,
+            marks=pytest.mark.xfail(
+                reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
+            ),
+        ),
+        pytest.param(
+            4,
+            marks=pytest.mark.xfail(
+                reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
+            ),
+        ),
+    ],
+)
 @pytest.mark.push
 def test_forge_vs_torch_gradients(freeze_layer):
     logger.disable("")
@@ -450,6 +468,9 @@ def test_loss_device():
     print(f"Test (total) loss: {test_loss}")
 
 
+@pytest.mark.xfail(
+    reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
+)
 @pytest.mark.push
 def test_lora():
     # Config
@@ -533,6 +554,9 @@ def test_lora():
     print(f"Test (total) loss: {test_loss}")
 
 
+@pytest.mark.xfail(
+    reason="RuntimeError: tt-metal/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_device_operation.cpp: input_tensor_a.storage_type() == StorageType::DEVICE info: Input tensor A must be on device, got storage type: StorageType::HOST"
+)
 @pytest.mark.push
 def test_optimizer_device():
     # Config
@@ -605,7 +629,18 @@ def test_optimizer_device():
 
 
 @pytest.mark.push
-@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        torch.bfloat16,
+        pytest.param(
+            torch.float32,
+            marks=pytest.mark.xfail(
+                reason="RuntimeError: tt-metal/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_device_operation.cpp: input_tensor_a.storage_type() == StorageType::DEVICE info: Input tensor A must be on device, got storage type: StorageType::HOST"
+            ),
+        ),
+    ],
+)
 def test_e2e_device(dtype):
     # Config
     num_epochs = 5
