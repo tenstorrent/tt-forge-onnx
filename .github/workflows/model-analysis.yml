@@ -265,7 +265,7 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: |
             .github/download-artifacts.sh
@@ -426,7 +426,7 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
             submodules: recursive
             fetch-depth: 0 # Fetch all history and tags
@@ -500,21 +500,21 @@ jobs:
             2>&1 | tee ${{ env.SCRIPT_OUTPUT_LOG }}
 
       - name: Upload Script Output Logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: success() || failure()
         with:
           name: script-outputs
           path: ${{ env.SCRIPT_OUTPUT_LOG }}
 
       - name: Upload Models Unique Ops Output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: success() || failure()
         with:
           name: models-unique-ops-output
           path: ${{ env.UNIQUE_OPS_OUTPUT_DIR_PATH }}
 
       - name: Upload Generated Models Ops Tests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ needs.set-inputs.outputs.create_pr == 'false' }}
         with:
           name: generated-models-ops-tests

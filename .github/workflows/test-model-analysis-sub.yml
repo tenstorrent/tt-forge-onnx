@@ -113,7 +113,7 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: |
             .github/workflows/
@@ -274,14 +274,14 @@ jobs:
           exit $exit_code
 
       - name: Upload Extract And Export Unique Ops Configs Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: success() || failure()
         with:
            name: extract-and-export-unique-ops-configs-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
            path: extract-and-export-unique-ops-configs.log
 
       - name: Upload Memory Usage Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: success() || failure()
         with:
           name: memory-usage-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
@@ -289,13 +289,13 @@ jobs:
 
       - name: Upload Models Unique Ops Config
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: models-unique-ops-config-${{ steps.fetch-job-id.outputs.job_id }}
           path: generated_modules/
 
       - name: Upload Unique Ops Configs Crashed Tests Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() && steps.extract-and-export-unique-ops-configs.outputs.contains_crashed_tests == 'true' }}
         with:
           name: unique-ops-configs-crashed-tests-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
@@ -354,14 +354,14 @@ jobs:
           fi
 
       - name: Upload Unique Ops Configs Extraction Failure Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: ${{ always() && steps.extract-and-run-failed-tests.outputs.contains_failed_tests == 'true' }}
         with:
           name: failed-unique-ops-config-extraction-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: failed-unique-ops-config-extraction.log
 
       - name: Upload Test Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: test-reports-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ steps.fetch-job-id.outputs.job_id }}
