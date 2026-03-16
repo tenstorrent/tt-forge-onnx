@@ -14,7 +14,7 @@
 
 <br>
 
-**TT-Forge ONNX** is a graph compiler for running **ONNX**, **TensorFlow**, and **PaddlePaddle** models on Tenstorrent hardware, optimizing computational graphs for performance and efficiency.
+**TT-Forge-ONNX** is a graph compiler for running **ONNX**, **TensorFlow**, and **PaddlePaddle** models on Tenstorrent hardware, optimizing computational graphs for performance and efficiency.
 
 > **Part of the [TT-Forge](https://github.com/tenstorrent/tt-forge) AI compiler ecosystem.**
 
@@ -28,8 +28,8 @@
 Install TT-Forge-ONNX and run an ONNX model on Tenstorrent hardware:
 
 ```bash
-pip install tt_forge --extra-index-url https://pypi.eng.aws.tenstorrent.com/
-pip install onnx
+pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
 ```python
@@ -75,7 +75,7 @@ TT-Forge-ONNX is a TVM-based frontend within the TT-Forge ecosystem. It compiles
 
 
 # Tenstorrent Bounty Program Terms and Conditions
-This repo is a part of Tenstorrent’s bounty program. If you are interested in helping to improve tt-forge, please make sure to read the [Tenstorrent Bounty Program Terms and Conditions](https://docs.tenstorrent.com/bounty_terms.html) before heading to the issues tab. Look for the issues that are tagged with both “bounty” and difficulty level!
+This repo is a part of Tenstorrent’s bounty program. If you are interested in helping to improve tt-forge-onnx, please make sure to read the [Tenstorrent Bounty Program Terms and Conditions](https://docs.tenstorrent.com/bounty_terms.html) before heading to the issues tab. Look for the issues that are tagged with both “bounty” and difficulty level!
 - - -
 
 [codecov]: https://codecov.io/gh/tenstorrent/tt-forge-onnx
@@ -83,4 +83,3 @@ This repo is a part of Tenstorrent’s bounty program. If you are interested in 
 [deepwiki]: https://deepwiki.com/tenstorrent/tt-forge-onnx
 [codecov badge]: https://codecov.io/gh/tenstorrent/tt-forge-onnx/graph/badge.svg
 [tests badge]: https://github.com/tenstorrent/tt-forge-onnx/actions/workflows/on-pr.yml/badge.svg?query=branch%3Amain
-[deepwiki badge]: https://deepwiki.com/badge.svg
