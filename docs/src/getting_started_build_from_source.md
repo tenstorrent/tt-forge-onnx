@@ -44,7 +44,7 @@ The prerequisites for building TT-Forge-ONNX from source are:
 * CMake (latest)
 * Python 3.12
 
-On Ubuntu 22.04 systems, you can install these dependencies using the following commands:
+On Ubuntu 24.04 systems, you can install these dependencies using the following commands:
 
 ```bash
 # Update package list

@@ -1,4 +1,4 @@
-FROM public.ecr.aws/ubuntu/ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:24.04
 SHELL ["/bin/bash", "-c"]
 
 # Set environment variables
@@ -6,11 +6,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 ARG TT_METAL_DEPENDENCIES_COMMIT=e1d6113542dba5683fed6e0e2363fbf26042631e
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies and Python 3.12 in one layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential \
-    python3-pip \
     git \
     git-lfs \
     libhwloc-dev \
@@ -38,33 +37,32 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libglx-mesa0 \
     unzip \
-    xxd
-
-# Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
-RUN pip install --upgrade pip setuptools wheel
-
-# Install deadsnakes PPA for latest Python versions
-RUN add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y \
+    xxd \
     python3.12 \
     python3.12-dev \
     python3.12-venv \
-    python3-pip
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Setup / install metal dependencies
+# Install uv tool for managing Python packages
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# Upgrade pip, setuptools, wheel
+RUN uv pip install --system --upgrade pip setuptools wheel cmake pytest
+
+# Setup / install metal dependencies and cleanup
 RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
-    chmod u+x sfpi-info.sh && \
-    bash install_dependencies.sh --docker
+    chmod u+x sfpi-info.sh install_dependencies.sh && \
+    bash install_dependencies.sh --docker && \
+    rm -f install_dependencies.sh sfpi-info.sh sfpi-version
 
-# Install clang 17
+# Install clang 17 and cleanup
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod u+x llvm.sh && \
     ./llvm.sh 17 && \
-    apt install -y libc++-17-dev libc++abi-17-dev && \
+    apt-get install -y --no-install-recommends libc++-17-dev libc++abi-17-dev && \
     ln -s /usr/bin/clang-17 /usr/bin/clang && \
-    ln -s /usr/bin/clang++-17 /usr/bin/clang++
-
-# Install python packages
-RUN pip install cmake \
-    pytest
+    ln -s /usr/bin/clang++-17 /usr/bin/clang++ && \
+    rm -f llvm.sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*

@@ -96,6 +96,6 @@ jobs:
         run: |
           DOCKER_CI_IMAGE=${{ needs.build-image.outputs.docker-image }}
           DOCKER_TAG=$(echo $DOCKER_CI_IMAGE | sed 's/^.*://')
-          IMAGE_NAME=ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-ird-ubuntu-22-04
+          IMAGE_NAME=ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-ird-ubuntu-24-04
           echo "Setting latest tag on the image $IMAGE_NAME:$DOCKER_TAG"
           skopeo copy "docker://$IMAGE_NAME:$DOCKER_TAG" "docker://$IMAGE_NAME:latest"
