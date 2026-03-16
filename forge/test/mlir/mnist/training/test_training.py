@@ -194,25 +194,7 @@ def test_mnist_training_with_grad_accumulation():
     print(f"Test (total) loss: {test_loss}")
 
 
-@pytest.mark.parametrize(
-    "freeze_layer",
-    [
-        None,
-        0,
-        pytest.param(
-            2,
-            marks=pytest.mark.xfail(
-                reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
-            ),
-        ),
-        pytest.param(
-            4,
-            marks=pytest.mark.xfail(
-                reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("freeze_layer", [None, 0, 2, 4])
 @pytest.mark.push
 def test_forge_vs_torch_gradients(freeze_layer):
     logger.disable("")
@@ -240,7 +222,12 @@ def test_forge_vs_torch_gradients(freeze_layer):
 
     sample_inputs = [torch.ones(batch_size, in_features, dtype=dtype)]
 
-    tt_model = forge.compile(forge_model, sample_inputs=sample_inputs, training=True)
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-permute-matmul-fusion=true")
+    compiler_cfg = forge.config.CompilerConfig(mlir_config=mlir_config)
+
+    tt_model = forge.compile(forge_model, sample_inputs=sample_inputs, training=True, compiler_cfg=compiler_cfg)
 
     X = torch.ones(batch_size, in_features, dtype=dtype)
     y = torch.zeros(batch_size, out_features, dtype=dtype)
@@ -468,9 +455,6 @@ def test_loss_device():
     print(f"Test (total) loss: {test_loss}")
 
 
-@pytest.mark.xfail(
-    reason="RuntimeError: tt-metal/ttnn/core/tensor/host_buffer/functions.cpp: is_cpu_tensor(tensor) info: Tensor must have HostStorage"
-)
 @pytest.mark.push
 def test_lora():
     # Config
@@ -486,12 +470,18 @@ def test_lora():
 
     framework_model = MNISTLora(bias=False)
 
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-permute-matmul-fusion=true")
+    compiler_cfg = forge.config.CompilerConfig(mlir_config=mlir_config)
+
     tt_optimizer = forge.optimizers.SGD(learning_rate=learning_rate)
     tt_model = forge.compile(
         framework_model,
         sample_inputs=[torch.rand(batch_size, 784)],
         optimizer=tt_optimizer,
         training=True,
+        compiler_cfg=compiler_cfg,
     )
 
     loss_fn = CrossEntropyLoss(name="cross_entropy_loss")
@@ -554,9 +544,6 @@ def test_lora():
     print(f"Test (total) loss: {test_loss}")
 
 
-@pytest.mark.xfail(
-    reason="RuntimeError: tt-metal/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_device_operation.cpp: input_tensor_a.storage_type() == StorageType::DEVICE info: Input tensor A must be on device, got storage type: StorageType::HOST"
-)
 @pytest.mark.push
 def test_optimizer_device():
     # Config
@@ -574,11 +561,17 @@ def test_optimizer_device():
     framework_loss = torch.nn.CrossEntropyLoss()
     optimizer = forge.optimizers.SGD(learning_rate=learning_rate)
 
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-permute-matmul-fusion=true")
+    compiler_cfg = forge.config.CompilerConfig(mlir_config=mlir_config)
+
     tt_model = forge.compile(
         framework_model,
         sample_inputs=[torch.rand(batch_size, 784)],
         optimizer=optimizer,
         training=True,
+        compiler_cfg=compiler_cfg,
     )
 
     logger.info("Starting training loop... (logger will be disabled)")
@@ -629,18 +622,7 @@ def test_optimizer_device():
 
 
 @pytest.mark.push
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        torch.bfloat16,
-        pytest.param(
-            torch.float32,
-            marks=pytest.mark.xfail(
-                reason="RuntimeError: tt-metal/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_device_operation.cpp: input_tensor_a.storage_type() == StorageType::DEVICE info: Input tensor A must be on device, got storage type: StorageType::HOST"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32])
 def test_e2e_device(dtype):
     # Config
     num_epochs = 5
@@ -663,6 +645,10 @@ def test_e2e_device(dtype):
         # Issue: https://github.com/tenstorrent/tt-mlir/issues/6915
         # Once the issue is fixed, CPU Hoisted Const Eval should be enabled
         compiler_cfg.mlir_config = forge.config.MLIRConfig().set_custom_config("enable-cpu-hoisted-const-eval=false")
+
+    if dtype == torch.float32:
+        # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
+        compiler_cfg.mlir_config = forge.config.MLIRConfig().set_custom_config("enable-permute-matmul-fusion=true")
 
     verify_cfg = DeprecatedVerifyConfig()
     verify_cfg.stages_for_intermediate_verification = {CompileDepth.AUTOGRAD}
