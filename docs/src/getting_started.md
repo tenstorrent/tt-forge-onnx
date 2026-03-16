@@ -56,10 +56,11 @@ This section walks you through downloading and installing a wheel. You can insta
 
 1. Make sure you are in an active virtual environment. This walkthrough uses the same environment you activated to look at TT-SMI in the [Configuring Hardware](#configuring-hardware) section.
 
-2. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge** wheel:
+2. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge_onnx** and **tt_tvm** wheels:
 
 ```bash
-pip install tt_forge --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
 3. Before you run a model, download and install the **MPI implementation**:
@@ -72,25 +73,28 @@ sudo apt install -y /tmp/openmpi-ulfm.deb
 4. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:
 
 ```python
-import torch
+import numpy as np
+import onnx
+import onnx.helper as helper
 import forge
 
-class Add(torch.nn.Module):
-  def __init__(self):
-    super().__init__()
+# Create a minimal ONNX model (elementwise add of two tensors)
+X = helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 4])
+Y = helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, [1, 4])
+Z = helper.make_tensor_value_info("Z", onnx.TensorProto.FLOAT, [1, 4])
 
-  def forward(self, a, b):
-    return a + b
+add_node = helper.make_node("Add", inputs=["X", "Y"], outputs=["Z"])
+graph = helper.make_graph([add_node], "add_graph", [X, Y], [Z])
+onnx_model = helper.make_model(graph)
+onnx.checker.check_model(onnx_model)
 
-a = torch.rand(size=(2, 32, 32))
-b = torch.rand(size=(2, 32, 32))
+# Compile and run on Tenstorrent hardware
+x = np.random.rand(1, 4).astype(np.float32)
+y = np.random.rand(1, 4).astype(np.float32)
+compiled_model = forge.compile(onnx_model, sample_inputs=[x, y])
 
-framework_module = Add()
-compiled_model = forge.compile(framework_module, sample_inputs=[a, b])
-
-out = compiled_model(a, b)
-
-print("compiled output:", out)
+output = compiled_model(x, y)
+print("Output:", output)
 ```
 
 5. You have now set up the latest wheel for TT-Forge-ONNX, and can run any models you want inside your virtual environment.

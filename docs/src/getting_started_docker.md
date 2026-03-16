@@ -93,25 +93,28 @@ docker ps
 6. To check that everything is running as expected, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal:
 
 ```python
-import torch
+import numpy as np
+import onnx
+import onnx.helper as helper
 import forge
 
-class Add(torch.nn.Module):
-  def __init__(self):
-    super().__init__()
+# Create a minimal ONNX model (elementwise add of two tensors)
+X = helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 4])
+Y = helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, [1, 4])
+Z = helper.make_tensor_value_info("Z", onnx.TensorProto.FLOAT, [1, 4])
 
-  def forward(self, a, b):
-    return a + b
+add_node = helper.make_node("Add", inputs=["X", "Y"], outputs=["Z"])
+graph = helper.make_graph([add_node], "add_graph", [X, Y], [Z])
+onnx_model = helper.make_model(graph)
+onnx.checker.check_model(onnx_model)
 
-a = torch.rand(size=(2, 32, 32))
-b = torch.rand(size=(2, 32, 32))
+# Compile and run on Tenstorrent hardware
+x = np.random.rand(1, 4).astype(np.float32)
+y = np.random.rand(1, 4).astype(np.float32)
+compiled_model = forge.compile(onnx_model, sample_inputs=[x, y])
 
-framework_module = Add()
-compiled_model = forge.compile(framework_module, sample_inputs=[a, b])
-
-out = compiled_model(a, b)
-
-print("compiled output:", out)
+output = compiled_model(x, y)
+print("Output:", output)
 ```
 
 7. If all goes well, you are now ready to move on to the next section, and run your first demo model.
@@ -151,25 +154,22 @@ python demos/tt-forge-onnx/cnn/mobile_netv2_demo.py
 
 Now that you have set up TT-Forge-ONNX, you can compile and run your own models. See the [TT-Forge-ONNX folder in the TT-Forge repo](https://github.com/tenstorrent/tt-forge/tree/main/demos/tt-forge-onnx) for more demo options.
 
-For a quick start about how to compile a model, here is a code sample. Note the introduction of the `forge.compile` call:
+For a quick start about how to compile an ONNX model, here is a code sample. Note the introduction of the `forge.compile` call:
 
 ```python
-import torch
-from transformers import ResNetForImageClassification
+import numpy as np
+import onnx
+import forge
 
-def resnet():
-    # Load image, pre-process, etc.
-    ...
+# Load any .onnx model (from the ONNX Model Zoo, or exported from Pytorch / TensorFlow / PaddlePaddle)
+onnx_model = onnx.load("model.onnx")
 
-    # Load model (e.g. from HuggingFace)
-    framework_model = ResNetForImageClassification.from_pretrained("microsoft/resnet-50")
+# Prepare sample inputs matching the model's input shape
+sample_inputs = [np.random.rand(1, 3, 224, 224).astype(np.float32)]
 
-    # Compile the model using Forge
-    compiled_model = forge.compile(framework_model, input_image)
+# Compile the model using Forge
+compiled_model = forge.compile(onnx_model, sample_inputs=sample_inputs)
 
-    # Run compiled model
-    logits = compiled_model(input_image)
-
-    ...
-    # Post-process output, return results, etc.
+# Run compiled model on Tenstorrent hardware
+output = compiled_model(*sample_inputs)
 ```

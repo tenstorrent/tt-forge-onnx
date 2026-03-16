@@ -6,9 +6,10 @@ Script to generate operation documentation from Forge operation source files.
 This script:
 1. Discovers operations from forge/forge/op/*.py files
 2. Parses docstrings to extract documentation
-3. Generates markdown documentation pages
-4. Creates an index page with operations grouped by category
-5. Cleans up stale documentation files for removed operations
+3. Generates a single docs/src/operations.md containing:
+   - Category summary tables (with in-page anchor links)
+   - Full per-operation detail sections (signature, parameters, returns, etc.)
+4. Removes any stale individual files left over in docs/src/operations/
 
 All operation information is sourced from the actual Python source files.
 Enhanced descriptions (e.g., mathematical definitions) are loaded from
@@ -19,17 +20,17 @@ Usage:
 
 Options:
     --op-dir PATH        Source directory for operations (default: forge/forge/op/)
-    --output-dir PATH    Output directory for operation docs (default: docs/src/operations/)
-    --index-file PATH    Output path for index page (default: docs/src/operations.md)
+    --output-dir PATH    Legacy individual-file directory to clean up (default: docs/src/operations/)
+    --index-file PATH    Output path for the combined page (default: docs/src/operations.md)
     --enhancements PATH  Path to enhancements JSON file (default: scripts/operation_enhancements.json)
-    --no-cleanup         Skip cleanup of stale documentation files
+    --no-cleanup         Skip cleanup of the legacy docs/src/operations/ directory
 """
 
 import argparse
 import json
 import sys
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Set
+from typing import List, Optional, Dict
 from pathlib import Path
 
 
@@ -72,7 +73,6 @@ class Operation:
     examples: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     signature: str = ""
-    related_operations: List[Dict[str, str]] = field(default_factory=list)
 
 
 def sanitize_filename(name: str) -> str:
@@ -96,7 +96,6 @@ def load_enhancements(enhancements_path: Path) -> Dict:
     - description: Override/supplement the operation overview
     - parameters: Dict mapping parameter names to enhanced descriptions
     - mathematical_definition: Mathematical formula for the operation
-    - related_operations: List of related operations with descriptions
     """
     if enhancements_path.exists():
         try:
@@ -109,26 +108,24 @@ def load_enhancements(enhancements_path: Path) -> Dict:
     return {}
 
 
-def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict) -> None:
-    """Generate a markdown page for a single operation."""
-    filename = sanitize_filename(op.name)
-    filepath = output_dir / f"{filename}.md"
+def _build_operation_section(op: Operation, enhancements: Dict) -> str:
+    """
+    Build the markdown detail section for a single operation.
 
-    # Get enhancements for this operation
+    The section heading uses only the short name (e.g. ``### Abs``) so that
+    mdBook generates a clean in-page anchor (``#abs``) that can be linked from
+    the category summary tables above.
+    """
     op_enhancements = enhancements.get(op.short_name, {})
     param_enhancements = op_enhancements.get("parameters", {})
 
-    # Build content in a list, then join and normalize at the end
     lines = []
 
-    # Title
-    lines.append(f"# {op.name}")
+    # Section heading — short name gives anchor #abs, #relu, etc.
+    lines.append(f"### {op.short_name}")
     lines.append("")
 
-    # Overview section
-    lines.append("## Overview")
-    lines.append("")
-    # Use enhanced description if available, otherwise use docstring description
+    # Overview
     if op_enhancements.get("description"):
         overview = op_enhancements["description"]
     else:
@@ -141,12 +138,11 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
     lines.append("")
 
     # Function signature
-    lines.append("## Function Signature")
+    lines.append("**Function Signature**")
     lines.append("")
     lines.append("```python")
     if op.signature:
         sig = op.signature
-        # Format multi-line for readability
         if len(sig) > 80 and "(" in sig and ")" in sig:
             sig = _format_signature(sig)
         lines.append(sig)
@@ -155,15 +151,13 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
     lines.append("```")
     lines.append("")
 
-    # Parameters section
+    # Parameters
     if op.operands or op.attributes:
-        lines.append("## Parameters")
+        lines.append("**Parameters**")
         lines.append("")
 
-        # Write name parameter first
         name_attr = next((a for a in op.attributes if a.name == "name"), None)
         if name_attr:
-            # Check for enhanced description first
             desc = (
                 param_enhancements.get("name")
                 or name_attr.description
@@ -172,28 +166,24 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
             lines.append(f"- **name** (`str`): {desc}")
             lines.append("")
 
-        # Write operands (tensor inputs)
         for operand in op.operands:
             if operand.name not in ("output", "result"):
                 type_str = operand.type or "Tensor"
-                # Check for enhanced description first
                 desc = param_enhancements.get(operand.name) or operand.description or f"{operand.name} tensor"
                 lines.append(f"- **{operand.name}** (`{type_str}`): {desc}")
                 lines.append("")
 
-        # Write other attributes
         for attr in op.attributes:
             if attr.name != "name":
                 type_str = attr.mlir_type or "Any"
                 default_str = f", default: `{attr.default}`" if attr.default else ""
-                # Check for enhanced description first
                 desc = param_enhancements.get(attr.name) or attr.description or f"{attr.name} parameter"
                 lines.append(f"- **{attr.name}** (`{type_str}`{default_str}): {desc}")
                 lines.append("")
 
-    # Returns section
+    # Returns
     if op.results:
-        lines.append("## Returns")
+        lines.append("**Returns**")
         lines.append("")
         for result in op.results:
             type_str = result.type or "Tensor"
@@ -201,38 +191,26 @@ def generate_operation_page(op: Operation, output_dir: Path, enhancements: Dict)
             lines.append(f"- **{result.name}** (`{type_str}`): {desc}")
             lines.append("")
 
-    # Mathematical Definition (from enhancements or docstring)
+    # Mathematical Definition
     math_def = op_enhancements.get("mathematical_definition") or op.mathematical_definition
     if math_def:
-        lines.append("## Mathematical Definition")
+        lines.append("**Mathematical Definition**")
         lines.append("")
         lines.append(math_def)
         lines.append("")
 
     # Notes
     if op.notes:
-        lines.append("## Notes")
+        lines.append("**Notes**")
         lines.append("")
         for note in op.notes:
             lines.append(f"- {note}")
         lines.append("")
 
-    # Related Operations (from enhancements)
-    related_ops = op_enhancements.get("related_operations", []) or op.related_operations
-    if related_ops:
-        lines.append("## Related Operations")
-        lines.append("")
-        for related in related_ops:
-            related_name = related.get("name", "")
-            related_desc = related.get("description", "")
-            related_file = sanitize_filename(related_name)
-            lines.append(f"- [forge.op.{related_name}](./{related_file}.md): {related_desc}")
+    lines.append("---")
+    lines.append("")
 
-    # Join lines and ensure exactly one trailing newline
-    content = "\n".join(lines).rstrip() + "\n"
-
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(content)
+    return "\n".join(lines)
 
 
 def _format_signature(sig: str) -> str:
@@ -287,10 +265,16 @@ def _format_signature(sig: str) -> str:
     return formatted
 
 
-def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
-    """Generate the main index page with operations grouped by categories."""
-    filepath = output_dir / "operations.md"
+def generate_operations_md(operations: List[Operation], output_file: Path, enhancements: Dict) -> None:
+    """
+    Generate a single self-contained operations.md that contains:
 
+    1. Overview and quick-navigation section.
+    2. Per-category summary tables whose Link column uses in-page anchors
+       (e.g. ``#abs``) instead of external file links.
+    3. Full per-operation detail sections (signature, parameters, returns,
+       mathematical definition, related operations) appended after the tables.
+    """
     # Group operations by category
     ops_by_category: Dict[str, List[Operation]] = {}
     for op in operations:
@@ -298,7 +282,6 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
             ops_by_category[op.category] = []
         ops_by_category[op.category].append(op)
 
-    # Category order
     category_order = [
         "Elementwise Operations",
         "Convolution Operations",
@@ -330,19 +313,20 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
         "Other Operations": "Miscellaneous operations",
     }
 
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
+        # ── Header ────────────────────────────────────────────────────────────
         f.write("# Forge Operations Reference\n\n")
         f.write(
             "Welcome to the Forge Operations Reference. This page provides a comprehensive guide to all supported operations in the Forge framework.\n\n"
         )
 
-        # Overview
+        # ── Overview ──────────────────────────────────────────────────────────
         f.write("## Overview\n\n")
         f.write(
             "Forge operations are organized into logical categories based on their functionality. Each operation is documented with detailed information including function signatures, parameters, examples, and usage notes.\n\n"
         )
 
-        # Quick Navigation
+        # ── Quick Navigation ──────────────────────────────────────────────────
         f.write("## Quick Navigation\n\n")
         for category in sorted_categories:
             anchor = category.lower().replace(" ", "-")
@@ -350,7 +334,8 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
             f.write(f"- [{category}](#{anchor}) - {desc}\n")
         f.write("\n---\n\n")
 
-        # Category sections
+        # ── Category summary tables ───────────────────────────────────────────
+        # Links point to in-page anchors generated by the detail sections below.
         for category in sorted_categories:
             f.write(f"## {category}\n\n")
 
@@ -358,65 +343,63 @@ def generate_index_page(operations: List[Operation], output_dir: Path) -> None:
             if desc:
                 f.write(f"{desc}.\n\n")
 
-            # Table
             ops = sorted(ops_by_category[category], key=lambda x: x.short_name)
             if ops:
                 f.write("| Operation | Description | Link |\n")
                 f.write("|-----------|-------------|------|\n")
                 for op in ops:
-                    filename = sanitize_filename(op.name)
                     short_desc = op.description[:80] + "..." if len(op.description) > 80 else op.description
-                    f.write(f"| **{op.short_name}** | {short_desc} | [{op.name}](./operations/{filename}.md) |\n")
+                    anchor = op.short_name.lower()
+                    f.write(f"| **{op.short_name}** | {short_desc} | [{op.name}](#{anchor}) |\n")
                 f.write("\n")
 
-        # Documentation Structure
+        # ── Operation detail sections ─────────────────────────────────────────
         f.write("---\n\n")
-        f.write("## Documentation Structure\n\n")
-        f.write("Each operation documentation page includes:\n\n")
-        f.write("- **Overview**: Brief description of what the operation does\n")
-        f.write("- **Function Signature**: Python API signature with type hints\n")
-        f.write("- **Parameters**: Detailed parameter descriptions with types and defaults\n")
-        f.write("- **Returns**: Return value description\n")
-        f.write("- **Mathematical Definition**: Mathematical formula (where applicable)\n")
-        f.write("- **Related Operations**: Links to related operations\n\n")
-        f.write("---\n\n")
+        f.write("## Operation Details\n\n")
+
+        all_ops = sorted(operations, key=lambda x: x.short_name.lower())
+        for op in all_ops:
+            f.write(_build_operation_section(op, enhancements))
+
+        # ── Footer ────────────────────────────────────────────────────────────
         f.write(
             "*This documentation is automatically generated from operation definitions in `forge/forge/op/*.py`. For the most up-to-date information, refer to the source code.*\n"
         )
 
 
-def cleanup_stale_files(output_dir: Path, valid_operations: Set[str]) -> int:
+def cleanup_operations_dir(ops_dir: Path) -> int:
     """
-    Remove documentation files for operations that no longer exist.
+    Remove all individual operation markdown files from the legacy
+    ``docs/src/operations/`` directory.
+
+    Operation documentation has been consolidated into ``operations.md``, so
+    the separate per-operation files are no longer needed.
 
     Args:
-        output_dir: Directory containing operation markdown files
-        valid_operations: Set of valid operation short names (lowercase)
+        ops_dir: Path to the legacy ``docs/src/operations/`` directory.
 
     Returns:
-        Number of stale files removed
+        Number of files removed.
     """
     removed_count = 0
 
-    if not output_dir.exists():
+    if not ops_dir.exists():
         return removed_count
 
-    for md_file in output_dir.glob("*.md"):
-        # Extract operation name from filename (e.g., "abs.md" -> "abs")
-        op_name = md_file.stem.lower()
+    for md_file in ops_dir.glob("*.md"):
+        try:
+            md_file.unlink()
+            print(f"      Removed: {md_file.name}")
+            removed_count += 1
+        except OSError as e:
+            print(f"      Warning: Could not remove {md_file.name}: {e}")
 
-        # Skip non-operation files
-        if op_name in ("readme", "index", "operations"):
-            continue
-
-        # Check if this operation still exists
-        if op_name not in valid_operations:
-            try:
-                md_file.unlink()
-                print(f"      Removed stale file: {md_file.name}")
-                removed_count += 1
-            except OSError as e:
-                print(f"      Warning: Could not remove {md_file.name}: {e}")
+    # Remove the directory itself if now empty
+    try:
+        ops_dir.rmdir()
+        print(f"      Removed directory: {ops_dir.name}/")
+    except OSError:
+        pass  # Not empty or already gone — leave it
 
     return removed_count
 
@@ -433,7 +416,7 @@ def convert_discovered_to_operation(discovered) -> Operation:
 
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(("Parameters", "Returns", "Mathematical", "See Also", "Notes", "Examples")):
+        if stripped.startswith(("Parameters", "Returns", "Mathematical", "Notes", "Examples")):
             break
         if stripped.startswith("---"):
             continue
@@ -462,32 +445,11 @@ def convert_discovered_to_operation(discovered) -> Operation:
                 if line.strip().startswith("---"):
                     continue
                 if line.strip() and not line.startswith(" ") and not line.startswith("\t"):
-                    if line.strip().startswith(("See Also", "Notes", "Examples", "Parameters", "Returns")):
+                    if line.strip().startswith(("Notes", "Examples", "Parameters", "Returns")):
                         break
                 if line.strip():
                     math_lines.append(line.strip())
         math_def = "\n".join(math_lines)
-
-    # Extract related operations from docstring
-    related_ops = []
-    if "See Also" in docstring:
-        in_see_also = False
-        for line in lines:
-            if "See Also" in line:
-                in_see_also = True
-                continue
-            if in_see_also:
-                if line.strip().startswith("---"):
-                    continue
-                if line.strip() and not line.startswith(" ") and not line.startswith("\t"):
-                    if line.strip().startswith(("Notes", "Examples", "Parameters", "Returns", "Mathematical")):
-                        break
-                if "forge.op." in line:
-                    parts = line.strip().split(":")
-                    if len(parts) >= 2:
-                        op_name = parts[0].replace("forge.op.", "").strip()
-                        op_desc = parts[1].strip()
-                        related_ops.append({"name": op_name, "description": op_desc})
 
     # Convert parameters to operands and attributes
     operands = []
@@ -532,7 +494,6 @@ def convert_discovered_to_operation(discovered) -> Operation:
         results=results,
         attributes=attributes,
         signature=discovered.signature,
-        related_operations=related_ops,
     )
 
 
@@ -591,9 +552,6 @@ def main():
     enhancements_path = args.enhancements or (script_dir / "operation_enhancements.json")
     do_cleanup = not args.no_cleanup
 
-    # Create output directory
-    ops_docs_dir.mkdir(parents=True, exist_ok=True)
-
     # Import and run discovery
     print("=" * 60)
     print("Forge Operations Documentation Generator")
@@ -601,7 +559,7 @@ def main():
 
     sys.path.insert(0, str(script_dir))
 
-    print(f"\n[1/5] Discovering operations from {op_dir}...")
+    print(f"\n[1/4] Discovering operations from {op_dir}...")
     try:
         from discover_operations import discover_operations
 
@@ -615,12 +573,12 @@ def main():
         sys.exit(1)
 
     # Load enhancements
-    print(f"\n[2/5] Loading operation enhancements from {enhancements_path.name}...")
+    print(f"\n[2/4] Loading operation enhancements from {enhancements_path.name}...")
     enhancements = load_enhancements(enhancements_path)
     print(f"      Loaded enhancements for {len(enhancements)} operations")
 
     # Convert discovered operations
-    print("\n[3/5] Converting and generating operation pages...")
+    print("\n[3/4] Converting operations...")
     operations = []
     errors = []
 
@@ -628,8 +586,7 @@ def main():
         try:
             op = convert_discovered_to_operation(discovered)
             operations.append(op)
-            generate_operation_page(op, ops_docs_dir, enhancements)
-            print(f"      [OK] {op.short_name}.md")
+            print(f"      [OK] {op.short_name}")
         except Exception as e:
             errors.append(f"{discovered.name}: {e}")
             print(f"      [FAIL] {discovered.name}: {e}")
@@ -637,29 +594,27 @@ def main():
     if errors:
         print(f"\n      Warning: {len(errors)} operation(s) had conversion errors")
 
-    # Cleanup stale files
+    # Clean up the legacy per-operation files
     if do_cleanup:
-        print("\n[4/5] Cleaning up stale documentation files...")
-        valid_ops = {sanitize_filename(op.name) for op in operations}
-        removed = cleanup_stale_files(ops_docs_dir, valid_ops)
+        print(f"\n[4/4] Cleaning up legacy {ops_docs_dir.name}/ directory...")
+        removed = cleanup_operations_dir(ops_docs_dir)
         if removed > 0:
-            print(f"      Removed {removed} stale file(s)")
+            print(f"      Removed {removed} file(s)")
         else:
-            print("      No stale files found")
+            print("      Nothing to remove")
     else:
-        print("\n[4/5] Skipping cleanup (--no-cleanup specified)")
+        print(f"\n[4/4] Skipping cleanup of {ops_docs_dir.name}/ (--no-cleanup specified)")
 
-    # Generate index page
-    print("\n[5/5] Generating index page...")
-    generate_index_page(operations, index_file.parent)
+    # Generate the combined operations.md
+    print(f"\nGenerating {index_file.name}...")
+    generate_operations_md(operations, index_file, enhancements)
     print(f"      [OK] {index_file.name}")
 
     # Summary
     print("\n" + "=" * 60)
     print("Documentation generation complete!")
     print(f"  Total operations: {len(operations)}")
-    print(f"  Output directory: {ops_docs_dir}")
-    print(f"  Index page: {index_file}")
+    print(f"  Output file:      {index_file}")
 
     if errors:
         print(f"\n  Errors: {len(errors)}")
