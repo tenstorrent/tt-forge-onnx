@@ -58,32 +58,26 @@ void ModelState::run_program(ProgramType program_type, std::vector<tt::Tensor> a
     std::vector<tt::Tensor> inputs;
     inputs.reserve(act_inputs.size() + program_state.persistent_inputs.size());
 
-    // Push activation inputs to the device if they are not already there.
+    // Convert each input to the layout expected by the compiled program.
+    // This handles all necessary transitions: host->device, device->host, and layout changes.
+    //
     // NOTE: there is an ordering requirement for the activation inputs and the persistent inputs, i.e.
     // in the input list (`inputs` vector here), the activation inputs come first. Unfortunately, there isn't any
     // mechanism which enforces this, yet. It's an informal contract between the compiler and the runtime.
     size_t input_idx = 0;
     for (auto tensor : act_inputs)
     {
-        if (!tensor.on_device())
-        {
-            auto layout = tt::runtime::getLayout(binary, pg_id, input_idx);
-            tensor.to_device(device_id, layout);
-        }
-
+        auto layout = tt::runtime::getLayout(binary, pg_id, input_idx);
+        tensor.to_layout(device_id, layout);
         inputs.emplace_back(tensor);
         input_idx++;
     }
 
-    // Push persistent inputs to the device if they are not already there.
+    // Convert each persistent to the expected layout.
     for (auto& persistent_input : program_state.persistent_inputs)
     {
-        if (!persistent_input.on_device())
-        {
-            auto layout = tt::runtime::getLayout(binary, pg_id, input_idx);
-            persistent_input.to_device(device_id, layout);
-        }
-
+        auto layout = tt::runtime::getLayout(binary, pg_id, input_idx);
+        persistent_input.to_layout(device_id, layout);
         inputs.emplace_back(persistent_input);
         input_idx++;
     }

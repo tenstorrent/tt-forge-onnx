@@ -111,49 +111,34 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
     {
         if (!host_storage.has_value())
         {
-            // The tensor doesn't have a host storage, so we need to copy it to the host.
-            to_host();
-        }
-
-        TT_ASSERT(
-            std::holds_alternative<torch::Tensor>(host_storage->storage),
-            "For now, we expect the host storage to be a torch tensor");
-
-        auto torch_tensor = std::get<torch::Tensor>(host_storage->storage);
-        return torch_tensor;
-    }
-
-    // Creates a device tensor from the host tensor.
-    // Note: the host tensor is not modified and lives on.
-    void to_device(const size_t device_id, runtime::Layout& layout)
-    {
-        TT_ASSERT(!rt_tensor.has_value());
-        auto device = TTSystem::get_system().devices[device_id];
-
-        TT_ASSERT(host_storage.has_value(), "Since the tensor is on host, we expect the host storage to be set");
-        rt_tensor = runtime::createBorrowedHostTensor(
-            host_storage->data_ptr(), desc.shape, desc.stride, desc.itemsize, desc.dataType);
-        rt_tensor = tt::runtime::toLayout(rt_tensor.value(), *device->rt_device, layout);
-    }
-
-    void to_host()
-    {
-        TT_ASSERT(rt_tensor.has_value(), "We expect the tensor to be on device");
-        constexpr bool untilize_tensor = true;
-        auto sharded_tensor = tt::runtime::toHost(rt_tensor.value(), untilize_tensor);
-        TT_ASSERT(sharded_tensor.size() == 1, "We don't expect sharded tensors, i.e. we expect only one shard");
-
-        auto host = sharded_tensor[0];
-
-        if (!host_storage.has_value())
-        {
             host_storage = TensorHostStorage::from_desc<torch::Tensor>(desc);
         }
 
-        tt::runtime::memcpy(host_storage->data_ptr(), host);
+        if (rt_tensor.has_value())
+        {
+            update_host_data();
+        }
+
+        return std::get<torch::Tensor>(host_storage->storage);
     }
 
-    // Updates the host buffer with data from the device tensor.
+    // Converts the tensor to the given layout via tt::runtime::toLayout (LayoutConverter).
+    // Handles all transitions: host->device, device->device layout change, device->host.
+    // No-op if the tensor already matches the target layout.
+    void to_layout(const size_t device_id, runtime::Layout& layout)
+    {
+        if (!rt_tensor.has_value())
+        {
+            TT_ASSERT(host_storage.has_value(), "Tensor has neither runtime tensor nor host storage");
+            rt_tensor = runtime::createBorrowedHostTensor(
+                host_storage->data_ptr(), desc.shape, desc.stride, desc.itemsize, desc.dataType);
+        }
+
+        auto device = TTSystem::get_system().devices[device_id];
+        rt_tensor = tt::runtime::toLayout(rt_tensor.value(), *device->rt_device, layout);
+    }
+
+    // Updates the host buffer with data from the runtime tensor.
     // Used when the original `tt::Tensor` was created from an existing torch (host) tensor, and later moved and
     // modified on the device.
     //
@@ -164,7 +149,7 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
     {
         TT_ASSERT(
             rt_tensor.has_value() && host_storage.has_value(),
-            "We expect the tensor to have a host buffer as well as a handle to the device tensor");
+            "Both runtime tensor and host storage must exist to sync data back to host");
 
         constexpr bool untilize_tensor = true;
         auto sharded_tensor = tt::runtime::toHost(rt_tensor.value(), untilize_tensor);
@@ -174,8 +159,6 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
 
         tt::runtime::memcpy(host_storage->data_ptr(), host);
     }
-
-    bool on_device() const { return rt_tensor.has_value(); }
 
     void detach_from_device() { rt_tensor.reset(); }
 
@@ -210,11 +193,9 @@ class Tensor
     // If the tensor is on device, it will first be copied to the host.
     torch::Tensor to_torch() const { return impl->to_torch(); }
 
-    void to_device(const size_t device_id, runtime::Layout& layout) { impl->to_device(device_id, layout); }
+    void to_layout(const size_t device_id, runtime::Layout& layout) { impl->to_layout(device_id, layout); }
 
     void update_host_data() { impl->update_host_data(); }
-
-    bool on_device() const { return impl->on_device(); }
 
     runtime::TensorDesc tensor_desc() const { return impl->tensor_desc(); }
 

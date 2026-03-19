@@ -642,14 +642,9 @@ def test_e2e_device(dtype):
         data_format_override = DataFormat.Float16_b
         compiler_cfg.default_df_override = data_format_override
 
-        # Issue: https://github.com/tenstorrent/tt-mlir/issues/6915
-        # Once the issue is fixed, CPU Hoisted Const Eval should be enabled
-        mlir_config = forge.config.MLIRConfig()
-        mlir_config.set_custom_config("enable-cpu-hoisted-const-eval=false enable-permute-matmul-fusion=true")
-    else:
-        # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
-        mlir_config = forge.config.MLIRConfig()
-        mlir_config.set_custom_config("enable-permute-matmul-fusion=true")
+    # Issue: https://github.com/tenstorrent/tt-mlir/issues/7506
+    mlir_config = forge.config.MLIRConfig()
+    mlir_config.set_custom_config("enable-permute-matmul-fusion=true")
 
     compiler_cfg.mlir_config = mlir_config
 
