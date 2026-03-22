@@ -78,16 +78,10 @@ def test_slicing(input_tensor_slice):
         pytest.param(
             (torch.arange(27, dtype=torch.float32).reshape(3, 3, 3), (slice(-2, None), slice(-2, None))),
             id="negative_indexing_subrange",
-            marks=pytest.mark.xfail(
-                reason="Error: ttir.slice_static op For positive step, begin index must be less than or equal to end index for dimension 0"
-            ),
         ),
         pytest.param(
             (torch.arange(27, dtype=torch.float32).reshape(3, 3, 3), (slice(-1, None), slice(-1, None))),
             id="negative_indexing_single_element",
-            marks=pytest.mark.xfail(
-                reason="Error: ttir.slice_static op For positive step, begin index must be less than or equal to end index for dimension 0"
-            ),
         ),
     ],
 )

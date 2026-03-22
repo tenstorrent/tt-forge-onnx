@@ -139,6 +139,9 @@ def test_conv2d(input_shape, in_channels, out_channels, kernel_size, padding):
             3,
             (1, 1, 1, 1),
             False,
+            marks=pytest.mark.xfail(
+                reason="RuntimeError: buffer size must be divisible by new page size. Issue: https://github.com/tenstorrent/tt-forge-onnx/issues/3224"
+            ),
         ),
         pytest.param(
             (1, 3, 32, 32),
