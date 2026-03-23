@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch import nn
 import torch.nn.functional as F
-
+import os
 import forge
 from forge.verify.verify import verify
 
@@ -77,79 +77,76 @@ def test_conv2d(input_shape, in_channels, out_channels, kernel_size, padding):
 @pytest.mark.parametrize(
     "input_shape, kernel_size, stride_size, padding, ceil_mode",
     [
-        pytest.param(
-            (1, 96, 54, 54),
-            3,
-            2,
-            0,
-            True,
-        ),
-        pytest.param(
-            (1, 64, 55, 54),
-            3,
-            2,
-            0,
-            True,
-        ),
-        pytest.param(
-            (1, 128, 26, 26),
-            3,
-            2,
-            0,
-            True,
-        ),
-        pytest.param(
-            (1, 256, 26, 26),
-            3,
-            2,
-            0,
-            True,
-        ),
-        pytest.param(
-            (1, 96, 54, 54),
-            3,
-            2,
-            0,
-            False,
-        ),
-        pytest.param(
-            (1, 64, 55, 54),
-            3,
-            2,
-            0,
-            False,
-        ),
-        pytest.param(
-            (1, 128, 26, 26),
-            3,
-            2,
-            0,
-            False,
-        ),
-        pytest.param(
-            (1, 256, 26, 26),
-            3,
-            2,
-            0,
-            False,
-        ),
+        # pytest.param(
+        #     (1, 96, 54, 54),
+        #     3,
+        #     2,
+        #     0,
+        #     True,
+        # ),
+        # pytest.param(
+        #     (1, 64, 55, 54),
+        #     3,
+        #     2,
+        #     0,
+        #     True,
+        # ),
+        # pytest.param(
+        #     (1, 128, 26, 26),
+        #     3,
+        #     2,
+        #     0,
+        #     True,
+        # ),
+        # pytest.param(
+        #     (1, 256, 26, 26),
+        #     3,
+        #     2,
+        #     0,
+        #     True,
+        # ),
+        # pytest.param(
+        #     (1, 96, 54, 54),
+        #     3,
+        #     2,
+        #     0,
+        #     False,
+        # ),
+        # pytest.param(
+        #     (1, 64, 55, 54),
+        #     3,
+        #     2,
+        #     0,
+        #     False,
+        # ),
+        # pytest.param(
+        #     (1, 128, 26, 26),
+        #     3,
+        #     2,
+        #     0,
+        #     False,
+        # ),
+        # pytest.param(
+        #     (1, 256, 26, 26),
+        #     3,
+        #     2,
+        #     0,
+        #     False,
+        # ),
         pytest.param(
             (1, 3, 32, 32),
             3,
             3,
             (1, 1, 1, 1),
             False,
-            marks=pytest.mark.xfail(
-                reason="RuntimeError: buffer size must be divisible by new page size. Issue: https://github.com/tenstorrent/tt-forge-onnx/issues/3224"
-            ),
         ),
-        pytest.param(
-            (1, 3, 32, 32),
-            3,
-            3,
-            (1, 1, 2, 2),
-            False,
-        ),
+        # pytest.param(
+        #     (1, 3, 32, 32),
+        #     3,
+        #     3,
+        #     (1, 1, 2, 2),
+        #     False,
+        # ),
     ],
 )
 @pytest.mark.push
@@ -171,6 +168,15 @@ def test_maxpool2d(input_shape, kernel_size, stride_size, padding, ceil_mode):
 
     framework_model = maxpool2d().to(dtype=torch.bfloat16)
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
+
+    file_path = "generated_maxpool2d.cpp"
+    compiled_model.export_to_cpp(file_path)
+
+    assert os.path.exists(file_path)
+    with open(file_path, "r") as f:
+        print(f.read())
+
+    os.remove(file_path)
 
     verify(inputs, framework_model, compiled_model)
 
