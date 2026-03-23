@@ -11,7 +11,12 @@ from forge.forge_property_utils import Framework, Source, Task, ModelArch, recor
 from third_party.tt_forge_models.googlenet.image_classification.onnx import ModelLoader, ModelVariant
 
 
-@pytest.mark.parametrize("variant", [ModelVariant.GOOGLENET])
+@pytest.mark.parametrize(
+    "variant",
+    [
+        pytest.param(ModelVariant.GOOGLENET, marks=pytest.mark.pr_models_regression),
+    ],
+)
 @pytest.mark.nightly
 def test_googlenet_onnx(variant, forge_tmp_path):
     # Record Forge Property

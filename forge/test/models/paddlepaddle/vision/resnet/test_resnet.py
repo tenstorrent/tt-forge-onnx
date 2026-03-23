@@ -4,7 +4,6 @@
 
 import paddle
 import pytest
-from datasets import load_dataset
 
 from third_party.tt_forge_models.resnet.image_classification.paddlepaddle import ModelLoader, ModelVariant
 
@@ -16,7 +15,7 @@ from forge.verify.verify import verify
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
 variants = [
-    ModelVariant.RESNET18,
+    pytest.param(ModelVariant.RESNET18, marks=pytest.mark.pr_models_regression),
     ModelVariant.RESNET34,
     ModelVariant.RESNET50,
     ModelVariant.RESNET101,
