@@ -29,7 +29,6 @@ os.makedirs(cache_dir, exist_ok=True)
 
 
 @pytest.mark.nightly
-@pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-forge-onnx/issues/3140")
 @pytest.mark.parametrize(
     "variant,url",
     [(f"{variant}_det_{lang}", url) for variant, urls in model_urls.items() for lang, url in urls.items()],
