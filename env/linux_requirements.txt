@@ -32,3 +32,4 @@ librosa
 soundfile
 # Required by the RMBG model
 kornia
+anyio==4.12.1
