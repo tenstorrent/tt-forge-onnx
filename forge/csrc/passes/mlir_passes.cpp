@@ -8,6 +8,7 @@
 
 // Forge headers
 #include "mlir_compiler.hpp"
+#include "mlir_config.hpp"
 #include "utils/logger.hpp"
 
 // MLIR headers
@@ -40,42 +41,6 @@ void register_mlir_passes()
     (void)_;
 }
 
-std::string config_to_pipeline_options(const std::optional<MLIRConfig> &mlir_config)
-{
-    std::stringstream options{""};
-
-    // Convert the MLIRConfig to a string of pipeline options.
-    // If the config is not set, return an empty string.
-    if (mlir_config.has_value())
-    {
-        // Add all specified configs to the options string.
-        if (mlir_config->enable_consteval.has_value())
-        {
-            options << " enable-const-eval=" << *mlir_config->enable_consteval;
-        }
-        if (mlir_config->enable_optimizer.has_value())
-        {
-            options << " enable-optimizer=" << *mlir_config->enable_optimizer;
-        }
-        if (mlir_config->enable_memory_layout_analysis.has_value())
-        {
-            options << " memory-layout-analysis-enabled=" << *mlir_config->enable_memory_layout_analysis;
-        }
-        if (mlir_config->enable_fusing.has_value())
-        {
-            options << " enable-fusing-pass=" << *mlir_config->enable_fusing;
-        }
-        if (mlir_config->enable_fusing_conv2d_with_multiply_pattern.has_value())
-        {
-            options << " enable-fusing-conv2d-with-multiply-pattern="
-                    << *mlir_config->enable_fusing_conv2d_with_multiply_pattern;
-        }
-        // Add custom configuration options.
-        options << " " << mlir_config->custom_config;
-    }
-
-    return options.str();
-}
 
 template <MLIROutputKind output>
 void run_mlir_passes(mlir::OwningOpRef<mlir::ModuleOp> &mlir_module, const std::optional<MLIRConfig> &mlir_config)
