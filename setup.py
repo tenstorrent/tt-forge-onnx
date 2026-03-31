@@ -210,6 +210,9 @@ def _add_so_dependencies(install_dir: Path) -> None:
             continue
 
         dependencies = get_so_dependencies(str(so_file))
+        print(
+            f"Processing {so_file.relative_to(install_dir)} with dependencies: {[Path(d).name for d in dependencies]}"
+        )
         for dep in dependencies:
             if not is_standard_library(dep) and not dep.startswith(str(install_dir)):
                 dep_path = Path(dep)
@@ -218,13 +221,10 @@ def _add_so_dependencies(install_dir: Path) -> None:
                     shutil.copy2(dep, dest_path)
                     copied_libs.add(dest_path.name)
                     print(f"Copied dependency: {dest_path.name}")
+                    adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
+
             else:
                 print(f"Skipping standard/our library dependency: {dep}")
-
-    for so_file in install_dir.rglob("*.so*"):
-        if so_file.is_symlink() or not so_file.is_file():
-            continue
-        adjust_rpath(str(so_file), "$ORIGIN/../lib:$ORIGIN")
 
 
 with open("README.md", "r") as f:
