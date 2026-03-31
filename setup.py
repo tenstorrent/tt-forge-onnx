@@ -177,17 +177,27 @@ def _add_so_dependencies(install_dir: Path) -> None:
             if len(parts) < 2:
                 continue
             path = parts[1].strip().split()[0]
-            if path and path.startswith("/") and path.endswith(".so"):
+            if path and path.startswith("/"):
                 dependencies.add(path)
         return dependencies
 
     def is_standard_library(so_path: str) -> bool:
         """Check if .so is a standard system library."""
-        try:
-            subprocess.run(["dpkg", "-S", so_path], check=True)
-            return False
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        standard_libs = ["libpython", "libc.", "libm.", "libdl.", "libpthread.", "libstdc++", "libudev."]
+
+        so_name = so_path.split("/")[-1]
+        if any(so_name.startswith(lib) for lib in standard_libs):
+            print(f"{so_name} is a standard library, treating as standard.")
             return True
+
+        try:
+            output = subprocess.check_output(["dpkg", "-S", so_path], stderr=subprocess.DEVNULL, text=True)
+            if any(line.startswith("libc6:") for line in output.splitlines()):
+                print(f"{so_path} is a standard library.")
+                return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print(f"{so_path} is NOT a standard library.")
+        return False
 
     def adjust_rpath(so_file: str, new_rpath: str) -> None:
         """Adjust rpath of a .so file using patchelf."""
@@ -204,27 +214,28 @@ def _add_so_dependencies(install_dir: Path) -> None:
             raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
 
     lib_dir = install_dir / "lib"
+    all_libs = set()
     copied_libs = set()
     for so_file in install_dir.rglob("*.so*"):
         if so_file.is_symlink() or not so_file.is_file():
             continue
 
-        dependencies = get_so_dependencies(str(so_file))
-        print(
-            f"Processing {so_file.relative_to(install_dir)} with dependencies: {[Path(d).name for d in dependencies]}"
-        )
-        for dep in dependencies:
-            if not is_standard_library(dep) and not dep.startswith(str(install_dir)):
-                dep_path = Path(dep)
-                dest_path = lib_dir / dep_path.name
-                if not dest_path.exists():
-                    shutil.copy2(dep, dest_path)
-                    copied_libs.add(dest_path.name)
-                    print(f"Copied dependency: {dest_path.name}")
-                    adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
+        all_libs.update(get_so_dependencies(str(so_file)))
 
-            else:
-                print(f"Skipping standard/our library dependency: {dep}")
+    print(f"Total dependencies found: {len(all_libs)}")
+    print(all_libs)
+    for dep in all_libs:
+        dep_path = Path(dep).resolve()
+        if dep_path.parts[:-1] != install_dir.parts and not is_standard_library(dep):
+            dep_path = Path(dep)
+            dest_path = lib_dir / dep_path.name
+            if not dest_path.exists():
+                print(f"Copying dependency {dep} to {dest_path}...")
+                shutil.copy2(dep, dest_path)
+                # adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
+                copied_libs.add(dep)
+        else:
+            print(f"Skipping standard/our library dependency: {dep}")
 
 
 with open("README.md", "r") as f:

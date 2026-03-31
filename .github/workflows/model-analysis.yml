@@ -500,21 +500,21 @@ jobs:
             2>&1 | tee ${{ env.SCRIPT_OUTPUT_LOG }}
 
       - name: Upload Script Output Logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: script-outputs
           path: ${{ env.SCRIPT_OUTPUT_LOG }}
 
       - name: Upload Models Unique Ops Output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: models-unique-ops-output
           path: ${{ env.UNIQUE_OPS_OUTPUT_DIR_PATH }}
 
       - name: Upload Generated Models Ops Tests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: ${{ needs.set-inputs.outputs.create_pr == 'false' }}
         with:
           name: generated-models-ops-tests

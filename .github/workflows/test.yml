@@ -86,7 +86,7 @@ jobs:
         run: |
           echo '{ "branch_name": "${{ github.ref_name }}", "test_mark": "${{ inputs.test_mark }}", "runs-on": "${{ inputs.runs-on }}", "sh-runner": "$${{ inputs.sh-runner }}", "test_group_cnt": "${{ inputs.test_group_cnt }}", "on-crash": "${{ inputs.on-crash }}", "workflow_runners": "${{ inputs.workflow_runners }}", "mlir_override": "${{ inputs.mlir_override }}", "tests_to_filter": "${{ inputs.tests_to_filter }}", "enable-verbose-output": "${{ inputs.enable-verbose-output }}" }' > inputs.json
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: inputs
           path: inputs.json

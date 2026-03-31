@@ -244,7 +244,7 @@ jobs:
           cat .pytest_tests_to_run
 
       - name: Upload collected tests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: collected-test-list-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
@@ -287,28 +287,28 @@ jobs:
           exit $exit_code
 
       - name: Upload Test Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: test-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: ${{ steps.run-test.outputs.log_path }}
 
       - name: Upload Test Crash Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: test-crash-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: crashed_pytest.log
 
       - name: Upload Memory Usage Log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: memory-usage-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: pytest-memory-usage.csv
 
       - name: Upload Test Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure()
         with:
           name: test-reports-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ steps.fetch-job-id.outputs.job_id }}
