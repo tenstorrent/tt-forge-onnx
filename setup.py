@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -13,6 +14,7 @@ import re
 
 from setuptools.command.editable_wheel import editable_wheel
 from wheel.wheelfile import WheelFile
+from typing import Set
 
 # WORKAROUND: make editable installation work
 #
@@ -97,7 +99,21 @@ class CMakeBuild(build_ext):
         self.spawn(["cmake", "--build", str(build_dir)])
         self.spawn(["cmake", "--install", str(build_dir)])
 
-        _remove_broken_symlinks(install_dir)
+        _prune_bloat_from_wheel(install_dir)
+        _add_so_dependencies(install_dir)
+
+
+def _prune_bloat_from_wheel(install_dir: str) -> None:
+    """Remove unnecessary files from the wheel that are not needed for runtime."""
+    _remove_broken_symlinks(install_dir)
+    _remove_static_archives(install_dir)
+
+    _remove_bloat_dir(install_dir / "lib" / "cmake")
+    _remove_bloat_dir(install_dir / "lib" / "pkgconfig")
+    _remove_bloat_dir(install_dir / "include")
+    _remove_bloat_dir(install_dir / "tt-metal" / ".cpmcache")
+    _remove_bloat_dir(install_dir / "tt-metal" / "tt_metal" / "third_party")
+    _strip_shared_objects(install_dir)
 
 
 def _remove_broken_symlinks(root: Path) -> None:
@@ -107,6 +123,108 @@ def _remove_broken_symlinks(root: Path) -> None:
             rel = path.relative_to(root)
             print(f"Removing broken symlink: {rel}")
             path.unlink()
+
+
+def _strip_shared_objects(root: Path) -> None:
+    strip_path = shutil.which("strip")
+    if strip_path is None:
+        print("strip tool not found; skipping debug symbol stripping")
+        return
+
+    for so_file in root.rglob("*.so"):
+        if so_file.is_symlink() or not so_file.is_file():
+            continue
+        try:
+            subprocess.run([strip_path, "--strip-unneeded", str(so_file)], check=True)
+            rel = so_file.relative_to(root)
+            print(f"Stripped debug symbols: {rel}")
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"Failed to strip {so_file}: {exc}")
+
+
+def _remove_static_archives(root: Path) -> None:
+    for archive in root.rglob("*.a"):
+        if archive.is_symlink() or not archive.is_file():
+            continue
+        rel = archive.relative_to(root)
+        if rel.parts and rel.parts[0] in ("lib", "lib64"):
+            print(f"Removing static archive: {rel}")
+            archive.unlink()
+
+
+def _remove_bloat_dir(dir_path: Path) -> None:
+    if dir_path.exists() and dir_path.is_dir():
+        print(f"Removing bloat directory: {dir_path}")
+        shutil.rmtree(dir_path)
+
+
+def _add_so_dependencies(install_dir: Path) -> None:
+    """Copy non-standard .so dependencies into install_dir/lib and adjust rpath."""
+
+    def get_so_dependencies(so_file: str) -> Set[str]:
+        """Get list of .so dependencies for a given .so file."""
+        try:
+            output = subprocess.check_output(["ldd", so_file], stderr=subprocess.DEVNULL, text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return set()
+
+        dependencies = set()
+        for line in output.splitlines():
+            line = line.strip()
+            if not line or "=>" not in line:
+                continue
+            parts = line.split("=>")
+            if len(parts) < 2:
+                continue
+            path = parts[1].strip().split()[0]
+            if path and path.startswith("/") and path.endswith(".so"):
+                dependencies.add(path)
+        return dependencies
+
+    def is_standard_library(so_path: str) -> bool:
+        """Check if .so is a standard system library."""
+        try:
+            subprocess.run(["dpkg", "-S", so_path], check=True)
+            return False
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return True
+
+    def adjust_rpath(so_file: str, new_rpath: str) -> None:
+        """Adjust rpath of a .so file using patchelf."""
+        patchelf_path = shutil.which("patchelf")
+        if patchelf_path is None:
+            print("patchelf not found; skipping rpath adjustment")
+            return
+
+        try:
+            subprocess.run([patchelf_path, "--set-rpath", new_rpath, so_file], check=True)
+            rel = Path(so_file).relative_to(install_dir)
+            print(f"Adjusted rpath: {rel}")
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
+
+    lib_dir = install_dir / "lib"
+    copied_libs = set()
+    for so_file in install_dir.rglob("*.so*"):
+        if so_file.is_symlink() or not so_file.is_file():
+            continue
+
+        dependencies = get_so_dependencies(str(so_file))
+        for dep in dependencies:
+            if not is_standard_library(dep) and not dep.startswith(str(install_dir)):
+                dep_path = Path(dep)
+                dest_path = lib_dir / dep_path.name
+                if not dest_path.exists():
+                    shutil.copy2(dep, dest_path)
+                    copied_libs.add(dest_path.name)
+                    print(f"Copied dependency: {dest_path.name}")
+            else:
+                print(f"Skipping standard/our library dependency: {dep}")
+
+    for so_file in install_dir.rglob("*.so*"):
+        if so_file.is_symlink() or not so_file.is_file():
+            continue
+        adjust_rpath(str(so_file), "$ORIGIN/../lib:$ORIGIN")
 
 
 with open("README.md", "r") as f:
