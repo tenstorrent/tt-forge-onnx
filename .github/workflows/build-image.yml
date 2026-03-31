@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: sudo chown ubuntu:ubuntu -R $(pwd)
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: 'tenstorrent/tt-forge-onnx'
           submodules: recursive
