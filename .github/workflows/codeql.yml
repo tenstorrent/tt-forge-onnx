@@ -40,6 +40,7 @@ jobs:
         queries: security-and-quality
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
+        tools: https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.24.3/codeql-bundle-linux64.tar.gz
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
