@@ -15,6 +15,7 @@ from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_m
 from third_party.tt_forge_models.tools.utils import get_file
 from datasets import load_dataset
 from torch import Tensor
+from loguru import logger
 
 # Mean Pooling - Take attention mask into account for correct averaging
 def mean_pooling(model_output, attention_mask):
@@ -387,19 +388,23 @@ def Gemma2DecoderLayer_patched_forward(
 
 def preprocess_inputs():
 
-    # Load Input
-    dataset = load_dataset("ILSVRC/imagenet-1k", split="validation", streaming=True)
-    input_image = next(iter(dataset.skip(10)))["image"]
+    try:
+        dataset = load_dataset("ILSVRC/imagenet-1k", split="validation", streaming=True, token=True)
+        input_image = next(iter(dataset.skip(10)))["image"]
 
-    # Prepare input
-    preprocess = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    input_tensor = preprocess(input_image)
-    input_batch = input_tensor.unsqueeze(0)
+        # Prepare input
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
+        input_tensor = preprocess(input_image)
+        input_batch = input_tensor.unsqueeze(0)
+    except Exception as e:
+        logger.warning(f"Error loading dataset: {e}")
+        input_batch = torch.rand(1, 3, 224, 224)
+
     return [input_batch]

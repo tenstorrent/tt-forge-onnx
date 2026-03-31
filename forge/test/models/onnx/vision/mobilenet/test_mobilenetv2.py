@@ -9,7 +9,6 @@ import forge
 import onnx
 import torch
 from forge.verify.verify import verify
-from datasets import load_dataset
 from forge.verify.config import VerifyConfig, AutomaticValueChecker
 from test.models.onnx.vision.mobilenet.model_utils.utils import load_inputs
 from test.models.models_utils import print_cls_results
@@ -41,11 +40,11 @@ def test_mobilenetv2_onnx(variant, forge_tmp_path):
     model = timm.create_model(variant, pretrained=True)
 
     # Load the inputs
-    dataset = load_dataset("ILSVRC/imagenet-1k", split="validation", streaming=True)
-    img = next(iter(dataset.skip(10)))["image"]
-    inputs = load_inputs(img, model)
-    onnx_path = f"{forge_tmp_path}/mobilenetv2.onnx"
-    torch.onnx.export(model, inputs[0], onnx_path)
+    inputs = load_inputs(model)
+
+    # Export model to ONNX
+    onnx_path = f"{forge_tmp_path}/{variant}.onnx"
+    torch.onnx.export(model, inputs[0], onnx_path, opset_version=17)
 
     # Load onnx model
     onnx_model = onnx.load(onnx_path)

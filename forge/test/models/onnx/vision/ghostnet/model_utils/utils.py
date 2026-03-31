@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import timm
 import torch
+from loguru import logger
 from datasets import load_dataset
 from third_party.tt_forge_models.tools.utils import get_file
 from timm.data import resolve_data_config
@@ -18,11 +19,16 @@ def load_ghostnet_model(variant):
     framework_model.eval()
 
     # Prepare input
-    dataset = load_dataset("ILSVRC/imagenet-1k", split="validation", streaming=True)
-    img = next(iter(dataset.skip(10)))["image"]
-    data_config = resolve_data_config({}, model=framework_model)
-    transforms = create_transform(**data_config, is_training=False)
-    img_tensor = transforms(img).unsqueeze(0)
+    try:
+        dataset = load_dataset("ILSVRC/imagenet-1k", split="validation", streaming=True, token=True)
+        img = next(iter(dataset.skip(10)))["image"]
+        data_config = resolve_data_config({}, model=framework_model)
+        transforms = create_transform(**data_config, is_training=False)
+        img_tensor = transforms(img).unsqueeze(0)
+    except Exception as e:
+        logger.warning(f"Error loading dataset: {e}")
+        img_tensor = torch.rand(1, 3, 224, 224)
+
     return framework_model, [img_tensor]
 
 
