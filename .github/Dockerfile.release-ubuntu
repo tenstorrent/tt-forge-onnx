@@ -28,7 +28,11 @@ RUN set -ex \
     && python -m pip install --upgrade pip --no-cache-dir
 
 COPY *.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
-    rm -rf /tmp/*.whl
+RUN export PYENV_ROOT="$HOME/.pyenv" && \
+    export PATH="$PYENV_ROOT/bin:$PATH" && \
+    eval "$(pyenv init -)" && \
+    pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+    rm -rf /tmp/*.whl && \
+    pip cache purge
 
 CMD ["/bin/bash"]
