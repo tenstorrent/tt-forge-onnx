@@ -2,8 +2,11 @@ FROM ubuntu:22.04
 
 SHELL ["/bin/bash", "-c"]
 
-LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-xla
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-forge-onnx
 LABEL org.opencontainers.image.licenses=Apache-2.0
+
+ENV PYENV_ROOT /root/.pyenv
+ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
 
 # Install system tools
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
@@ -15,11 +18,14 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     unzip \
     ca-certificates
 
-# Install Python 3.12
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3.12 python3.12-dev python3.12-venv python3-pip && \
-    rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED && \
-    python3.12 -m pip install --no-cache-dir --ignore-installed --break-system-packages --upgrade pip && \
-    ln -sf /usr/bin/python3 /usr/bin/python
+# Install pyenv
+RUN set -ex \
+    && curl https://pyenv.run | bash \
+    && pyenv update \
+    && pyenv install 3.12 \
+    && pyenv global 3.12 \
+    && pyenv rehash \
+    && python -m pip install --upgrade pip --no-cache-dir
 
 COPY *.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
