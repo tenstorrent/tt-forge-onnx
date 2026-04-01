@@ -2,35 +2,10 @@ name: Verbose Test Run
 
 on:
   workflow_dispatch:
-    inputs:
-      rebuild:
-        description: 'Rebuild the Forge'
-        required: false
-        default: false
-        type: boolean
-      runs-on:
-        description: 'Runs on'
-        required: false
-        type: choice
-        options:
-          - n150
-          - n300
-          - p150
-      sh-runner:
-        description: 'Run tests using shared runners'
-        required: false
-        default: true
-        type: boolean
-      test_list:
-        description: 'List of tests to run'
-        required: false
-        type: string
 
 permissions:
   packages: write
   checks: write
-
-run-name: "Verbose Test (Rebuild: ${{ inputs.rebuild }} - ${{ inputs.sh-runner && format('{0}-shared', inputs.runs-on) || (inputs.runs-on) }})"
 
 jobs:
 
@@ -38,209 +13,84 @@ jobs:
     uses: ./.github/workflows/build-image.yml
     secrets: inherit
 
-  set-inputs:
-    runs-on: ubuntu-latest
-    needs: docker-build
-    outputs:
-      buildtype: ${{ steps.set-inputs.outputs.buildtype }}
-      runs-on: ${{ steps.set-inputs.outputs.runs-on }}
-      run_id: ${{ steps.set-inputs.outputs.runid }}
-    steps:
-      - name: Inputs Management
-        id: set-inputs
-        run: |
-          echo "## Input Parameters" >> $GITHUB_STEP_SUMMARY
-          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Rebuild: ${{ inputs.rebuild }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Runs On: ${{ inputs.runs-on }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Shared Runner: ${{ inputs.sh-runner }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Test List: ${{ inputs.test_list }}" >> $GITHUB_STEP_SUMMARY
-
-          if [ ${{ inputs.rebuild }} == 'true' ]; then
-            echo "buildtype=Release" >> $GITHUB_OUTPUT
-            echo "runid=${{ github.run_id }}" >> $GITHUB_OUTPUT
-          else
-            echo "buildtype=None" >> $GITHUB_OUTPUT
-          fi
-          echo "runs-on=[{\"runs-on\": \"${{ inputs.runs-on }}\"}]" >> $GITHUB_OUTPUT
-
   build:
     needs:
       - docker-build
-      - set-inputs
     uses: ./.github/workflows/build.yml
     secrets: inherit
     with:
       docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      build: ${{ needs.set-inputs.outputs.buildtype}}
+      build: Release
 
-  run-tests:
+  release-docker:
     if: success() || failure()
     needs:
       - docker-build
       - build
-      - set-inputs
-
-    strategy:
-      fail-fast: false
-      matrix:
-        build: ${{ fromJson(needs.set-inputs.outputs.runs-on) }}
-
-    runs-on: ${{ inputs.sh-runner && format('tt-beta-ubuntu-2204-{0}-large-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
-    container:
-      image: ${{ inputs.sh-runner && format('harbor.ci.tenstorrent.net/{0}', needs.docker-build.outputs.docker-image) || needs.docker-build.outputs.docker-image }}
-      options: --device /dev/tenstorrent/0
-      volumes:
-        - /dev/hugepages:/dev/hugepages
-        - /dev/hugepages-1G:/dev/hugepages-1G
-        - /etc/udev/rules.d:/etc/udev/rules.d
-        - /lib/modules:/lib/modules
-        - /opt/tt_metal_infra/provisioning/provisioning_env:/opt/tt_metal_infra/provisioning/provisioning_env
-        - /mnt/dockercache:/mnt/dockercache
-
-    name: "run-tests (${{ inputs.sh-runner && format('{0}-shared', matrix.build.runs-on) || (matrix.build.runs-on) }}, ${{ matrix.test_group_id }})"
-
+    runs-on: ubuntu-latest
+    outputs:
+      docker_image: ${{ steps.build-docker.outputs.docker_image }}
     steps:
+      - name: Fix workspace permissions issue
+        run: sudo chown -R $USER:$USER $GITHUB_WORKSPACE
 
-      - name: Fetch job id
-        id: fetch-job-id
-        uses: tenstorrent/tt-github-actions/.github/actions/job_id@main
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          job_name: "run-tests (${{ inputs.sh-runner && format('{0}-shared', matrix.build.runs-on) || (matrix.build.runs-on) }}, ${{ matrix.test_group_id }})"
-
-      - name: Set reusable strings
-        id: strings
-        shell: bash
-        env:
-          JOB_ID: ${{ steps.fetch-job-id.outputs.job_id }}
-        run: |
-          echo "work-dir=$(pwd)" >> "$GITHUB_OUTPUT"
-          echo "build-output-dir=$(pwd)/build" >> "$GITHUB_OUTPUT"
-          echo "test_report_path=reports/report_$JOB_ID.xml" >> "$GITHUB_OUTPUT"
-
-      - name: Git safe dir
-        run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
-
-      - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            .github/workflows/
-            env/
-            forge/test
-            pytest.ini
-            conftest.py
-            .test_durations
-            .test_list
-
-      - name: Setup Forge Models repo
-        shell: bash
-        run: |
-          git submodule update --init --recursive -f third_party/tt_forge_models
-
-        # Clean everything from submodules (needed to avoid issues
-        # with cmake generated files leftover from previous builds)
-      - name: Cleanup submodules
-        run: |
-          git submodule foreach --recursive git clean -ffdx
-          git submodule foreach --recursive git reset --hard
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
 
       - name: Download wheel
-        if: ${{ needs.set-inputs.outputs.run_id }}
-        continue-on-error: true
-        uses: tenstorrent/tt-forge/.github/actions/download-artifact@main
+        uses: actions/download-artifact@v6
         with:
           name: forge-wheel
-          run_id: ${{ needs.set-inputs.outputs.run_id }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          path: .
 
-      - name: Find and download forge wheel
-        if: ${{ !needs.set-inputs.outputs.run_id }}
-        uses: dawidd6/action-download-artifact@v9
-        with:
-          github_token: ${{secrets.GITHUB_TOKEN}}
-          workflow_conclusion: success
-          workflow_search: true
-          workflow: on-pr.yml
-          name: forge-wheel
-          repo: tenstorrent/tt-forge-onnx
-          check_artifacts: true
-          search_artifacts: true
-
-      - name: Install wheel
+      - name: Build & push Docker image
         shell: bash
+        id: build-docker
         run: |
-          source env/activate
-          pip install tt_tvm*.whl --upgrade
-          pip install tt_forge_onnx*.whl --upgrade
+          set -eo pipefail
 
-      - name: Set caching env variables
-        shell: bash
-        run: |
-          shared_runners=${{ inputs.sh-runner }}
-          if [ "$shared_runners" = "true" ]; then
-            echo "IRD_LF_CACHE=${{ vars.IRD_LF_CACHE }}" >> $GITHUB_ENV
+          docker_tag=${{ github.sha }}
+          IMAGE_NAME=ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-release
+
+          if docker manifest inspect $IMAGE_NAME:$docker_tag > /dev/null; then
+            echo "Docker image $IMAGE_NAME:$docker_tag exists"
           else
-            echo "DOCKER_CACHE_ROOT=/mnt/dockercache" >> $GITHUB_ENV
+            echo "Building image $IMAGE_NAME:$docker_tag"
+            docker build \
+              --progress=plain \
+              -t $IMAGE_NAME:$docker_tag \
+              -f .github/Dockerfile.release-ubuntu .
+
+            echo "Pushing image $IMAGE_NAME:$docker_tag"
+            docker push $IMAGE_NAME:$docker_tag
           fi
 
-      - name: Set test list
-        run: |
-          if [ -n "${{ inputs.test_list }}" ]; then
-            echo "${{ inputs.test_list }}" > .test_list
-            grep -oE '[^[:space:]]*\.py::[a-zA-Z0-9_]+(\[[^]]+\])?' .test_list > .pytest_tests_to_run
-          else
-            if [ -f .test_list ]; then
-              sed -n -E 's/^([^\ ]*\.py::[a-zA-Z0-9_]+(\[[^]]+\])?).*/\1/p' .test_list > .pytest_tests_to_run
-            else
-              echo "No test list provided. Exiting..."
-              exit 1
-            fi
-          fi
-          echo "Collected tests:"
-          cat .pytest_tests_to_run
+          echo "docker_image=$IMAGE_NAME:$docker_tag" >> "$GITHUB_OUTPUT"
 
-      - name: Run Test
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_HOME: /mnt/dockercache/huggingface
-          FORGE_MODELS_CACHE: /mnt/dockercache/forge_models_cache
-          HF_HUB_DISABLE_PROGRESS_BARS: 1
-          FORGE_DISABLE_REPORTIFY_DUMP: 1
-        shell: bash
-        run: |
-          source env/activate
-          LOGGER_TYPES=All LOGGER_LEVEL=TRACE LOGURU_LEVEL=TRACE python .github/workflows/run_tests.py  \
-               --junit-xml=${{ steps.strings.outputs.test_report_path }} \
-               --log-memory-usage -svv 2>&1 | tee pytest.log
+  basic-tests:
+    needs: [ release-docker ]
+    uses: tenstorrent/tt-forge/.github/workflows/basic-tests.yml@main
+    secrets: inherit
+    with:
+      docker-image: ${{ needs.release-docker.outputs.docker_image }}
+      ref: main
+      project-filter: tt-forge-onnx
 
-      - name: Upload Test Log
-        uses: actions/upload-artifact@v7
-        if: success() || failure()
-        with:
-          name: test-log-${{ matrix.build.runs-on }}-${{ steps.fetch-job-id.outputs.job_id }}
-          path: pytest.log
-
-      - name: Upload Memory Usage Log
-        uses: actions/upload-artifact@v7
-        if: success() || failure()
-        with:
-          name: memory-usage-${{ matrix.build.runs-on }}-${{ steps.fetch-job-id.outputs.job_id }}
-          path: pytest-memory-usage.csv
-
-      - name: Upload Test Report
-        uses: actions/upload-artifact@v7
-        if: success() || failure()
-        with:
-          name: test-reports-${{ matrix.build.runs-on }}-${{ steps.fetch-job-id.outputs.job_id }}
-          path: ${{ steps.strings.outputs.test_report_path }}
-
-      - name: Show Test Report
-        uses: mikepenz/action-junit-report@v5
-        if: success() || failure()
-        with:
-          report_paths: ${{ steps.strings.outputs.test_report_path }}
-          check_name: TT-Forge-ONNX Tests
-          comment: false
-          updateComment: false
-          detailed_summary: true
-          group_suite: true
+  demo-tests:
+    needs: [ release-docker ]
+    uses: tenstorrent/tt-forge/.github/workflows/demo-tests.yml@main
+    secrets: inherit
+    with:
+      docker-image: ${{ needs.release-docker.outputs.docker_image }}
+      ref: main
+      project-filter: tt-forge-onnx
