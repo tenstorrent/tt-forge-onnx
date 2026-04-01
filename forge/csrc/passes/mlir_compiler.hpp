@@ -10,6 +10,7 @@
 #include <pybind11/pybind11.h>
 #pragma clang diagnostic pop
 
+#include "mlir_config.hpp"
 #include "nlohmann/json_fwd.hpp"
 #include "tt/runtime/types.h"
 
@@ -22,61 +23,6 @@ class ForgeGraphModule;
 
 namespace tt::passes
 {
-
-/// Struct to hold the configuration for the MLIR compiler.
-struct MLIRConfig
-{
-    std::optional<bool> enable_consteval = std::nullopt;
-    std::optional<bool> enable_optimizer = std::nullopt;
-    std::optional<bool> enable_memory_layout_analysis = std::nullopt;
-    std::optional<bool> enable_fusing = std::nullopt;
-    std::optional<bool> enable_fusing_conv2d_with_multiply_pattern = std::nullopt;
-
-    // Custom configuration string for the MLIR compiler.
-    std::string custom_config = "";
-
-    MLIRConfig& set_enable_consteval(bool enable)
-    {
-        enable_consteval = enable;
-        return *this;
-    }
-
-    MLIRConfig& set_enable_optimizer(bool enable)
-    {
-        enable_optimizer = enable;
-        return *this;
-    }
-
-    MLIRConfig& set_enable_memory_layout_analysis(bool enable)
-    {
-        enable_memory_layout_analysis = enable;
-        return *this;
-    }
-
-    MLIRConfig& set_enable_fusing(bool enable)
-    {
-        enable_fusing = enable;
-        return *this;
-    }
-
-    MLIRConfig& set_fusing_conv2d_with_multiply_pattern(bool enable)
-    {
-        enable_fusing_conv2d_with_multiply_pattern = enable;
-        return *this;
-    }
-
-    // Set custom configuration string for the MLIR compiler.
-    // This can be used to pass any additional configuration options to the MLIR compiler - not covered by the existing
-    // knobs.
-    MLIRConfig& set_custom_config(const std::string& config)
-    {
-        custom_config = config;
-        return *this;
-    }
-};
-
-void to_json(nlohmann::json& j, const MLIRConfig& p);
-void from_json(const nlohmann::json& j, MLIRConfig& p);
 
 /// Public API for running MLIR passes and generating binary.
 runtime::Binary run_mlir_compiler(

@@ -27,6 +27,7 @@ namespace py = pybind11;
 #include "passes/extract_unique_op_configuration.hpp"
 #include "passes/fracture.hpp"
 #include "passes/mlir_compiler.hpp"
+#include "passes/mlir_config.hpp"
 #include "passes/passes_utils.hpp"
 #include "passes/split_graph.hpp"
 #include "python_bindings_common.hpp"
@@ -169,8 +170,18 @@ PYBIND11_MODULE(_C, m)
 
     py::register_exception<UnsupportedHWOpsError>(m, "UnsupportedHWOpsError");
 
+    py::enum_<tt::passes::MemoryLayoutAnalysisPolicy>(m, "MemoryLayoutAnalysisPolicy")
+        .value("DFSharding", tt::passes::MemoryLayoutAnalysisPolicy::DFSharding)
+        .value("GreedyL1Interleaved", tt::passes::MemoryLayoutAnalysisPolicy::GreedyL1Interleaved)
+        .value("BFInterleaved", tt::passes::MemoryLayoutAnalysisPolicy::BFInterleaved)
+        .export_values();
+
     py::class_<tt::passes::MLIRConfig>(m, "MLIRConfig")
         .def(py::init<>())
+        .def(
+            "set_optimization_level",
+            [](tt::passes::MLIRConfig &self, int level) { return self.set_optimization_level(level); },
+            py::arg("level"))
         .def(
             "set_enable_consteval",
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_consteval(enable); },
@@ -184,13 +195,113 @@ PYBIND11_MODULE(_C, m)
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_memory_layout_analysis(enable); },
             py::arg("enable"))
         .def(
+            "set_memory_layout_analysis_policy",
+            [](tt::passes::MLIRConfig &self, tt::passes::MemoryLayoutAnalysisPolicy policy)
+            { return self.set_memory_layout_analysis_policy(policy); },
+            py::arg("policy"))
+        .def(
+            "set_enable_l1_interleaved_fallback_analysis",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_l1_interleaved_fallback_analysis(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_memreconfig",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_memreconfig(enable); },
+            py::arg("enable"))
+        .def(
+            "set_max_legal_layouts",
+            [](tt::passes::MLIRConfig &self, int64_t max) { return self.set_max_legal_layouts(max); },
+            py::arg("max"))
+        .def(
+            "set_enable_row_major",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_row_major(enable); },
+            py::arg("enable"))
+        .def(
+            "set_compute_cfg_math_fidelity",
+            [](tt::passes::MLIRConfig &self, tt::MathFidelity fidelity)
+            { return self.set_compute_cfg_math_fidelity(fidelity); },
+            py::arg("fidelity"))
+        .def(
+            "set_compute_cfg_fp32_dest_acc_en",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_compute_cfg_fp32_dest_acc_en(enable); },
+            py::arg("enable"))
+        .def(
+            "set_experimental_weight_dtype",
+            [](tt::passes::MLIRConfig &self, tt::DataFormat dtype)
+            { return self.set_experimental_weight_dtype(dtype); },
+            py::arg("dtype"))
+        .def(
+            "set_enable_erase_inverse_ops",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_erase_inverse_ops(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_implicit_broadcast_folding",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_implicit_broadcast_folding(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_permute_matmul_fusion",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_permute_matmul_fusion(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_dram_space_saving_optimization",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_dram_space_saving_optimization(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_remove_dead_values",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_remove_dead_values(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_cpu_hoisted_consteval",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_cpu_hoisted_consteval(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_consteval_inputs_to_system_memory",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_consteval_inputs_to_system_memory(enable); },
+            py::arg("enable"))
+        .def(
             "set_enable_fusing",
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_fusing(enable); },
             py::arg("enable"))
         .def(
+            "set_enable_d2m_fusing",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_d2m_fusing(enable); },
+            py::arg("enable"))
+        .def(
             "set_enable_fusing_conv2d_with_multiply_pattern",
             [](tt::passes::MLIRConfig &self, bool enable)
-            { return self.set_fusing_conv2d_with_multiply_pattern(enable); },
+            { return self.set_enable_fusing_conv2d_with_multiply_pattern(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_trace",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_trace(enable); },
+            py::arg("enable"))
+        .def(
+            "set_disable_workarounds",
+            [](tt::passes::MLIRConfig &self, bool disable) { return self.set_disable_workarounds(disable); },
+            py::arg("disable"))
+        .def(
+            "set_enable_layout_workaround",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_layout_workaround(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_decomposition_workaround",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_decomposition_workaround(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_ttnn_perf_metrics",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_ttnn_perf_metrics(enable); },
+            py::arg("enable"))
+        .def(
+            "set_ttnn_perf_metrics_output_file",
+            [](tt::passes::MLIRConfig &self, const std::string &path)
+            { return self.set_ttnn_perf_metrics_output_file(path); },
+            py::arg("path"))
+        .def(
+            "set_enable_ttnn_perf_metrics_verbose",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_ttnn_perf_metrics_verbose(enable); },
             py::arg("enable"))
         .def(
             "set_custom_config",
