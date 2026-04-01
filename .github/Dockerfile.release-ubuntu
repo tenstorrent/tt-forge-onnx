@@ -5,9 +5,6 @@ SHELL ["/bin/bash", "-c"]
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-forge-onnx
 LABEL org.opencontainers.image.licenses=Apache-2.0
 
-ENV PYENV_ROOT /root/.pyenv
-ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
-
 # Install system tools
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     apt-get install -y \
@@ -18,21 +15,13 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     unzip \
     ca-certificates
 
-# Install pyenv
-RUN set -ex \
-    && curl https://pyenv.run | bash \
-    && pyenv update \
-    && pyenv install 3.12 \
-    && pyenv global 3.12 \
-    && pyenv rehash \
-    && python -m pip install --upgrade pip --no-cache-dir
+# Install Python 3.12
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.12 python3.12-dev python3.12-venv python3.12-distutils
 
 COPY *.whl /tmp/
-RUN export PYENV_ROOT="$HOME/.pyenv" && \
-    export PATH="$PYENV_ROOT/bin:$PATH" && \
-    eval "$(pyenv init -)" && \
-    pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
-    rm -rf /tmp/*.whl && \
-    pip cache purge
+RUN pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+    rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]
