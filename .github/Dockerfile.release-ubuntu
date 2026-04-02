@@ -5,8 +5,11 @@ SHELL ["/bin/bash", "-c"]
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-forge-onnx
 LABEL org.opencontainers.image.licenses=Apache-2.0
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
 # Install system tools
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+RUN apt-get update && \
     apt-get install -y \
     wget \
     curl \
@@ -17,12 +20,12 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     software-properties-common
 
 # Install Python 3.12
-RUN DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:deadsnakes/ppa && \
+RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y python3.12 python3.12-dev python3.12-venv
+    apt-get install -y python3.12 python3.12-dev python3.12-venv python3-pip
 
 COPY *.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+RUN python3.12 -m pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
     rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]
