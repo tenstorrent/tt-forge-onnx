@@ -9,6 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # Install system tools
+# software-properties-common - add-apt-repository
+# build-essential pkg-config meson ninja-build - build tools for building Python packages with native extensions, and meson/ninja for building C++ projects
 RUN apt-get update && \
     apt-get install -y \
     wget \
@@ -17,8 +19,11 @@ RUN apt-get update && \
     jq \
     unzip \
     ca-certificates \
+    software-properties-common \
     build-essential \
-    software-properties-common
+    pkg-config \
+    meson \
+    ninja-build
 
 # Install Python 3.12
 RUN add-apt-repository ppa:deadsnakes/ppa && \
