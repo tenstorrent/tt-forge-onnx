@@ -17,13 +17,13 @@ RUN apt-get update && \
     jq \
     unzip \
     ca-certificates \
-    software-properties-common
+    software-properties-common \
+    python3-pip
 
 # Install Python 3.12
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y python3.12 python3.12-dev python3.12-venv python3-pip && \
-    python3.12 -m ensurepip --upgrade && \
     python3.12 -m pip install --upgrade pip setuptools --break-system-packages
 
 COPY *.whl /tmp/
