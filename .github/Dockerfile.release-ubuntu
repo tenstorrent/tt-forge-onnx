@@ -27,7 +27,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     python3.12 -m pip install --upgrade pip setuptools wheel --break-system-packages
 
 COPY *.whl /tmp/
-RUN python3.12 -m pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+RUN python3.12 -m pip install --only-binary=:all: --no-cache-dir /tmp/*.whl --break-system-packages && \
     rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]
