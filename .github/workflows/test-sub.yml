@@ -174,7 +174,6 @@ jobs:
           source env/activate
           pip install tt_tvm*.whl --upgrade
           pip install tt_forge_onnx*.whl --upgrade
-          python --version
 
       - name: Download Generated Models Ops Tests
         if: ${{ inputs.run_models_ops_tests }}

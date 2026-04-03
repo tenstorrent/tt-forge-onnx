@@ -10,7 +10,6 @@ ENV TZ=UTC
 
 # Install system tools
 # software-properties-common - add-apt-repository
-# build-essential pkg-config meson ninja-build - build tools for building Python packages with native extensions, and meson/ninja for building C++ projects
 RUN apt-get update && \
     apt-get install -y \
     wget \
@@ -19,18 +18,19 @@ RUN apt-get update && \
     jq \
     unzip \
     ca-certificates \
-    software-properties-common \
-    build-essential \
-    pkg-config \
-    meson \
-    ninja-build
+    software-properties-common
 
-# Install Python 3.12
+# Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
+RUN pip install --upgrade pip setuptools wheel
+
+# Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y python3.12 python3.12-dev python3.12-venv python3-pip && \
-    python3.12 -m ensurepip --upgrade && \
-    python3.12 -m pip install --upgrade pip setuptools wheel --break-system-packages
+    apt-get install -y \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    python3-pip
 
 COPY *.whl /tmp/
 RUN python3.12 -m pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
