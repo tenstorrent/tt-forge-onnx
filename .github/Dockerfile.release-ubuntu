@@ -34,7 +34,9 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     python3-pip
 
 COPY *.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl && \
+RUN python3.12 -m venv /opt/venv && \
+    source /opt/venv/bin/activate && \
+    pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
     rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]
