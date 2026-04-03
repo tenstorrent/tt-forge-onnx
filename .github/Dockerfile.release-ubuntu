@@ -18,7 +18,8 @@ RUN apt-get update && \
     jq \
     unzip \
     ca-certificates \
-    software-properties-common
+    software-properties-common \
+    python3-pip
 
 # Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
 RUN pip install --upgrade pip setuptools wheel
