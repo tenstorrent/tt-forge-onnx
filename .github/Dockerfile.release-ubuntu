@@ -22,7 +22,7 @@ RUN apt-get update && \
     python3-pip
 
 # Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --upgrade --no-cache-dir --break-system-packages pip setuptools wheel
 
 # Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
