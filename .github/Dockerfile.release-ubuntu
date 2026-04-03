@@ -22,7 +22,7 @@ RUN apt-get update && \
     python3-pip
 
 # Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
-RUN pip install --upgrade --no-cache-dir --break-system-packages pip setuptools wheel
+RUN pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
@@ -34,7 +34,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     python3-pip
 
 COPY *.whl /tmp/
-RUN python3.12 -m pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+RUN pip install --no-cache-dir /tmp/*.whl && \
     rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]
