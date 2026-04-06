@@ -1,0 +1,262 @@
+name: Benchmark - subroutine
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        description: 'Docker image to use for build'
+        required: true
+        type: string
+      runs-on:
+        description: 'Runs on'
+        required: false
+        type: string
+        default: '[{"runs-on": "n150"}]'
+      test_group_cnt:
+        description: 'Test group count'
+        required: false
+        default: '1'
+        type: string
+      test_group_ids:
+        description: 'Test group ids'
+        required: false
+        default: '[1]'
+        type: string
+      tests_to_filter:
+        description: 'Filter specific tests (comma-separated paths)'
+        required: false
+        type: string
+      sh-runner:
+        description: 'Run tests using shared runners'
+        required: false
+        default: false
+        type: boolean
+      enable-verbose-output:
+        description: 'Enable verbose pytest output (-svv)'
+        required: false
+        default: false
+        type: boolean
+      run_id:
+        description: 'Workflow run id for forge-wheel artifact (empty = latest on-pr wheel)'
+        required: false
+        type: string
+
+jobs:
+  run-benchmark:
+    timeout-minutes: 30
+
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_HOME: /mnt/dockercache/huggingface
+      FORGE_MODELS_CACHE: /mnt/dockercache/forge_models_cache
+      HF_HUB_DISABLE_PROGRESS_BARS: 1
+      FORGE_DISABLE_REPORTIFY_DUMP: 1
+
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJson(inputs.runs-on) }}
+        test_group_id: ${{ fromJSON(inputs.test_group_ids) }}
+
+    runs-on: ${{ inputs.sh-runner && format('tt-ubuntu-2204-{0}-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
+
+    container:
+      image: ${{ inputs.sh-runner && format('harbor.ci.tenstorrent.net/{0}', inputs.docker-image) || inputs.docker-image }}
+      options: --device /dev/tenstorrent/0
+      volumes:
+        - /dev/hugepages:/dev/hugepages
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /etc/udev/rules.d:/etc/udev/rules.d
+        - /lib/modules:/lib/modules
+        - /opt/tt_metal_infra/provisioning/provisioning_env:/opt/tt_metal_infra/provisioning/provisioning_env
+        - /mnt/dockercache:/mnt/dockercache
+
+    name: "benchmark perf (${{ inputs.sh-runner && format('{0}-shared', matrix.build.runs-on) || (matrix.build.runs-on) }}, ${{ matrix.test_group_id }})"
+
+    steps:
+      - name: Fetch job id
+        id: fetch-job-id
+        uses: tenstorrent/tt-github-actions/.github/actions/job_id@main
+        with:
+          job_name: "benchmark perf (${{ inputs.sh-runner && format('{0}-shared', matrix.build.runs-on) || (matrix.build.runs-on) }}, ${{ matrix.test_group_id }})"
+
+      - name: Set reusable strings
+        id: strings
+        shell: bash
+        env:
+          JOB_ID: ${{ steps.fetch-job-id.outputs.job_id }}
+        run: |
+          echo "work-dir=$(pwd)" >> "$GITHUB_OUTPUT"
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "perf_report_path=$(pwd)/perf_reports" >> "$GITHUB_OUTPUT"
+          echo "perf_report_json_file=$(pwd)/perf_reports/perf_report_$JOB_ID.json" >> "$GITHUB_OUTPUT"
+          echo "perf_report_junit_file=$(pwd)/perf_reports/junit_$JOB_ID.xml" >> "$GITHUB_OUTPUT"
+
+      - name: Git safe dir
+        run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
+
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github/workflows/
+            env/
+            forge/test
+            pytest.ini
+            conftest.py
+            .test_durations
+
+      - name: Setup Forge Models repo
+        shell: bash
+        run: git submodule update --init --recursive -f third_party/tt_forge_models
+
+      - name: Cleanup submodules
+        run: |
+          git submodule foreach --recursive git clean -ffdx
+          git submodule foreach --recursive git reset --hard
+
+      - name: Create perf report directory
+        run: mkdir -p ${{ steps.strings.outputs.perf_report_path }}
+
+      - name: Download wheel
+        if: ${{ inputs.run_id }}
+        continue-on-error: true
+        uses: tenstorrent/tt-forge/.github/actions/download-artifact@main
+        with:
+          name: forge-wheel
+          run_id: ${{ inputs.run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find and download forge wheel
+        if: ${{ !inputs.run_id }}
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow_conclusion: success
+          workflow_search: true
+          workflow: on-pr.yml
+          name: forge-wheel
+          repo: tenstorrent/tt-forge-onnx
+          check_artifacts: true
+          search_artifacts: true
+
+      - name: Install wheel
+        shell: bash
+        run: |
+          source env/activate
+          pip install tt_tvm*.whl --upgrade
+          pip install tt_forge_onnx*.whl --upgrade
+
+
+      - name: Set caching env variables
+        shell: bash
+        run: |
+          shared_runners=${{ inputs.sh-runner }}
+          if [ "$shared_runners" = "true" ]; then
+            echo "IRD_LF_CACHE=${{ vars.IRD_LF_CACHE }}" >> $GITHUB_ENV
+          else
+            echo "DOCKER_CACHE_ROOT=/mnt/dockercache" >> $GITHUB_ENV
+          fi
+
+      - name: Collect benchmark tests
+        shell: bash
+        run: |
+          source env/activate
+          echo "Collecting perf tests for group ${{ matrix.test_group_id }}..."
+          set +e
+          pytest_args=(
+            "--splits" "${{ inputs.test_group_cnt }}"
+            "--group" "${{ matrix.test_group_id }}"
+            "--splitting-algorithm" "least_duration"
+            "-m" "perf"
+            "--collect-only"
+          )
+          if [ -n "${{ inputs.tests_to_filter }}" ]; then
+            IFS=',' read -r -a test_filters <<< "${{ inputs.tests_to_filter }}"
+            pytest_args+=("--tests_to_filter")
+            for tf in "${test_filters[@]}"; do
+              pytest_args+=("$(echo "$tf" | xargs)")
+            done
+          fi
+          pytest "${pytest_args[@]}" -q \
+            | sed -n '/^Collected tests /,/^collected /p' | sed '/^[Cc]ollected /d' > .pytest_tests_to_run
+          collect_status=$?
+          set -e
+          if [ "$collect_status" -ne 0 ]; then
+            echo "Failed to collect tests. Doing dry run..."
+            pytest "${pytest_args[@]}" -svv
+            exit 1
+          fi
+          echo "Collected tests."
+          cat .pytest_tests_to_run
+
+      - name: Upload collected test list
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: collected-benchmark-${{ steps.strings.outputs.job_id }}
+          path: .pytest_tests_to_run
+
+      - name: Run benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          source env/activate
+          mkdir -p benchmark_ci_logs
+          runner=(
+            python .github/workflows/test_runner.py
+            --junit-xml=${{ steps.strings.outputs.perf_report_junit_file }}
+            --log-memory-usage
+            --output-file=${{ steps.strings.outputs.perf_report_json_file }}
+          )
+          if [ "${{ inputs.enable-verbose-output }}" = "true" ]; then
+            "${runner[@]}" -svv 2>&1 | tee benchmark_ci_logs/pytest.log
+          else
+            "${runner[@]}" 2>&1 | tee benchmark_ci_logs/pytest.log
+          fi
+          exit_code=${PIPESTATUS[0]}
+          for f in pytest.log test_runner_verbose.log crashed_pytest.log pytest-memory-usage.csv; do
+            [ -f "$f" ] && cp -f "$f" benchmark_ci_logs/ || true
+          done
+          if [ -f crashed_pytest.log ]; then
+            echo "### Crashed tests:" >> "$GITHUB_STEP_SUMMARY"
+            cat crashed_pytest.log >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$exit_code"
+
+      - name: Upload perf report JSON
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        continue-on-error: true
+        with:
+          name: perf-reports-json-${{ steps.strings.outputs.job_id }}
+          if-no-files-found: ignore
+          path: ${{ steps.strings.outputs.perf_report_json_file }}
+
+      - name: Upload perf report JUnit
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        continue-on-error: true
+        with:
+          name: perf-reports-junit-${{ steps.strings.outputs.job_id }}
+          if-no-files-found: ignore
+          path: ${{ steps.strings.outputs.perf_report_junit_file }}
+
+      - name: Upload benchmark logs
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: perf-benchmark-logs-${{ steps.strings.outputs.job_id }}
+          if-no-files-found: ignore
+          path: benchmark_ci_logs/
+
+      - name: Show Test Report
+        uses: mikepenz/action-junit-report@v5
+        if: success() || failure()
+        continue-on-error: true
+        with:
+          report_paths: ${{ steps.strings.outputs.perf_report_junit_file }}
+          check_name: TT-Forge-ONNX Benchmarks
+          comment: false
+          updateComment: false
+          detailed_summary: true
+          group_suite: true
