@@ -22,6 +22,83 @@ import forge
 from torch import Tensor as TorchTensor
 
 
+def get_device_arch() -> str:
+    """
+    Return the hardware architecture of the connected TT device.
+
+    Returns:
+        str: ``"wormhole"``, ``"blackhole"``, or ``""`` when no device is
+        present or the arch cannot be determined.
+    """
+    try:
+        from forge._C.runtime.experimental import TTSystem
+
+        system = TTSystem.get_system()
+        if not system.devices:
+            return ""
+        arch_name = str(system.devices[0].arch).lower()
+        for family in ("wormhole", "blackhole"):
+            if family in arch_name:
+                return family
+        return ""
+    except Exception:
+        return ""
+
+
+def get_device_count() -> int:
+    """
+    Return the total number of TT chips visible to the host.
+
+    Returns:
+        int: Chip count, or ``0`` when the system cannot be queried.
+    """
+    try:
+        from forge._C.runtime.experimental import TTSystem
+
+        return len(TTSystem.get_system().chip_ids)
+    except Exception:
+        return 0
+
+
+def get_device_type(arch: str, device_count: int) -> str:
+    """
+    Map a coarse architecture family and chip count to a product-label string.
+
+    =============  ============  ===========
+    arch           device_count  label
+    =============  ============  ===========
+    wormhole       1             ``n150``
+    wormhole       2             ``n300``
+    blackhole      1             ``p150``
+    blackhole      2             ``p300``
+    *any*          8             ``llmbox``
+    *any*          32            ``galaxy``
+    =============  ============  ===========
+
+    Args:
+        arch (str): Coarse arch string (``"wormhole"`` or ``"blackhole"``).
+        device_count (int): Number of chips from the system descriptor.
+
+    Returns:
+        str: Product label, or ``"unknown"`` when no rule matches.
+    """
+    if device_count == 32:
+        return "galaxy"
+    if device_count == 8:
+        return "llmbox"
+    if arch == "wormhole":
+        if device_count == 1:
+            return "n150"
+        if device_count == 2:
+            return "n300"
+    if arch == "blackhole":
+        if device_count == 1:
+            return "p150"
+        if device_count == 2:
+            return "p300"
+    return "unknown"
+
+
 class StrEnum(str, Enum):
     def __str__(self):
         return self.value
@@ -546,6 +623,7 @@ class Tags:
     group: Optional[str] = None
     parallelism: Optional[Parallelism] = Parallelism.SINGLE_DEVICE.value
     emitc_status: Optional[bool] = None
+    arch: Optional[str] = None
 
 
 @dataclass_json
@@ -728,6 +806,15 @@ class ForgePropertyHandler:
     def record_emitc_status(self, is_success: bool):
         self.add("tags.emitc_status", is_success)
 
+    def record_arch(self, arch: str):
+        """
+        Records the hardware architecture label (e.g. "n150", "n300", "p150") in the tags.
+
+        Args:
+            arch (str): Product-label string for the connected TT device.
+        """
+        self.add("tags.arch", arch)
+
     def extract_node_type(self, operand):
         if isinstance(operand, forge.Parameter):
             return "Parameter"
@@ -887,6 +974,20 @@ def record_emitc_status(is_success: bool):
         return
 
     fph.record_emitc_status(is_success)
+
+
+def record_arch(arch: str):
+    """
+    Records the hardware architecture label (e.g. "n150", "n300", "p150") in the tags.
+
+    Args:
+        arch (str): Product-label string for the connected TT device.
+    """
+    fph = forge_property_handler_var.get()
+    if fph is None:
+        return
+
+    fph.record_arch(arch)
 
 
 def record_compiler_config(compiler_config: CompilerConfig):
