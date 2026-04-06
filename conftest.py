@@ -12,6 +12,9 @@ from datetime import datetime
 from forge.forge_property_utils import (
     ForgePropertyHandler,
     forge_property_handler_var,
+    get_device_arch,
+    get_device_count,
+    get_device_type,
 )
 from forge._C.verif import malloc_trim
 
@@ -66,6 +69,15 @@ def forge_property_recorder(request, record_property):
     # Create a handler that uses the property store; the handler is responsible for recording and managing property details.
     forge_property_handler = ForgePropertyHandler()
     token = forge_property_handler_var.set(forge_property_handler)
+
+    # Auto-detect and record the hardware architecture label (e.g. n150, n300, p150).
+    arch = get_device_arch()
+    device_count = get_device_count()
+    device_type = get_device_type(arch, device_count)
+    if device_type and device_type != "unknown":
+        forge_property_handler.record_arch(device_type)
+    elif arch:
+        forge_property_handler.record_arch(arch)
 
     yield
 
