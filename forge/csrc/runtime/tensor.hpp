@@ -134,6 +134,16 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
                 host_storage->data_ptr(), desc.shape, desc.stride, desc.itemsize, desc.dataType);
         }
 
+        // Skip the toLayout call when the tensor is already in the target layout.
+        // This is the common case for persistent inputs (weights/parameters) on repeated inference
+        // calls — they are moved to device once and stay in the correct layout across runs.
+        // For training scenarios where layout must change between programs, hasLayout returns false
+        // and the conversion proceeds correctly.
+        if (tt::runtime::hasLayout(rt_tensor.value(), layout))
+        {
+            return;
+        }
+
         auto device = TTSystem::get_system().devices[device_id];
         rt_tensor = tt::runtime::toLayout(rt_tensor.value(), *device->rt_device, layout);
     }
