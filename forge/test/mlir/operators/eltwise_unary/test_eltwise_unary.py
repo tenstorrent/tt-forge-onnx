@@ -707,9 +707,7 @@ def test_floor(input_data):
             False,
         ),
         ((1, 64, 76), 2, True),
-        pytest.param(
-            (1, 64, 76), 1, True, marks=pytest.mark.xfail(reason="TTNN: Only argmax on last dim is supported!")
-        ),
+        ((1, 64, 76), 1, True),
         #################################################
         # Core test cases for global argmax (dim=None)
         pytest.param(
