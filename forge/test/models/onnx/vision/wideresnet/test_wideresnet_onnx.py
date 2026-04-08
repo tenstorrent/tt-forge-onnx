@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import torch
 import forge
 from forge.forge_property_utils import (
     Framework,
@@ -14,11 +13,12 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.onnx.vision.wideresnet.model_utils.utils import (
+from test.models.onnx.vision.vision_utils.utils import (
+    load_imagenet_inputs,
+    load_onnx_with_fallback,
+    load_torch_hub_model,
     post_processing,
-    generate_model_wideresnet_imgcls_pytorch,
 )
-import onnx
 
 
 variants = [
@@ -40,16 +40,18 @@ def test_wideresnet_onnx(variant, forge_tmp_path):
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Load Model and input
-    torch_model, inputs = generate_model_wideresnet_imgcls_pytorch(variant)
+    # Load input data
+    inputs = load_imagenet_inputs()
 
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/{variant.replace('.', '_')}.onnx"
-    torch.onnx.export(torch_model, inputs[0], onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load ONNX model
+    safe_name = variant.replace(".", "_")
+    onnx_model = load_onnx_with_fallback(
+        torch_model_loader=lambda: load_torch_hub_model(variant),
+        s3_onnx_path=f"test_files/onnx/wideresnet/{safe_name}.onnx",
+        onnx_filename=f"{safe_name}.onnx",
+        forge_tmp_path=forge_tmp_path,
+        inputs=inputs,
+    )
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Compile model

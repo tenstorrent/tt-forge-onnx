@@ -13,12 +13,12 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.onnx.vision.mobilenet.model_utils.utils import (
-    load_mobilenet_model,
+from test.models.onnx.vision.vision_utils.utils import (
+    load_imagenet_inputs,
+    load_onnx_with_fallback,
+    load_torch_hub_model,
     post_processing,
 )
-import onnx
-import torch
 
 variants = [pytest.param("mobilenet_v3_small", marks=pytest.mark.pr_models_regression)]
 
@@ -36,16 +36,17 @@ def test_mobilenetv3_basic(variant, forge_tmp_path):
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Load the model and prepare input data
-    torch_model, inputs = load_mobilenet_model(variant)
+    # Load input data
+    inputs = load_imagenet_inputs()
 
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/{variant}.onnx"
-    torch.onnx.export(torch_model, inputs[0], onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load ONNX model
+    onnx_model = load_onnx_with_fallback(
+        torch_model_loader=lambda: load_torch_hub_model(variant),
+        s3_onnx_path=f"test_files/onnx/mobilenetv3/{variant}.onnx",
+        onnx_filename=f"{variant}.onnx",
+        forge_tmp_path=forge_tmp_path,
+        inputs=inputs,
+    )
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Set data format override
