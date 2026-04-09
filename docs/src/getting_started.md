@@ -54,7 +54,7 @@ You should see the Tenstorrent System Management Interface. It allows you to vie
 
 This section walks you through downloading and installing a wheel. You can install the wheel wherever you would like.
 
-1. Make sure you are in an active virtual environment. This walkthrough uses the same environment you activated to look at TT-SMI in the [Configuring Hardware](#configuring-hardware) section.
+1. Make sure you have Python 3.12 installed and you are in an active Python 3.12 virtual environment. This walkthrough uses the same environment you activated to look at TT-SMI in the [Configuring Hardware](#configuring-hardware) section.
 
 2. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge_onnx** and **tt_tvm** wheels:
 
@@ -63,14 +63,7 @@ pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com
 pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
-3. Before you run a model, download and install the **MPI implementation**:
-
-```bash
-wget -q https://github.com/dmakoviichuk-tt/mpi-ulfm/releases/download/v5.0.7-ulfm/openmpi-ulfm_5.0.7-1_amd64.deb -O /tmp/openmpi-ulfm.deb && \
-sudo apt install -y /tmp/openmpi-ulfm.deb
-```
-
-4. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:
+3. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:
 
 ```python
 import numpy as np
@@ -97,7 +90,7 @@ output = compiled_model(x, y)
 print("Output:", output)
 ```
 
-5. You have now set up the latest wheel for TT-Forge-ONNX, and can run any models you want inside your virtual environment.
+4. You have now set up the latest wheel for TT-Forge-ONNX, and can run any models you want inside your virtual environment.
 
 ## Other Set up Options
 If you want to keep your environment completely separate in a Docker container, or you want to develop TT-Forge-ONNX further, this section links you to the pages with those options:
