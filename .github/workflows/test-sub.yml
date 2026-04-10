@@ -86,7 +86,7 @@ jobs:
         build: ${{ fromJson(inputs.runs-on) }}
         test_group_id: ${{ fromJSON(inputs.test_group_ids) }}
 
-    runs-on: ${{ inputs.sh-runner && format('tt-ubuntu-2204-{0}-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
+    runs-on: ${{ inputs.sh-runner && format('tt-ubuntu-2404-{0}-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
 
     continue-on-error: ${{ inputs.allow-fail }}
 

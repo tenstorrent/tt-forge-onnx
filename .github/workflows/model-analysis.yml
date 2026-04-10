@@ -42,11 +42,11 @@ on:
       runs-on-oom-and-crashed:
         description: 'Runs on for OOM and crashed tests cases'
         required: false
-        default: "tt-ubuntu-2204-n300-llmbox-stable"
+        default: "tt-ubuntu-2404-n300-llmbox-stable"
         type: choice
         options:
-          - tt-ubuntu-2204-n300-llmbox-stable
-          - tt-ubuntu-2204-n300-llmbox-viommu-stable
+          - tt-ubuntu-2404-n300-llmbox-stable
+          - tt-ubuntu-2404-n300-llmbox-viommu-stable
           - llmbox
           - n150-perf
       tests_to_filter:
@@ -114,7 +114,7 @@ jobs:
           default_test_group_cnt_oom_and_non_oom=7
           default_test_group_cnt_crashed=4
           default_runs_on_non_oom=n150
-          default_runs_on_oom_and_crashed=tt-ubuntu-2204-n300-llmbox-stable
+          default_runs_on_oom_and_crashed=tt-ubuntu-2404-n300-llmbox-stable
           default_create_pr=false
           default_test_kind=inference
           default_test_to_filter="forge/test/models/onnx,forge/test/models/paddlepaddle"

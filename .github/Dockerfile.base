@@ -1,4 +1,4 @@
-FROM public.ecr.aws/ubuntu/ubuntu:22.04
+FROM public.ecr.aws/ubuntu/ubuntu:24.04
 SHELL ["/bin/bash", "-c"]
 
 # Set environment variables
@@ -40,9 +40,6 @@ RUN apt-get update && apt-get install -y \
     unzip \
     xxd
 
-# Upgrade pip, setuptools, wheel (do this *after* installing python3-pip)
-RUN pip install --upgrade pip setuptools wheel
-
 # Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
@@ -51,6 +48,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     python3.12-dev \
     python3.12-venv \
     python3-pip
+
 
 # Setup / install metal dependencies
 RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
@@ -66,5 +64,5 @@ RUN wget https://apt.llvm.org/llvm.sh && \
     ln -s /usr/bin/clang++-17 /usr/bin/clang++
 
 # Install python packages
-RUN pip install cmake \
+RUN python3.12 -m pip install --break-system-packages cmake \
     pytest

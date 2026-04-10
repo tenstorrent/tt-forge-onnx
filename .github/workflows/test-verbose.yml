@@ -86,7 +86,7 @@ jobs:
       matrix:
         build: ${{ fromJson(needs.set-inputs.outputs.runs-on) }}
 
-    runs-on: ${{ inputs.sh-runner && format('tt-beta-ubuntu-2204-{0}-large-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
+    runs-on: ${{ inputs.sh-runner && format('tt-beta-ubuntu-2404-{0}-large-stable', matrix.build.runs-on) || fromJson(format('["{0}", "in-service"]', matrix.build.runs-on)) }}
     container:
       image: ${{ inputs.sh-runner && format('harbor.ci.tenstorrent.net/{0}', needs.docker-build.outputs.docker-image) || needs.docker-build.outputs.docker-image }}
       options: --device /dev/tenstorrent/0

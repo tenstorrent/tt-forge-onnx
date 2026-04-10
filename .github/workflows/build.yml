@@ -50,7 +50,7 @@ jobs:
       fail-fast: false
       matrix:
         build: [
-          { runs-on: tt-ubuntu-2204-large-stable, build-type: Release },
+          { runs-on: tt-ubuntu-2404-large-stable, build-type: Release },
         ]
 
     runs-on:
@@ -160,7 +160,7 @@ jobs:
       fail-fast: false
       matrix:
         build: [
-          { runs-on: tt-ubuntu-2204-large-stable, build-type: Debug },
+          { runs-on: tt-ubuntu-2404-large-stable, build-type: Debug },
         ]
 
     runs-on:
@@ -260,10 +260,10 @@ jobs:
 
       - name: Prepare code coverage report
         run: |
-          lcov --directory build --capture --output-file coverage.info --gcov-tool ${{ steps.strings.outputs.work-dir }}/.github/workflows/gcov_for_clang.sh
-          lcov --extract coverage.info '**/tt-forge-onnx/forge/csrc/*' --output-file coverage.info
+          lcov --directory build --capture --output-file coverage.info --gcov-tool ${{ steps.strings.outputs.work-dir }}/.github/workflows/gcov_for_clang.sh --ignore-errors inconsistent
+          lcov --extract coverage.info '**/tt-forge-onnx/forge/csrc/*' --output-file coverage.info --ignore-errors inconsistent
           sed -i 's|SF:/__w/tt-forge-onnx/tt-forge-onnx/forge/csrc/|SF:csrc/|' coverage.info
-          lcov --list coverage.info
+          lcov --list coverage.info --ignore-errors inconsistent
 
       - name: Upload coverage reports to Codecov
         if: success() || failure()

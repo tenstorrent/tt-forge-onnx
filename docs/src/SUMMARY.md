@@ -16,6 +16,9 @@
 # Operations Reference
 - [Operations](./operations.md)
 
+# CI / Docker
+- [Build Docker Images](./build_docker_images.md)
+
 # Dev Notes
 - [Running standalone FFE generated TTIRs](./dev_notes/standalone_ttir_run.md)
 - [Verification in tests](./dev_notes/verification.md)
