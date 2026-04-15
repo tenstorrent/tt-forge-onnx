@@ -111,7 +111,7 @@ jobs:
         cd ../..
 
     - name: ccache
-      uses: hendrikmuhs/ccache-action@v1.2
+      uses: hendrikmuhs/ccache-action@v1.2.22
       with:
         create-symlink: true
         key: forge-build-${{ matrix.build.build-type }}
@@ -223,7 +223,7 @@ jobs:
           cd ../..
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.22
         with:
           create-symlink: true
           max-size: 900M
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: success() || failure()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: coverage.info
           disable_search: true

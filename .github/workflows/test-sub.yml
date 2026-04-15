@@ -292,6 +292,7 @@ jobs:
         with:
           name: test-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: ${{ steps.run-test.outputs.log_path }}
+          if-no-files-found: ignore
 
       - name: Upload Test Crash Log
         uses: actions/upload-artifact@v7
@@ -299,6 +300,7 @@ jobs:
         with:
           name: test-crash-log-${{ matrix.build.runs-on }}-${{ matrix.test_group_id }}-${{ inputs.test_mark }}-${{ steps.fetch-job-id.outputs.job_id }}
           path: crashed_pytest.log
+          if-no-files-found: ignore
 
       - name: Upload Memory Usage Log
         uses: actions/upload-artifact@v7
@@ -315,7 +317,7 @@ jobs:
           path: ${{ steps.strings.outputs.test_report_path }}
 
       - name: Show Test Report
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@v6
         if: success() || failure()
         with:
           report_paths: ${{ steps.strings.outputs.test_report_path }}

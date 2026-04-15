@@ -195,6 +195,7 @@ jobs:
         with:
           name: collected-benchmark-${{ steps.strings.outputs.job_id }}
           path: .pytest_tests_to_run
+          if-no-files-found: ignore
 
       - name: Run benchmark
         shell: bash
@@ -250,7 +251,7 @@ jobs:
           path: benchmark_ci_logs/
 
       - name: Show Test Report
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@v6
         if: success() || failure()
         continue-on-error: true
         with:

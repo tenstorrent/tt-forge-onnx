@@ -14,4 +14,4 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
-      - uses: pre-commit/action@v3.0.1
+      - uses: andrewaylett/pre-commit-action@v4

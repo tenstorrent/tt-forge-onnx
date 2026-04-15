@@ -56,6 +56,6 @@ jobs:
         mdbook build docs/
 
     - name: Upload artifact
-      uses: actions/upload-pages-artifact@v4
+      uses: actions/upload-pages-artifact@57f0e8492b437b7818227931fef2faa1a379839b # v4 + upload-artifact@v7 update
       with:
         path: ./docs/book
