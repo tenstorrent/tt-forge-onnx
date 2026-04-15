@@ -185,9 +185,9 @@ jobs:
             exit 1
           fi
 
-          pip install "${tvm_wheels[@]}" --force-reinstall
+          uv pip install "${tvm_wheels[@]}" --reinstall
           if [[ ${#forge_wheels[@]} -ne 0 ]]; then
-            pip install "${forge_wheels[@]}" --force-reinstall || true
+            uv pip install "${forge_wheels[@]}" --reinstall || true
           else
             echo "No tt_forge_onnx wheel found; continuing."
           fi

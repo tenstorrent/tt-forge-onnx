@@ -123,7 +123,7 @@ def run_precommit(directory_path: str):
     # Check if pre-commit is installed
     if shutil.which("pre-commit") is None:
         logger.info("pre-commit is not installed. Installing...")
-        run_command("pip install pre-commit")
+        run_command("uv pip install pre-commit")
     else:
         logger.info("pre-commit is already installed.")
 

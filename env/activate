@@ -6,6 +6,10 @@
 # For tt-mlir we have similar env variables but since we build toolchain and binaries of tt-mlir
 # using install.sh from tt-mlir project, we only define them in tt-forge project top level cmake file.
 
+# Allow uv to select the best package version across multiple indexes (PyPI + PyTorch CPU find-links).
+# Without this, uv may fail to resolve packages correctly when extra indexes are in use.
+export UV_INDEX_STRATEGY=unsafe-best-match
+
 # Set TTFORGE_TOOLCHAIN_DIR to a default value if not already set
 export TTFORGE_TOOLCHAIN_DIR="${TTFORGE_TOOLCHAIN_DIR:-/opt/ttforge-toolchain}"
 

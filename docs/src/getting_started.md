@@ -59,8 +59,11 @@ This section walks you through downloading and installing a wheel. You can insta
 2. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge_onnx** and **tt_tvm** wheels:
 
 ```bash
-pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
-pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+# Install uv if you don't have it yet
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+uv pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+uv pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
 3. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:

@@ -161,10 +161,10 @@ def run_command(cmd: List[str]) -> str:
 
 def parse_pip_freeze(freeze_output: str) -> Dict[str, str]:
     """
-    Parses the output of 'pip freeze' and returns a dictionary of package names and versions.
+    Parses the output of 'uv pip freeze' and returns a dictionary of package names and versions.
 
     Args:
-        freeze_output (str): The output string from 'pip freeze'.
+        freeze_output (str): The output string from 'uv pip freeze'.
 
     Returns:
         Dict[str, str]: A dictionary where keys are package names and values are their versions.
@@ -187,15 +187,15 @@ def restore_package_versions():
     to revert the package back to its original version.
     """
     # Capture the state of installed packages before test execution.
-    logger.info("Capturing the initial state of installed packages using 'pip freeze'.")
-    before_freeze = run_command(["pip", "freeze"])
+    logger.info("Capturing the initial state of installed packages using 'uv pip freeze'.")
+    before_freeze = run_command(["uv", "pip", "freeze"])
     before_packages = parse_pip_freeze(before_freeze)
 
     yield
 
     # Capture the state after test execution.
-    logger.info("Capturing the final state of installed packages using 'pip freeze'.")
-    after_freeze = run_command(["pip", "freeze"])
+    logger.info("Capturing the final state of installed packages using 'uv pip freeze'.")
+    after_freeze = run_command(["uv", "pip", "freeze"])
     after_packages = parse_pip_freeze(after_freeze)
 
     # Determine which packages have changed versions.
@@ -211,7 +211,7 @@ def restore_package_versions():
         logger.info("Detected changes in package versions during the test:")
         for pkg, (orig_version, new_version) in diff_packages.items():
             logger.info(f"Package '{pkg}': current version {new_version}; reverting to {orig_version}")
-            cmd_output = run_command(["pip", "install", f"{pkg}=={orig_version}"])
+            cmd_output = run_command(["uv", "pip", "install", f"{pkg}=={orig_version}"])
             logger.info(cmd_output)
     else:
         logger.info("No package version changes detected after the test.")

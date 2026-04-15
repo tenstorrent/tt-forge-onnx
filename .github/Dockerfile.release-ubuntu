@@ -18,8 +18,10 @@ RUN apt-get update && \
     jq \
     unzip \
     ca-certificates \
-    software-properties-common \
-    python3-pip
+    software-properties-common
+
+# Install uv for fast Python package management (curl is available from the block above)
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 # Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
@@ -27,14 +29,12 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get install -y \
     python3.12 \
     python3.12-dev \
-    python3.12-venv \
-    python3-pip
-
+    python3.12-venv
 
 COPY *.whl /tmp/
 RUN python3.12 -m venv /opt/venv && \
     source /opt/venv/bin/activate && \
-    pip install --no-cache-dir /tmp/*.whl --break-system-packages && \
+    uv pip install --no-cache-dir /tmp/*.whl && \
     rm -rf /tmp/*.whl
 
 CMD ["/bin/bash"]

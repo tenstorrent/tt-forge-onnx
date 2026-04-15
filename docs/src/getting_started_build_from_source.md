@@ -43,6 +43,7 @@ The prerequisites for building TT-Forge-ONNX from source are:
 * Ninja
 * CMake (latest)
 * Python 3.12
+* `uv` (Python package manager — used to install CMake and other Python tools)
 
 On Ubuntu 24.04 systems, you can install these dependencies using the following commands:
 
@@ -52,17 +53,34 @@ sudo apt update -y
 sudo apt upgrade -y
 ```
 
+### Installing uv
+`uv` is a fast Python package manager used to install CMake and other Python tools. Install it with:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env  # or restart your shell
+```
+
+Verify the installation:
+
+```bash
+uv --version
+```
+
 ### Installing Clang
-To install Clang if you do not have it already, use the following command:
+To install Clang if you do not have it already, use the following commands:
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
 chmod u+x llvm.sh
 sudo ./llvm.sh 17
-sudo apt install -y libc++-17-dev libc++abi-17-dev
-sudo ln -s /usr/bin/clang-17 /usr/bin/clang
-sudo ln -s /usr/bin/clang++-17 /usr/bin/clang++
+sudo apt-get install -y libc++-17-dev libc++abi-17-dev
+sudo ln -sf /usr/bin/clang-17 /usr/bin/clang
+sudo ln -sf /usr/bin/clang++-17 /usr/bin/clang++
+sudo ln -sf /usr/bin/FileCheck-17 /usr/bin/FileCheck
 ```
+
+> **NOTE:** `ln -sf` (force) is used so the command is safe to re-run if symlinks already exist.
 
 You can check the version afterwards with these commands:
 
@@ -74,10 +92,8 @@ clang++ --version
 If you already have Clang installed and need to choose the appropriate version, you can use these commands:
 
 ```bash
-sudo update-alternatives --install /usr/bin/clang
-clang /usr/bin/clang-17 100
-sudo update-alternatives --install /usr/bin/clang++
-clang++ /usr/bin/clang++-17 100
+sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-17 100
+sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-17 100
 ```
 
 ### Installing Ninja
@@ -104,7 +120,7 @@ sudo apt install python3.12
 Install CMake and check the version with the following commands:
 
 ```bash
-pip install cmake
+uv pip install cmake
 ```
 
 Check that it installed:

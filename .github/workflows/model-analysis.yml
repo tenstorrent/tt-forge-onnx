@@ -468,8 +468,8 @@ jobs:
         shell: bash
         run: |
           source env/activate
-          pip install tt_tvm*.whl --force-reinstall
-          pip install tt_forge_onnx*.whl --force-reinstall
+          uv pip install tt_tvm*.whl --reinstall
+          uv pip install tt_forge_onnx*.whl --reinstall
 
       - name: Generate Models Ops tests
         shell: bash

@@ -8,7 +8,7 @@
 
 2. Build TTRT (once) - (Inside tt-mlir repo)
     ```bash
-    $ pip install patchelf
+    $ uv pip install patchelf
     $ cmake --build build -- ttrt
     ```
 

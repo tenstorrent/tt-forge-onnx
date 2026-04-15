@@ -1405,8 +1405,8 @@ def get_auto_path(graph_hash, compiler_cfg, is_load):
         else:
             tvm_path = os.path.dirname(tvm.__file__)
             if "site-packages" in tvm_path:
-                # Pip install case.
-                tvm_info = subprocess.check_output(["pip", "show", "tvm"]).decode("utf-8")
+                # uv-installed case.
+                tvm_info = subprocess.check_output(["uv", "pip", "show", "tvm"]).decode("utf-8")
                 for line in tvm_info.split("\n"):
                     if "Version:" in line:
                         tvm_ver = line.split("Version: ")[-1]

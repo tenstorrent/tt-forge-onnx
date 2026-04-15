@@ -6,39 +6,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 ARG TT_METAL_DEPENDENCIES_COMMIT=e1d6113542dba5683fed6e0e2363fbf26042631e
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    build-essential \
-    python3-pip \
-    git \
-    git-lfs \
-    libhwloc-dev \
-    pandoc \
-    libtbb-dev \
-    libcapstone-dev \
-    pkg-config \
-    linux-tools-generic \
-    ninja-build \
-    wget \
-    cmake \
-    ccache \
-    doxygen \
-    libgtest-dev \
-    libgmock-dev \
-    graphviz \
-    patchelf \
-    libyaml-cpp-dev \
-    libboost-all-dev \
-    jq \
-    curl \
-    gh \
-    expect \
-    lcov \
-    libgl1 \
-    libglx-mesa0 \
-    unzip \
-    xxd
+# Install build dependencies and uv via the shared install script (mirrors tt-xla's docker_install.sh pattern).
+# The pkg_install function is exported so that the script can call it for apt-get.
+COPY --chown=root:root --chmod=777 .github/docker_install.sh /tmp/docker_install.sh
+RUN pkg_install() { apt-get update && apt-get install -y "$@"; } && export -f pkg_install && /tmp/docker_install.sh && \
+    rm /tmp/docker_install.sh
 
 # Install deadsnakes PPA for latest Python versions
 RUN add-apt-repository ppa:deadsnakes/ppa && \
@@ -46,9 +18,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get install -y \
     python3.12 \
     python3.12-dev \
-    python3.12-venv \
-    python3-pip
-
+    python3.12-venv
 
 # Setup / install metal dependencies
 RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
@@ -59,10 +29,11 @@ RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPEN
 RUN wget https://apt.llvm.org/llvm.sh && \
     chmod u+x llvm.sh && \
     ./llvm.sh 17 && \
-    apt install -y libc++-17-dev libc++abi-17-dev && \
-    ln -s /usr/bin/clang-17 /usr/bin/clang && \
-    ln -s /usr/bin/clang++-17 /usr/bin/clang++
+    apt-get install -y libc++-17-dev libc++abi-17-dev && \
+    ln -sf /usr/bin/clang-17 /usr/bin/clang && \
+    ln -sf /usr/bin/clang++-17 /usr/bin/clang++ && \
+    ln -sf /usr/bin/FileCheck-17 /usr/bin/FileCheck
 
 # Install python packages
-RUN python3.12 -m pip install --break-system-packages cmake \
+RUN uv pip install --system cmake \
     pytest

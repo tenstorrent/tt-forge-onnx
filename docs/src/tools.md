@@ -14,7 +14,7 @@ To install pre-commit, run the following command:
 
 ```sh
 source env/activate
-pip install pre-commit
+uv tool install pre-commit
 ```
 
 After installing pre-commit, you can install the hooks by running:

@@ -143,8 +143,8 @@ jobs:
         shell: bash
         run: |
           source env/activate
-          pip install tt_tvm*.whl --upgrade
-          pip install tt_forge_onnx*.whl --upgrade
+          uv pip install tt_tvm*.whl --upgrade
+          uv pip install tt_forge_onnx*.whl --upgrade
 
 
       - name: Set caching env variables

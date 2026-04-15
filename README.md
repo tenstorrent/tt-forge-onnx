@@ -28,8 +28,11 @@
 Install TT-Forge-ONNX and run an ONNX model on Tenstorrent hardware:
 
 ```bash
-pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
-pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+# Install uv if you don't have it yet
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+uv pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.com/
+uv pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
 ```python
