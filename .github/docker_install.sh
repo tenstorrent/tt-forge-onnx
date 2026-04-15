@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-set -e
+set -eo pipefail
 
 # Install forge-onnx specific build dependencies
 pkg_install \
@@ -19,7 +19,6 @@ pkg_install \
     linux-tools-generic \
     ninja-build \
     wget \
-    cmake \
     ccache \
     doxygen \
     libgtest-dev \
@@ -37,6 +36,3 @@ pkg_install \
     libglx-mesa0 \
     unzip \
     xxd
-
-# Install uv for fast Python package management
-curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh

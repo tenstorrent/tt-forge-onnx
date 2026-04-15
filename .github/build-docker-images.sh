@@ -5,6 +5,10 @@
 
 set -e
 
+# Enable BuildKit for parallel multi-stage builds, better layer caching,
+# and support for advanced Dockerfile features (e.g. --mount=type=cache).
+export DOCKER_BUILDKIT=1
+
 REPO=tenstorrent/tt-forge-onnx
 BASE_IMAGE_NAME=ghcr.io/$REPO/tt-forge-onnx-base-ubuntu-24-04
 CI_IMAGE_NAME=ghcr.io/$REPO/tt-forge-onnx-ci-ubuntu-24-04

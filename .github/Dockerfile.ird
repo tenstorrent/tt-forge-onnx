@@ -9,26 +9,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain
 ENV TTFORGE_TOOLCHAIN_DIR=/opt/ttforge-toolchain
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    ssh \
+# Install interactive developer tools and GDB in a single layer.
+# wget and gh are already present in the base image (installed via docker_install.sh).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssh-server \
     sudo \
-    wget \
     htop \
     vim \
     zsh \
     screen \
-    gh
-
-# Create a directory for the toolchain and set permissions
-RUN mkdir -p $TTMLIR_TOOLCHAIN_DIR && \
-    chmod -R 777 $TTMLIR_TOOLCHAIN_DIR
-
-RUN mkdir -p $TTFORGE_TOOLCHAIN_DIR && \
-    chmod -R 777 $TTFORGE_TOOLCHAIN_DIR
-
-# Install GDB (Ubuntu 24.04 Noble ships gdb 15.x via apt — no need to compile from source)
-RUN apt-get update && apt-get install -y \
     gdb \
     libmpfr-dev && \
-    gdb --version
+    gdb --version && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create toolchain directories in one layer
+RUN mkdir -p $TTMLIR_TOOLCHAIN_DIR $TTFORGE_TOOLCHAIN_DIR && \
+    chmod -R 777 $TTMLIR_TOOLCHAIN_DIR $TTFORGE_TOOLCHAIN_DIR

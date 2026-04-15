@@ -73,8 +73,7 @@ jobs:
         id: build
         shell: bash
         run: |
-          # Output the image name
-          set pipefail
+          set -o pipefail
           .github/build-docker-images.sh | tee docker.log
           DOCKER_CI_IMAGE=$(tail -n 1 docker.log)
           echo "DOCKER_CI_IMAGE $DOCKER_CI_IMAGE"

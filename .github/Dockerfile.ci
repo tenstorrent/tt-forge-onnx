@@ -1,47 +1,38 @@
 ARG FROM_TAG=latest
 
+# Stage 1: build the toolchain inside a full source checkout
 FROM ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-base-ubuntu-24-04:${FROM_TAG} AS ci-build
 SHELL ["/bin/bash", "-c"]
 
-# Set environment variables
 ENV PROJECT_NAME=tt-forge-onnx
 ENV TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain
 ENV TTFORGE_TOOLCHAIN_DIR=/opt/ttforge-toolchain
 ENV TTMLIR_PYTHON_VERSION=python3.12
 
-# Create a directory for the build and toolchain
 ARG BUILD_DIR=/home/build
-RUN mkdir -p $BUILD_DIR && \
-    mkdir -p $TTMLIR_TOOLCHAIN_DIR && \
-    mkdir -p $TTFORGE_TOOLCHAIN_DIR
 
-# Copy the project to the container
-ADD . $BUILD_DIR/$PROJECT_NAME
+# Create required directories up front
+RUN mkdir -p $BUILD_DIR $TTMLIR_TOOLCHAIN_DIR $TTFORGE_TOOLCHAIN_DIR
 
-# Build the toolchain
+COPY . $BUILD_DIR/$PROJECT_NAME
+
 WORKDIR $BUILD_DIR/$PROJECT_NAME
 
-# Show last commit
-RUN git log -1
-
-# Build the toolchain
-WORKDIR $BUILD_DIR/$PROJECT_NAME
-RUN source env/activate && \
+RUN git log -1 && \
+    source env/activate && \
     cmake -B env/build env && \
     cmake --build env/build
 
+# Stage 2: lean runtime image — only copy the compiled toolchain artifacts
 FROM ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-base-ubuntu-24-04:${FROM_TAG} AS ci
-
-# Copy the TTMLIR_TOOLCHAIN_DIR from the previous stage
+SHELL ["/bin/bash", "-c"]
 
 ENV TTMLIR_TOOLCHAIN_DIR=/opt/ttmlir-toolchain
 ENV TTFORGE_TOOLCHAIN_DIR=/opt/ttforge-toolchain
 
-RUN echo "Copying from ci-build stage $TTMLIR_TOOLCHAIN_DIR"
 COPY --from=ci-build $TTMLIR_TOOLCHAIN_DIR $TTMLIR_TOOLCHAIN_DIR
-
-RUN echo "Copying from ci-build stage $TTFORGE_TOOLCHAIN_DIR"
 COPY --from=ci-build $TTFORGE_TOOLCHAIN_DIR $TTFORGE_TOOLCHAIN_DIR
 
-RUN du -h --max-depth=2 $TTMLIR_TOOLCHAIN_DIR
-RUN du -h --max-depth=2 $TTFORGE_TOOLCHAIN_DIR
+# Sanity check: print toolchain sizes so CI logs show what was copied
+RUN du -h --max-depth=2 $TTMLIR_TOOLCHAIN_DIR && \
+    du -h --max-depth=2 $TTFORGE_TOOLCHAIN_DIR

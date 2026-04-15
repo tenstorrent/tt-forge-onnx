@@ -1,39 +1,47 @@
 FROM public.ecr.aws/ubuntu/ubuntu:24.04
 SHELL ["/bin/bash", "-c"]
 
-# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+
+# astral.sh is blocked in this CI environment; pull uv from its official GHCR image instead.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 ARG TT_METAL_DEPENDENCIES_COMMIT=e1d6113542dba5683fed6e0e2363fbf26042631e
 
-# Install build dependencies and uv via the shared install script (mirrors tt-xla's docker_install.sh pattern).
-# The pkg_install function is exported so that the script can call it for apt-get.
+# Install build dependencies via the shared install script.
 COPY --chown=root:root --chmod=777 .github/docker_install.sh /tmp/docker_install.sh
-RUN pkg_install() { apt-get update && apt-get install -y "$@"; } && export -f pkg_install && /tmp/docker_install.sh && \
-    rm /tmp/docker_install.sh
+RUN pkg_install() { apt-get update && apt-get install -y --no-install-recommends "$@"; } && export -f pkg_install && \
+    /tmp/docker_install.sh && \
+    rm /tmp/docker_install.sh && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install deadsnakes PPA for latest Python versions
+# Install Python 3.12 from the deadsnakes PPA.
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y \
-    python3.12 \
-    python3.12-dev \
-    python3.12-venv
+    apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-dev \
+        python3.12-venv && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Setup / install metal dependencies
-RUN wget https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
+RUN wget -q https://raw.githubusercontent.com/tenstorrent/tt-metal/${TT_METAL_DEPENDENCIES_COMMIT}/{install_dependencies.sh,tt_metal/sfpi-info.sh,tt_metal/sfpi-version} && \
     chmod u+x sfpi-info.sh && \
-    bash install_dependencies.sh --docker
+    bash install_dependencies.sh --docker && \
+    rm -f install_dependencies.sh sfpi-info.sh sfpi-version && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install clang 17
-RUN wget https://apt.llvm.org/llvm.sh && \
+# Install Clang 17; use -sf so symlinks are safe to re-create on layer cache misses.
+RUN wget -q https://apt.llvm.org/llvm.sh && \
     chmod u+x llvm.sh && \
     ./llvm.sh 17 && \
-    apt-get install -y libc++-17-dev libc++abi-17-dev && \
+    apt-get install -y --no-install-recommends libc++-17-dev libc++abi-17-dev && \
     ln -sf /usr/bin/clang-17 /usr/bin/clang && \
     ln -sf /usr/bin/clang++-17 /usr/bin/clang++ && \
-    ln -sf /usr/bin/FileCheck-17 /usr/bin/FileCheck
+    ln -sf /usr/bin/FileCheck-17 /usr/bin/FileCheck && \
+    rm -f llvm.sh && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install python packages
-RUN uv pip install --system cmake \
-    pytest
+# --break-system-packages is required on Ubuntu 24.04 (PEP 668): the system Python at /usr
+# is marked as "externally managed" by Debian and blocks direct installs without this flag.
+RUN uv pip install --system --break-system-packages --no-cache-dir cmake pytest
