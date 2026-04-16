@@ -27,10 +27,10 @@ variants = [
     ModelVariant.DLA60,
     pytest.param(ModelVariant.DLA60X, marks=pytest.mark.pr_models_regression),
     ModelVariant.DLA60X_C,
-    pytest.param(ModelVariant.DLA102),
-    pytest.param(ModelVariant.DLA102X),
+    ModelVariant.DLA102,
+    ModelVariant.DLA102X,
     ModelVariant.DLA102X2,
-    pytest.param(ModelVariant.DLA169),
+    ModelVariant.DLA169,
 ]
 
 
@@ -43,7 +43,7 @@ def test_dla_onnx(variant, tmp_path):
         model=ModelArch.DLA,
         variant=variant,
         task=Task.CV_IMAGE_ENCODING,
-        source=Source.TORCHVISION,
+        source=Source.TIMM,
     )
 
     # Load model and input using tt_forge_models
@@ -72,9 +72,6 @@ def test_dla_onnx(variant, tmp_path):
 
     # Compile
     compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
-
-    # Adjust verify config for known numerical sensitivity
-    verify_cfg = VerifyConfig()
 
     # Verify
     _, co_out = verify(inputs, framework_model, compiled_model)
