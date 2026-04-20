@@ -24,10 +24,6 @@ on:
         required: true
         type: string
 
-permissions:
-  packages: write
-  checks: write
-
 jobs:
   uplift-pr:
     runs-on: ubuntu-latest
