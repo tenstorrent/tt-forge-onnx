@@ -1,0 +1,18 @@
+# Daily uplift of the tt_forge_models submodule to origin/main.
+
+name: Nightly Uplift Forge Models
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # Runs at 04:00 UTC every day
+  workflow_dispatch:
+
+jobs:
+  uplift-tt-forge-models:
+    uses: ./.github/workflows/call-uplift-submodule.yml
+    with:
+      submodule_path: third_party/tt_forge_models
+      submodule_version: origin/main
+      pr_branch: uplift-tt-forge-models
+      upstream_repo: tenstorrent/tt-forge-models
+    secrets: inherit

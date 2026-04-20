@@ -1,12 +1,28 @@
-# This workflow automates creation of uplift pull requests.
-# Uplift PR is created daily to uplift the submodule to the latest version.
+# Reusable workflow for uplifting a submodule to its latest version.
+# Creates, approves, and auto-merges an uplift pull request.
 
-name: Nighty Uplift
+name: Call - Uplift Submodule
 
 on:
-  schedule:
-    - cron: '0 8 * * *'  # Runs at 08:00 UTC every day
-  workflow_dispatch:  # Manual trigger
+  workflow_call:
+    inputs:
+      submodule_path:
+        description: 'Relative path to the submodule (e.g. third_party/tt-mlir)'
+        required: true
+        type: string
+      submodule_version:
+        description: 'Git ref to uplift the submodule to (e.g. origin/main)'
+        required: false
+        type: string
+        default: 'origin/main'
+      pr_branch:
+        description: 'Branch name to use for the uplift PR'
+        required: true
+        type: string
+      upstream_repo:
+        description: 'GitHub repo slug used to build commit links (e.g. tenstorrent/tt-mlir)'
+        required: true
+        type: string
 
 permissions:
   packages: write
@@ -16,41 +32,39 @@ jobs:
   uplift-pr:
     runs-on: ubuntu-latest
 
-    env:
-      SUBMODULE_PATH: third_party/tt-mlir
-      SUBMODULE_VERSION: origin/main
-
     steps:
 
       - uses: actions/checkout@v5
         with:
           submodules: recursive
-          fetch-depth: 0 # Fetch all history and tags
+          fetch-depth: 0  # Fetch all history and tags
           ref: main
 
-      - name: Set env variable
+      - name: Set env variables
         run: |
           echo "TODAY=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+          echo "SUBMODULE_PATH=${{ inputs.submodule_path }}" >> $GITHUB_ENV
+          echo "SUBMODULE_VERSION=${{ inputs.submodule_version }}" >> $GITHUB_ENV
 
-      - name: Update submodule & Fetch commit history from tt-mlir repository
+      - name: Update submodule & fetch commit history from upstream repository
         run: |
-          cd $SUBMODULE_PATH
+          cd ${{ inputs.submodule_path }}
           git fetch origin
           CURRENT_COMMIT_SHA=$(git rev-parse HEAD)
           echo "CURRENT_COMMIT_SHA=$CURRENT_COMMIT_SHA" >> $GITHUB_ENV
-          git checkout $SUBMODULE_VERSION
+          git checkout ${{ inputs.submodule_version }}
           LATEST_SHA=$(git rev-parse HEAD)
           echo "LATEST_SHA=$LATEST_SHA" >> $GITHUB_ENV
-          echo "### Latest commit in $SUBMODULE_PATH ###"
+          echo "### Latest commit in ${{ inputs.submodule_path }} ###"
           git log -1
-          # Fetch commit history between $COMMIT_SHA and LATEST_SHA
-          echo "### List of tt-mlir commits since previous uplift:" > ${{ runner.temp }}/commit_list.txt
-          git log --oneline $CURRENT_COMMIT_SHA..$LATEST_SHA >>${{ runner.temp }}/commit_list_orig.txt
+          # Build a commit list with hyperlinks since the previous uplift
+          echo "### List of ${{ inputs.upstream_repo }} commits since previous uplift:" > ${{ runner.temp }}/commit_list.txt
+          git log --oneline $CURRENT_COMMIT_SHA..$LATEST_SHA >> ${{ runner.temp }}/commit_list_orig.txt
           cat ${{ runner.temp }}/commit_list_orig.txt
           while IFS= read -r line; do
             sha=$(echo "$line" | awk '{print $1}')
             rest=$(echo "$line" | cut -d' ' -f2-)
-            echo "[${sha}](https://github.com/tenstorrent/tt-mlir/commit/${sha}) ${rest}" >> ${{ runner.temp }}/commit_list.txt
+            echo "[${sha}](https://github.com/${{ inputs.upstream_repo }}/commit/${sha}) ${rest}" >> ${{ runner.temp }}/commit_list.txt
           done < ${{ runner.temp }}/commit_list_orig.txt
           cd ../..
 
@@ -58,13 +72,13 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         id: create-pr
         with:
-          branch: uplift
+          branch: ${{ inputs.pr_branch }}
           committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           author: ${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>
           base: main
-          commit-message: "Uplift ${{ env.SUBMODULE_PATH }} to ${{ env.SUBMODULE_VERSION }} (${{ env. LATEST_SHA }}) ${{ env.TODAY }}"
-          title: "Uplift ${{ env.SUBMODULE_PATH }} to ${{ env.SUBMODULE_VERSION }} (${{ env. LATEST_SHA }}) ${{ env.TODAY }}"
-          body: "This PR uplifts the ${{ env.SUBMODULE_PATH }} submodule to the ${{ env.SUBMODULE_VERSION }}"
+          commit-message: "Uplift ${{ inputs.submodule_path }} to ${{ inputs.submodule_version }} (${{ env.LATEST_SHA }}) ${{ env.TODAY }}"
+          title: "Uplift ${{ inputs.submodule_path }} to ${{ inputs.submodule_version }} (${{ env.LATEST_SHA }}) ${{ env.TODAY }}"
+          body: "This PR uplifts the ${{ inputs.submodule_path }} submodule to ${{ inputs.submodule_version }}"
           labels: uplift
           delete-branch: true
           token: ${{ secrets.GH_TOKEN }}
