@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
+
 #include "autograd/autograd.hpp"
 #include "graph_lib/node_types.hpp"
 #include "graph_lib/shape.hpp"
@@ -27,10 +29,10 @@ at::Tensor eval(const Op &op, const std::vector<at::Tensor> &tensors)
     TT_ASSERT(op.attrs().size() == 2, "reduce_avg should have 2 attrs (dim, keep_dim).");
 
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
     bool keep_dim = op.attr_as<bool>("keep_dim");
 
-    return torch::mean(tensors[0], dim, keep_dim);
+    std::vector<int64_t> dims64(dims.begin(), dims.end());
+    return torch::mean(tensors[0], at::IntArrayRef(dims64), keep_dim);
 }
 
 std::tuple<graphlib::Shape, std::vector<graphlib::DimBroadcast>> shape(
@@ -56,28 +58,42 @@ tt::graphlib::NodeContext backward(
     TT_ASSERT(inputs.size() == 1, "reduce_avg should have single input.");
     TT_ASSERT(operand == 0, "Invalid operand index.");
 
-    // For avg, gradient needs to be broadcast back to original shape
-    // with scale factor 1 / size
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
-    if (dim < 0)
-        dim += inputs[0].shape.size();
-    std::uint32_t size = inputs[0].shape[dim];
+    bool keep_dim = op.attr_as<bool>("keep_dim");
+    int ndim = inputs[0].shape.size();
 
-    NodeContext unsqueeze = gradient;
-    if (!op.attr_as<bool>("keep_dim"))
+    // Normalize negative dims and sort ascending so unsqueezes insert at the
+    // correct positions when processed in order.
+    for (auto &d : dims)
+        if (d < 0)
+            d += ndim;
+    std::vector<int> sorted_dims = dims;
+    std::sort(sorted_dims.begin(), sorted_dims.end());
+
+    // Number of elements contributing to each averaged output (= product of reduced
+    // dim sizes). Each input position contributes dy * (1 / total_elements).
+    std::uint32_t total_elements = 1;
+    for (int d : sorted_dims) total_elements *= inputs[0].shape[d];
+
+    NodeContext current = gradient;
+
+    // If keep_dim was false, re-insert size-1 dims so the gradient matches input rank.
+    if (!keep_dim)
     {
-        // If keep_dim is false, we need to unsqueeze the gradient to match the input shape.
-        unsqueeze = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", dim}}), {gradient});
+        for (int d : sorted_dims) current = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", d}}), {current});
     }
 
-    std::vector<int> repeats(unsqueeze.shape.size(), 1);
-    repeats[dim] = size;
-    NodeContext repeat = ac.autograd->create_op(ac, Op(OpType::Repeat, {{"repeats", repeats}}), {unsqueeze});
+    // Broadcast the gradient along every reduced dim via Repeat.
+    // Repeat (not Broadcast) is used because Broadcast is converted to an edge TM in
+    // pre_lowering_passes and is therefore never lowered to MLIR for the backward graph.
+    std::vector<int> repeats(ndim, 1);
+    for (int d : sorted_dims) repeats[d] = static_cast<int>(inputs[0].shape[d]);
 
-    NodeContext consts = ac.autograd->create_constant(ac, 1.0 / size);
+    current = ac.autograd->create_op(ac, Op(OpType::Repeat, {{"repeats", repeats}}), {current});
 
-    return ac.autograd->create_op(ac, Op(OpType::Multiply), {repeat, consts});
+    // Scale by 1 / total_elements to complete the mean backward.
+    NodeContext scale = ac.autograd->create_constant(ac, 1.0 / static_cast<double>(total_elements));
+    return ac.autograd->create_op(ac, Op(OpType::Multiply), {current, scale});
 }
 
 void decompose_initial(
@@ -88,25 +104,36 @@ void decompose_initial(
     TT_ASSERT(inputs.size() == 1, "reduce_avg should have single input.");
 
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
-    if (dim < 0)
-        dim += inputs[0].shape.size();
+    int ndim = inputs[0].shape.size();
 
-    if (inputs[0].shape[dim] == 1)
+    for (auto &d : dims)
+        if (d < 0)
+            d += ndim;
+
+    // Only fuse away the reduce when every reduced dim already has size 1 — then
+    // reducing is either a no-op (keep_dim=true) or just a rank adjustment
+    // (keep_dim=false, handled via Squeeze).
+    bool all_size_one = std::all_of(dims.begin(), dims.end(), [&](int d) { return inputs[0].shape[d] == 1; });
+
+    if (!all_size_one)
+        return;
+
+    if (op.attr_as<bool>("keep_dim"))
     {
-        // We are reducing on a dimension that is already 1, which is potentially a no-op.
-        if (op.attr_as<bool>("keep_dim"))
-        {
-            // `keep_dim` is true, hence we don't need to do anything.
-            NodeContext result = dc.op(Op(OpType::Nop), {inputs[0]});
-            dc.fuse(result);
-            return;
-        }
-
-        // In this case, we can replace `reduce_sum` with a `squeeze` operation.
-        NodeContext result = dc.op(Op(OpType::Squeeze, {{"dim", dim}}), {inputs[0]});
+        NodeContext result = dc.op(Op(OpType::Nop), {inputs[0]});
         dc.fuse(result);
+        return;
     }
+
+    // Squeeze each reduced dim; process in descending order to keep indices valid
+    // as earlier squeezes shift the positions of later ones.
+    std::vector<int> sorted_desc = dims;
+    std::sort(sorted_desc.begin(), sorted_desc.end(), std::greater<int>());
+
+    NodeContext current = inputs[0];
+    for (int d : sorted_desc) current = dc.op(Op(OpType::Squeeze, {{"dim", d}}), {current});
+
+    dc.fuse(current);
 }
 
 }  // namespace reduce_avg

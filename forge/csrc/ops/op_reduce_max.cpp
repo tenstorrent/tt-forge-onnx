@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
+
 #include "autograd/autograd.hpp"
 #include "graph_lib/node_types.hpp"
 #include "graph_lib/shape.hpp"
@@ -27,10 +29,11 @@ at::Tensor eval(const Op &op, const std::vector<at::Tensor> &tensors)
     TT_ASSERT(op.attrs().size() == 2, "reduce_max should have 2 attrs (dim_arg, keep_dim).");
 
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
     bool keep_dim = op.attr_as<bool>("keep_dim");
 
-    return std::get<0>(torch::max(tensors[0], dim, keep_dim));
+    // torch::amax supports a list of dims; use it for both single- and multi-dim cases.
+    std::vector<int64_t> dims64(dims.begin(), dims.end());
+    return torch::amax(tensors[0], at::IntArrayRef(dims64), keep_dim);
 }
 
 std::tuple<graphlib::Shape, std::vector<graphlib::DimBroadcast>> shape(
@@ -44,7 +47,6 @@ std::tuple<graphlib::Shape, std::vector<graphlib::DimBroadcast>> shape(
 }
 
 tt::graphlib::NodeContext backward(
-
     const Op &op,
     tt::autograd::autograd_context &ac,
     int operand,
@@ -57,97 +59,115 @@ tt::graphlib::NodeContext backward(
     TT_ASSERT(operand == 0, "Invalid operand index.");
 
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
-    if (dim < 0)
-        dim += inputs[0].shape.size();
+    bool keep_dim = op.attr_as<bool>("keep_dim");
+    int ndim = static_cast<int>(inputs[0].shape.size());
 
-    // This version takes only the first of multiple maximal values (like pytorch)
-    NodeContext one = ac.autograd->create_constant(ac, 1.0);
+    // Normalize negative dims and sort ascending so unsqueeze inserts at correct positions.
+    for (auto &d : dims)
+        if (d < 0)
+            d += ndim;
+    std::vector<int> sorted_dims = dims;
+    std::sort(sorted_dims.begin(), sorted_dims.end());
 
-    // Create negative range tensor: -(torch.arange(in0.shape[dim]) - in0.shape[dim]).float()
-    // Example: [3, 2, 1] for dim = 2 and dim_size = 3
-    std::uint32_t dim_size = inputs[0].shape[dim];
-    at::Tensor neg_range_values = dim_size - torch::arange(dim_size, torch::kFloat32);
+    // Repeat factors along every reduced dim; identity along the rest.
+    std::vector<int> repeats(ndim, 1);
+    for (int d : sorted_dims) repeats[d] = static_cast<int>(inputs[0].shape[d]);
 
-    // Create shape for neg_range: [1] * len(in0.shape) with shape[dim] = dim_size
-    // Example: [1, 1, 3] for dim = 2 and dim_size = 3
-    std::vector<int64_t> shape(inputs[0].shape.size(), 1);
-    shape[dim] = dim_size;
-    neg_range_values = neg_range_values.reshape(shape);
-
-    NodeContext neg_range = ac.autograd->create_constant_tensor(ac, neg_range_values);
-
-    NodeContext unsqueeze = output;
-    if (!op.attr_as<bool>("keep_dim"))
+    // Step 1: restore the max output to input rank when keep_dim=false by unsqueezing
+    // every reduced dim (ascending order keeps indices valid).
+    NodeContext max_expanded = output;
+    if (!keep_dim)
     {
-        // If keep_dim is false, we need to unsqueeze the output to match the input shape.
-        unsqueeze = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", dim}}), {output});
+        for (int d : sorted_dims)
+            max_expanded = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", d}}), {max_expanded});
     }
 
-    // mask = subtract(in0, output) - has 0.0 in max positions and < 0.0 everywhere else
-    NodeContext mask = ac.autograd->create_op(ac, Op(OpType::Subtract), {inputs[0], unsqueeze});
+    // Step 2: broadcast max to the full input shape via Repeat. We use Repeat rather
+    // than Broadcast because Broadcast is lowered to an edge TM in pre_lowering_passes
+    // and never materializes in the MLIR backward graph.
+    NodeContext max_repeated = ac.autograd->create_op(ac, Op(OpType::Repeat, {{"repeats", repeats}}), {max_expanded});
 
-    // mask = add(mask, one) - has 1.0 in max positions and < 1.0 everywhere else
-    mask = ac.autograd->create_op(ac, Op(OpType::Add), {mask, one});
+    // Step 3: build a mask that is 1.0 at argmax positions and 0.0 elsewhere.
+    //
+    // A direct equality test (input == max) is unreliable on Wormhole hardware:
+    // `ttnn.max` (used in the forward) does not always return a value that exactly
+    // matches any input element, so `input - max` is often slightly negative at the
+    // true argmax instead of exactly zero. This corrupts a comparison-based mask.
+    //
+    // Instead, compute a soft mask via a sharp softmax over the reduced dims:
+    //   soft_mask = exp(scale * (input - max)) / reduce_sum(exp(scale * (input - max)))
+    // and threshold it at 0.5 to obtain a hard one-hot mask. The softmax concentrates
+    // the mass at the argmax position regardless of the small hardware precision
+    // error in the max value itself, and it relies only on Exp (element-wise, exact)
+    // and ReduceSum (precise on TT hardware) — it does not rely on the precise result
+    // of ReduceMax.
+    //
+    // A scale of 2000 keeps exp in numerically safe range for inputs in [0, 1] while
+    // making the softmax sharp enough that the argmax position exceeds the 0.5
+    // threshold even for reductions of up to ~128 elements.
+    NodeContext diff = ac.autograd->create_op(ac, Op(OpType::Subtract), {inputs[0], max_repeated});
+    NodeContext scale = ac.autograd->create_constant(ac, 2000.0);
+    NodeContext scaled_diff = ac.autograd->create_op(ac, Op(OpType::Multiply), {diff, scale});
+    NodeContext exp_diff = ac.autograd->create_op(ac, Op(OpType::Exp), {scaled_diff});
+    NodeContext sum_exp =
+        ac.autograd->create_op(ac, Op(OpType::ReduceSum, {{"dim_arg", sorted_dims}, {"keep_dim", true}}), {exp_diff});
+    NodeContext sum_exp_repeated = ac.autograd->create_op(ac, Op(OpType::Repeat, {{"repeats", repeats}}), {sum_exp});
+    NodeContext soft_mask = ac.autograd->create_op(ac, Op(OpType::Divide), {exp_diff, sum_exp_repeated});
+    NodeContext half = ac.autograd->create_constant(ac, 0.5);
+    NodeContext mask = ac.autograd->create_op(ac, Op(OpType::GreaterEqual), {soft_mask, half});
 
-    // mask = greater_equal (mask, one) - has 1.0 in max positions, 0.0 everywhere else
-    mask = ac.autograd->create_op(ac, Op(OpType::GreaterEqual), {mask, one});
-
-    // mask = multiply(mask, neg_range) - puts range N...1 in max positions, 0.0 everywhere else
-    // Example: [1, 1, 0, 1] -> [4, 3, 0, 1]
-    mask = ac.autograd->create_op(ac, Op(OpType::Multiply), {mask, neg_range});
-
-    // redc = reduce_max(mask) - argmax
-    NodeContext redc = ac.autograd->create_op(
-        ac, Op(OpType::ReduceMax, {{"dim_arg", std::vector<int>{dim}}, {"keep_dim", true}}), {mask});
-
-    // mask = subtract(mask, redc) - Orig range - argmax, 0.0 in FIRST max position
-    mask = ac.autograd->create_op(ac, Op(OpType::Subtract), {mask, redc});
-
-    // mask = add(mask, one) - has 1.0 in first max position, and < 1.0 everywhere else
-    mask = ac.autograd->create_op(ac, Op(OpType::Add), {mask, one});
-
-    // mask = greater_equal (mask, one) - has 1.0 in first max position, and 0.0 everywhere else
-    mask = ac.autograd->create_op(ac, Op(OpType::GreaterEqual), {mask, one});
-
-    NodeContext unsqueeze_gradient = gradient;
-    if (!op.attr_as<bool>("keep_dim"))
+    // Step 4: lift the incoming gradient to input rank (mirror of Step 1).
+    NodeContext grad_expanded = gradient;
+    if (!keep_dim)
     {
-        // If keep_dim is false, we need to unsqueeze the gradient to match the input shape.
-        // This is necessary because the mask has been reduced to a single dimension.
-        unsqueeze_gradient = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", dim}}), {gradient});
+        for (int d : sorted_dims)
+            grad_expanded = ac.autograd->create_op(ac, Op(OpType::Unsqueeze, {{"dim", d}}), {grad_expanded});
     }
 
-    return ac.autograd->create_op(ac, Op(OpType::Multiply), {unsqueeze_gradient, mask});
+    // Step 5: broadcast the gradient to the full input shape via Repeat.
+    NodeContext grad_broadcast =
+        ac.autograd->create_op(ac, Op(OpType::Repeat, {{"repeats", repeats}}), {grad_expanded});
+
+    // Step 6: route the gradient to argmax positions only.
+    return ac.autograd->create_op(ac, Op(OpType::Multiply), {grad_broadcast, mask});
 }
 
-void decompose_initial(
-
-    const Op &op, DecomposingContext &dc, const std::vector<tt::graphlib::NodeContext> &inputs)
+void decompose_initial(const Op &op, DecomposingContext &dc, const std::vector<tt::graphlib::NodeContext> &inputs)
 {
     TT_DBG_ASSERT(op.type() == OpType::ReduceMax, "Wrong op type.");
     TT_ASSERT(inputs.size() == 1, "reduce_max should have single input.");
 
     std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
-    int dim = dims[0];
-    if (dim < 0)
-        dim += inputs[0].shape.size();
+    int ndim = inputs[0].shape.size();
 
-    if (inputs[0].shape[dim] == 1)
+    for (auto &d : dims)
+        if (d < 0)
+            d += ndim;
+
+    // Only fuse away the reduce when every reduced dim already has size 1 — then
+    // reducing is either a no-op (keep_dim=true) or just a rank adjustment
+    // (keep_dim=false, handled via Squeeze).
+    bool all_size_one = std::all_of(dims.begin(), dims.end(), [&](int d) { return inputs[0].shape[d] == 1; });
+
+    if (!all_size_one)
+        return;
+
+    if (op.attr_as<bool>("keep_dim"))
     {
-        // We are reducing on a dimension that is already 1, which is potentially a no-op.
-        if (op.attr_as<bool>("keep_dim"))
-        {
-            // `keep_dim` is true, hence we don't need to do anything.
-            NodeContext result = dc.op(Op(OpType::Nop), {inputs[0]});
-            dc.fuse(result);
-            return;
-        }
-
-        // In this case, we can replace `reduce_sum` with a `squeeze` operation.
-        NodeContext result = dc.op(Op(OpType::Squeeze, {{"dim", dim}}), {inputs[0]});
+        NodeContext result = dc.op(Op(OpType::Nop), {inputs[0]});
         dc.fuse(result);
+        return;
     }
+
+    // Squeeze each reduced dim; process in descending order to keep indices valid
+    // as earlier squeezes shift the positions of later ones.
+    std::vector<int> sorted_desc = dims;
+    std::sort(sorted_desc.begin(), sorted_desc.end(), std::greater<int>());
+
+    NodeContext current = inputs[0];
+    for (int d : sorted_desc) current = dc.op(Op(OpType::Squeeze, {{"dim", d}}), {current});
+
+    dc.fuse(current);
 }
 
 }  // namespace reduce_max

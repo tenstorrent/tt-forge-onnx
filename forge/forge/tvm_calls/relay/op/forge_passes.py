@@ -369,17 +369,6 @@ class DecomposeDynamicResize2d(DFPatternCallback):
         return tvm.relay.expr.Call(consumer.op, args)
 
 
-class RemoveCast(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-        self.act = wildcard()
-        self.pattern = is_op("cast")(self.act)
-
-    def callback(self, pre, post, node_map):
-        act = node_map[self.act][0]
-        return act
-
-
 class DecomposeStack(DFPatternCallback):
     def __init__(self):
         super().__init__(rewrite_once=True)
@@ -412,34 +401,6 @@ class DecomposeStack(DFPatternCallback):
         output = tvm.relay.reshape(stacked, newshape=target_shape)
 
         return output
-
-
-class DecomposeMultiAxisMax(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-        self.act = wildcard()
-        self.max = is_op("max")(self.act)
-
-        self.pattern = self.max
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.axis == None:
-            reduce_axes = [x for x in range(len(list(post.args[0].checked_type.shape)))]
-        else:
-            reduce_axes = list(post.attrs.axis)
-        if len(reduce_axes) == 1:
-            return post
-
-        acts = node_map[self.act][0]
-        keepdims = bool(post.attrs.keepdims)
-        output_shape = list(pre.checked_type.shape)
-
-        for axis in reduce_axes:
-            acts = tvm.relay.max(acts, axis=int(axis), keepdims=True)
-
-        if keepdims == False:
-            acts = tvm.relay.reshape(acts, newshape=output_shape)
-        return acts
 
 
 class DecomposeMultiAxisTranspose(DFPatternCallback):
@@ -477,62 +438,6 @@ class DecomposeMultiAxisTranspose(DFPatternCallback):
                 output = tvm.relay.transpose(output, axes=new_order)
 
         return output
-
-
-class DecomposeMultiAxisMean(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.mean = is_op("mean")(self.act)
-        self.pattern = self.mean
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.axis == None:
-            reduce_axes = [x for x in range(len(list(post.args[0].checked_type.shape)))]
-        else:
-            reduce_axes = list(post.attrs.axis)
-        if len(reduce_axes) == 1:
-            return post
-
-        acts = node_map[self.act][0]
-
-        keepdims = bool(post.attrs.keepdims)
-        output_shape = list(pre.checked_type.shape)
-
-        for axis in reduce_axes:
-            acts = tvm.relay.mean(acts, axis=int(axis), keepdims=True)
-
-        if keepdims == False:
-            # Need to squeeze in order from rightmost dim to leftmost dim
-            # Reverse sort since axes are positive
-            for axis in sorted(reduce_axes, reverse=True):
-                acts = tvm.relay.squeeze(acts, axis=[axis])
-        return acts
-
-
-class DecomposeMultiAxisSum(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.sum = is_op("sum")(self.act)
-        self.pattern = self.sum
-
-    def callback(self, pre, post, node_map):
-        reduce_axes = list(post.attrs.axis)
-        if len(reduce_axes) == 1:
-            return post
-
-        acts = node_map[self.act][0]
-
-        keepdims = bool(post.attrs.keepdims)
-        output_shape = list(pre.checked_type.shape)
-
-        for axis in reduce_axes:
-            acts = tvm.relay.sum(acts, axis=int(axis), keepdims=True)
-
-        if keepdims == False:
-            acts = tvm.relay.reshape(acts, newshape=output_shape)
-        return acts
 
 
 class DecomposeMultiAxisBroadcast(DFPatternCallback):
@@ -608,70 +513,6 @@ class DecomposeConv1DToConv2D(DFPatternCallback):
             # reshape back result
             reshaped_back_result = tvm.relay.reshape(new_conv2d, newshape=expected_output_shape)
             return reshaped_back_result
-
-
-class ReformatTFConv2d(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-        self.act = wildcard()
-        self.weight = wildcard()
-        conv = is_op("nn.conv2d")(self.act, self.weight)
-        self.pattern = conv
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.data_layout == "NHWC" and post.attrs.kernel_layout == "HWIO":
-            # convert TF channel-last to channel-first
-            act = node_map[self.act][0]
-            weight = node_map[self.weight][0]
-
-            channel_first_act = tvm.relay.transpose(act, axes=[0, 3, 1, 2])
-            channel_first_weight = tvm.relay.transpose(weight, axes=[3, 2, 0, 1])
-
-            new_conv2d = tvm.relay.op.nn.conv2d(
-                channel_first_act,
-                channel_first_weight,
-                strides=post.attrs.strides,
-                padding=post.attrs.padding,
-                groups=post.attrs.groups,
-                channels=post.attrs.channels,
-                kernel_size=post.attrs.kernel_size,
-                data_layout="NCHW",
-                kernel_layout="OIHW",
-            )
-            out_reshape = tvm.relay.transpose(new_conv2d, axes=[0, 2, 3, 1])
-            return out_reshape
-        else:
-            return post
-
-
-class ReformatTFMaxpool(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-        self.act = wildcard()
-        maxpool = is_op("nn.max_pool2d")(
-            self.act,
-        )
-        self.pattern = maxpool
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.layout == "NHWC":
-            # convert TF channel-last to channel-first
-            act = node_map[self.act][0]
-
-            channel_first_act = tvm.relay.transpose(act, axes=[0, 3, 1, 2])
-
-            new_pool = tvm.relay.op.nn.max_pool2d(
-                channel_first_act,
-                pool_size=post.attrs.pool_size,
-                strides=post.attrs.strides,
-                padding=post.attrs.padding,
-                layout="NCHW",
-                ceil_mode=post.attrs.ceil_mode,
-            )
-            out_reshape = tvm.relay.transpose(new_pool, axes=[0, 2, 3, 1])
-            return out_reshape
-        else:
-            return post
 
 
 class DecomposePower(DFPatternCallback):
@@ -1020,17 +861,23 @@ class PopulateTransposeAxes(DFPatternCallback):
 
 class PopulateReduceAxes(DFPatternCallback):
     def __init__(self, rewrite_once=True, require_type=True):
-        super().__init__()
-        self.pattern = is_op("sum")(wildcard())
+        super().__init__(rewrite_once=True, require_type=True)
+        self.pattern = is_op("sum")(wildcard()) | is_op("mean")(wildcard()) | is_op("max")(wildcard())
 
     def callback(self, pre, post, node_map):
         if pre.attrs.axis is not None:
             return post
 
         ndims = len(pre.args[0].checked_type.shape)
-        raxes = list(range(0, ndims, 1))
+        raxes = list(range(ndims))
+        op_name = pre.op.name
 
-        return tvm.relay.sum(post.args[0], axis=raxes, keepdims=pre.attrs.keepdims)
+        if op_name == "sum":
+            return tvm.relay.sum(post.args[0], axis=raxes, keepdims=pre.attrs.keepdims)
+        elif op_name == "mean":
+            return tvm.relay.mean(post.args[0], axis=raxes, keepdims=pre.attrs.keepdims)
+        else:
+            return tvm.relay.max(post.args[0], axis=raxes, keepdims=pre.attrs.keepdims)
 
 
 class RemoveRedundantReshape(DFPatternCallback):
@@ -1148,27 +995,6 @@ class LowerTakeToStridedSlice(DFPatternCallback):
 
         reshape = tvm.relay.reshape(strided_slice, newshape=pre.checked_type.shape)
         return reshape
-
-
-class AddSqueezeForArgmax(DFPatternCallback):
-    def __init__(self, rewrite_once=True, require_type=True):
-        super().__init__(rewrite_once=rewrite_once, require_type=require_type)
-        self.input_tensor = wildcard()
-        self.pattern = is_op("argmax")(self.input_tensor)
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.keepdims:
-            return post
-
-        inp = node_map[self.input_tensor][0]
-        axis = post.attrs.axis
-        new_argmax = tvm.relay.argmax(
-            inp,
-            axis=axis,
-            keepdims=True,
-        )
-        result = tvm.relay.squeeze(new_argmax, axis=axis)
-        return result
 
 
 class ConvertArgmaxTakeToReduceMax(DFPatternCallback):
@@ -2221,19 +2047,6 @@ class DecomposeRsqrt(DFPatternCallback):
         return rsqrt
 
 
-class InvertDivide(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.in_a = wildcard()
-        self.in_b = wildcard()
-
-        self.pattern = is_op("divide")(self.in_a, self.in_b)
-
-    def callback(self, pre, post, node_map):
-        rep = tvm.relay.reciprocal(post.args[1])
-        return tvm.relay.multiply(post.args[0], rep)
-
-
 class DecomposeLayoutTransform(DFPatternCallback):
     def __init__(self):
         super().__init__()
@@ -2431,20 +2244,6 @@ class DecomposeMultiDimSqueeze(DFPatternCallback):
         return act
 
 
-class LowerSqueezeToReshape(DFPatternCallback):
-    def __init__(self):
-        super().__init__(require_type=True, rewrite_once=True)
-        self.input_tensor = wildcard()
-        self.pattern = is_op("squeeze")(wildcard())
-
-    def callback(self, pre, post, node_map):
-        # Skip removal of squeeze which contain dynamic shapes
-        if any([isinstance(dim, tvm.tir.expr.Any) for dim in pre.checked_type.shape]):
-            return post
-
-        return tvm.relay.reshape(post.args[0], newshape=pre.checked_type.shape)
-
-
 class TransposePad(DFPatternCallback):
     def __init__(self):
         super().__init__(rewrite_once=True, require_type=True)
@@ -2550,42 +2349,6 @@ class ConvertAddToBiasAddAfterConv2d(DFPatternCallback):
             raise NotImplementedError(f"Unhandled data layout: {act.attrs.data_layout}")
 
 
-class ConvertAddToBiasAddAfterConv2dTFWithChannelFirst(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-        self.bias = wildcard()
-
-        self.act = wildcard()
-        self.t_act1 = is_op("transpose")(self.act)
-        self.t_act2 = is_op("transpose")(self.t_act1)
-
-        self.weight = wildcard()
-        self.t_weight1 = is_op("transpose")(self.weight)
-        self.t_weight2 = is_op("transpose")(self.t_weight1)
-        self.t_weight3 = is_op("transpose")(self.t_weight2)
-
-        self.conv = is_op("nn.conv2d")(self.t_act2, self.t_weight3)
-        self.t_conv1 = is_op("transpose")(self.conv)
-        self.t_conv2 = is_op("transpose")(self.t_conv1)
-
-        self.add = is_op("add")(self.t_conv2, self.bias)
-
-        self.relu = is_op("nn.relu")(self.add)
-        self.t_relu1 = is_op("transpose")(self.relu)
-        self.t_relu2 = is_op("transpose")(self.t_relu1)
-
-        self.pattern = self.t_relu2
-
-    def callback(self, pre, post, node_map):
-        bias = node_map[self.bias][0]
-        conv_act = node_map[self.conv][0]
-
-        bias_add = tvm.relay.nn.bias_add(conv_act, bias)
-        relu = tvm.relay.nn.relu(bias_add)
-
-        return relu
-
-
 class RemoveRedundantTranposesBetwenAvgPoolAndFlatteningReshape(DFPatternCallback):
     def __init__(self):
         super().__init__(rewrite_once=True)
@@ -2633,33 +2396,6 @@ class RemoveRedundantTranposesBetwenAvgPoolAndFlatteningReshape(DFPatternCallbac
         return flatten
 
 
-class EnsureKeepdims(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True)
-
-        self.pattern = is_op("sum")(wildcard()) | is_op("mean")(wildcard())
-
-    def callback(self, pre, post, node_map):
-        if post.attrs.keepdims == 0:
-            act = post.args[0]
-            if node_map[self.pattern][0].op.name == "sum":
-                reduce_ = tvm.relay.sum(
-                    act,
-                    axis=post.attrs.axis,
-                    keepdims=True,
-                )
-            else:
-                reduce_ = tvm.relay.mean(
-                    act,
-                    axis=post.attrs.axis,
-                    keepdims=True,
-                )
-            result = tvm.relay.squeeze(reduce_, axis=post.attrs.axis)
-            return result
-        else:
-            return post
-
-
 class DecomposeBatchFlatten(DFPatternCallback):
     def __init__(self):
         super().__init__(rewrite_once=True, require_type=True)
@@ -2670,19 +2406,6 @@ class DecomposeBatchFlatten(DFPatternCallback):
         act = node_map[self.act][0]
         input_shape = list(pre.args[0].checked_type.shape)
         target_shape = [input_shape[0]] + [math.prod(input_shape[1:])]
-
-        return tvm.relay.reshape(act, newshape=target_shape)
-
-
-class ConvertExpandDimsToReshape(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.pattern = is_op("expand_dims")(self.act)
-
-    def callback(self, pre, post, node_map):
-        act = node_map[self.act][0]
-        target_shape = list(pre.checked_type.shape)
 
         return tvm.relay.reshape(act, newshape=target_shape)
 
@@ -2796,36 +2519,6 @@ class DecomposeMultiIndexAdvIndex(DFPatternCallback):
         unsqueeze = tvm.relay.op.reshape(index, pre.checked_type.shape)
 
         return unsqueeze
-
-
-class DecomposeErf(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.pattern = is_op("erf")(self.act)
-
-    def callback(self, pre, post, node_map):
-        act = post.args[0]
-        act_sign = tvm.relay.op.sign(act)
-        act_abs = tvm.relay.op.abs(act)
-
-        # constants
-        a1 = tvm.relay.expr.const(0.254829592)
-        a2 = tvm.relay.expr.const(-0.284496736)
-        a3 = tvm.relay.expr.const(1.421413741)
-        a4 = tvm.relay.expr.const(-1.453152027)
-        a5 = tvm.relay.expr.const(1.061405429)
-        p = tvm.relay.expr.const(0.3275911)
-        one = tvm.relay.expr.const(1.0)
-        minus_one = tvm.relay.expr.const(-1.0)
-
-        t = one / (one + p * act_abs)
-        y = one - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * tvm.relay.op.exp(
-            (minus_one * act_abs) * act_abs
-        )
-        res = act_sign * y  # erf(-x) = -erf(x)
-
-        return res
 
 
 class ReconstructTFGelu(DFPatternCallback):
@@ -3174,62 +2867,6 @@ class SimplifyGroupNorm(DFPatternCallback):
         new_reshape1 = tvm.relay.reshape(new_div, node_map[self.reshape1][0].attrs.newshape)
 
         return new_reshape1
-
-
-class ReconstructPyTorchLayerNorm(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.gamma = wildcard()
-        self.beta = wildcard()
-        self.eps = is_constant()
-
-        self.mean_act = is_op("mean")(self.act)
-        sub_0 = is_op("subtract")(self.act, self.mean_act)
-        mul_0 = is_op("multiply")(sub_0, sub_0)
-        var = is_op("mean")(mul_0)
-
-        sum_denom = var.optional(lambda x: is_op("add")(x, self.eps))
-        sub = is_op("subtract")(self.act, self.mean_act)
-        denom = is_op("sqrt")(sum_denom)
-        recp = is_op("reciprocal")(denom)
-        coef = is_op("multiply")(sub, recp)
-        mul = is_op("multiply")(coef, self.gamma)
-        layernorm = is_op("add")(mul, self.beta)
-
-        self.pattern = layernorm
-
-    def callback(self, pre, post, node_map):
-        act = node_map[self.act][0]
-        gamma = node_map[self.gamma][0]
-        beta = node_map[self.beta][0]
-
-        try:
-            eps = node_map[self.eps][0].data.asnumpy().item()
-        except TVMError:  # Does not have epsilon addition
-            eps = 0
-
-        pre_node_map = construct_pre_node_map(self.pattern, pre)
-        act_shape = pre_node_map[self.act][0].checked_type.shape
-        gamma_shape = list(pre_node_map[self.gamma][0].checked_type.shape)
-
-        axis = pre_node_map[self.mean_act][0].attrs.axis
-        assert len(axis) == 1, "TVM Layernorm only supports single dim"
-        if axis[0] >= 0:
-            layernorm_axis = int(axis[0] - len(act_shape))
-        else:
-            layernorm_axis = int(axis[0])
-
-        if layernorm_axis != -1:
-            return post
-
-        if np.prod(gamma_shape) != act_shape[layernorm_axis]:
-            return post
-
-        if np.prod(pre_node_map[self.beta][0].checked_type.shape) != act_shape[layernorm_axis]:
-            return post
-
-        return tvm.relay.layernorm(act, gamma, beta, eps, layernorm_axis)
 
 
 class ReconstructTFLayerNorm(DFPatternCallback):
@@ -3854,45 +3491,6 @@ class ConvertIsNaN(DFPatternCallback):
         return cond
 
 
-class RemoveRedundantBinaryStacks(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-
-        self.act = wildcard()
-        self.tuple = is_tuple([self.act])
-        self.stack = is_op("stack")(self.tuple)
-        self.reshape = is_op("reshape")(self.stack)
-
-        self.pattern = self.reshape
-
-    def callback(self, pre, post, node_map):
-        pre_node_map = construct_pre_node_map(self.pattern, pre)
-
-        act = node_map[self.act][0]
-        stack = pre_node_map[self.stack][0]
-        reshape = pre_node_map[self.reshape][0]
-
-        if len(stack.args) != 1 and len(reshape.args) != 1:
-            return post
-
-        stack_field_input_shape = [int(i) for i in stack.args[0].checked_type.fields[0].shape]
-        reshape_shape = [int(i) for i in reshape.attrs.newshape]
-
-        if stack_field_input_shape != reshape_shape:
-            return post
-
-        # Creates duplicates
-        # from tvm.relay.frontend.common import infer_type
-        # return infer_type(act.fields[0])
-
-        # Also, creates duplicates
-        # mod = tvm.ir.IRModule.from_expr(act.fields[0])
-        # mod = transform.InferType()(mod)
-        # return mod['main'].body
-
-        return act
-
-
 class RemoveStopFusionAnnotationNodes(DFPatternCallback):
     def __init__(self):
         super().__init__(rewrite_once=True, require_type=True)
@@ -4084,215 +3682,6 @@ class SimplifyTransposeReshape(DFPatternCallback):
 
         else:
             return post
-
-
-class DecomposeNonZeroPadtoConcat(DFPatternCallback):
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-        self.act = wildcard()
-        self.pad = is_op("nn.pad")(self.act, wildcard())
-
-        self.pattern = self.pad
-
-    def callback(self, pre, post, node_map):
-        act = post.args[0]
-        pre_node_map = construct_pre_node_map(self.pattern, pre)
-        pad_width = post.attrs.pad_width
-        pad_value = post.args[1].data.numpy()
-        if pad_value == 0:
-            return post
-
-        pad_shape = list(pre_node_map[self.act][0].checked_type.shape)
-        pad_shape = [int(x) for x in pad_shape]
-        for i, item in enumerate(pad_width):
-            before = int(item[0])
-            after = int(item[1])
-            if before == 0 and after == 0:
-                continue
-
-            if before != 0:
-                current_pad_shape = pad_shape.copy()
-                current_pad_shape[i] = before
-                const = tvm.relay.const(
-                    np.ones(current_pad_shape) * pad_value, dtype=pre_node_map[self.act][0].checked_type.dtype
-                )
-                act = tvm.relay.concatenate([const, act], axis=i)
-                current_pad_shape[i] += pad_shape[i]
-                pad_shape = current_pad_shape
-
-            if after != 0:
-                current_pad_shape = pad_shape.copy()
-                current_pad_shape[i] = after
-                const = tvm.relay.const(
-                    np.ones(current_pad_shape) * pad_value, dtype=pre_node_map[self.act][0].checked_type.dtype
-                )
-                act = tvm.relay.concatenate([act, const], axis=i)
-                current_pad_shape[i] += pad_shape[i]
-                pad_shape = current_pad_shape
-        return act
-
-
-class ReplaceYolov5Perf(DFPatternCallback):
-    def __init__(self):
-        super().__init__()
-        self.mul1_1_const = wildcard()
-        self.mul1_3_const = wildcard()
-        self.mul2_1_const = wildcard()
-        self.add2_2_const = wildcard()
-        self.mul2_3_const = wildcard()
-
-        self.act = wildcard()
-        self.reshape = is_op("reshape")(self.act)
-        transpose1 = is_op("transpose")(self.reshape)
-        transpose2 = is_op("transpose")(transpose1)
-        sigmoid = is_op("sigmoid")(transpose2)
-
-        self.slice1 = is_op("strided_slice")(sigmoid)
-        mul1_1 = is_op("multiply")(self.slice1, self.mul1_1_const)
-        mul1_2 = is_op("multiply")(mul1_1, mul1_1)
-        mul1_3 = is_op("multiply")(mul1_2, self.mul1_3_const)
-
-        self.slice2 = is_op("strided_slice")(sigmoid)
-        mul2_1 = is_op("multiply")(self.slice2, self.mul2_1_const)
-        add2_2 = is_op("add")(mul2_1, self.add2_2_const)
-        mul2_3 = is_op("multiply")(add2_2, self.mul2_3_const)
-
-        self.slice3 = is_op("strided_slice")(sigmoid)
-
-        tup = is_tuple([mul2_3, mul1_3, self.slice3])
-        self.pattern = is_op("concatenate")(tup)
-
-    def callback(self, pre, post, node_map):
-        reshaped_shape = list(node_map[self.reshape][0].checked_type.shape)
-        reshaped_shape = [int(x) for x in reshaped_shape]
-        shape1 = [1, 1, reshaped_shape[1] * reshaped_shape[2], reshaped_shape[3] * reshaped_shape[4]]
-        shape2 = [1, reshaped_shape[1], reshaped_shape[2], reshaped_shape[3] * reshaped_shape[4]]
-
-        def separate_slice_attr(slice_attrs):
-            return int(slice_attrs.begin[0]), int(slice_attrs.end[0]), int(slice_attrs.axes[0])
-
-        slice1_begin, slice1_end, slice1_axis = separate_slice_attr(node_map[self.slice1][0].attrs)
-        slice2_begin, slice2_end, slice2_axis = separate_slice_attr(node_map[self.slice2][0].attrs)
-        slice3_begin, slice3_end, slice3_axis = separate_slice_attr(node_map[self.slice3][0].attrs)
-        if slice1_axis != 4 or slice2_axis != 4 or slice3_axis != 4 or len(reshaped_shape) != 5:
-            return post
-
-        act = node_map[self.act][0]
-        mul1_1_const = node_map[self.mul1_1_const][0]
-        mul1_3_const = node_map[self.mul1_3_const][0]
-        mul2_1_const = node_map[self.mul2_1_const][0]
-        add2_2_const = node_map[self.add2_2_const][0]
-        mul2_3_const = node_map[self.mul2_3_const][0]
-
-        # pad add2_2
-        slice2_length = slice2_end - slice2_begin
-        pad2_shape = reshaped_shape.copy()
-        pad2_shape[2] -= slice2_length
-        pad2 = tvm.relay.Constant(tvm.nd.array(np.zeros(pad2_shape, dtype=act.checked_type.dtype)))
-        add2_2_const = tvm.relay.transpose(add2_2_const, axes=[0, 1, 4, 2, 3])
-        add2_2_const = tvm.relay.concatenate([add2_2_const, pad2], axis=2)
-        add2_2_const = tvm.relay.reshape(
-            add2_2_const, newshape=[1, reshaped_shape[1] * reshaped_shape[2], reshaped_shape[3], reshaped_shape[4]]
-        )
-
-        # pad mul1_3
-        slice1_length = slice1_end - slice1_begin
-        pad1_1_shape = reshaped_shape.copy()
-        pad1_1_shape[2] = slice2_length
-        pad1_1 = tvm.relay.Constant(tvm.nd.array(np.zeros(pad1_1_shape, dtype=act.checked_type.dtype)))
-        pad1_3_shape = reshaped_shape.copy()
-        pad1_3_shape[2] -= slice2_length + slice1_length
-        pad1_3 = tvm.relay.Constant(tvm.nd.array(np.zeros(pad1_3_shape, dtype=act.checked_type.dtype)))
-        mul1_3_const = tvm.relay.transpose(mul1_3_const, axes=[0, 1, 4, 2, 3])
-        mul1_3_const = tvm.relay.concatenate([pad1_1, mul1_3_const, pad1_3], axis=2)
-        mul1_3_const = tvm.relay.reshape(
-            mul1_3_const, newshape=[1, reshaped_shape[1] * reshaped_shape[2], reshaped_shape[3], reshaped_shape[4]]
-        )
-
-        # generate masks
-        def generate_slice_mask(begin, end):
-            slice_mask_index = np.zeros(reshaped_shape.copy(), dtype=act.checked_type.dtype)
-            slice_mask_index[:, :, begin:end, :, :] = 1.0
-            slice_mask = tvm.relay.Constant(tvm.nd.array(slice_mask_index))
-            slice_mask = tvm.relay.reshape(
-                slice_mask, newshape=[1, reshaped_shape[1] * reshaped_shape[2], reshaped_shape[3], reshaped_shape[4]]
-            )
-            return slice_mask
-
-        slice1_mask = generate_slice_mask(slice1_begin, slice1_end)
-        slice2_mask = generate_slice_mask(slice2_begin, slice2_end)
-        slice3_mask = generate_slice_mask(slice3_begin, slice3_end)
-
-        # re-connect
-        sigmoid = tvm.relay.sigmoid(act)
-
-        mul1_1 = tvm.relay.multiply(sigmoid, mul1_1_const)
-        mul1_2 = tvm.relay.multiply(mul1_1, mul1_1)
-        mul1_3 = tvm.relay.multiply(mul1_2, mul1_3_const)
-        mul1_3_masked = tvm.relay.multiply(mul1_3, slice1_mask)
-
-        mul2_1 = tvm.relay.multiply(sigmoid, mul2_1_const)
-        add2_2 = tvm.relay.add(mul2_1, add2_2_const)
-        mul2_3 = tvm.relay.multiply(add2_2, mul2_3_const)
-        mul2_3_masked = tvm.relay.multiply(mul2_3, slice2_mask)
-
-        slice3_masked = tvm.relay.multiply(sigmoid, slice3_mask)
-
-        partial_sum = tvm.relay.add(mul1_3_masked, mul2_3_masked)
-        _sum = tvm.relay.add(partial_sum, slice3_masked)
-
-        reshape = tvm.relay.reshape(_sum, newshape=shape1)
-        reshape = tvm.relay.reshape(reshape, newshape=shape2)
-        transpose = tvm.relay.transpose(reshape, axes=[0, 1, 3, 2])
-        return transpose
-
-
-class TransformDenseIntoBatchMM(DFPatternCallback):
-    """
-    This pass will transform dense into batch_matmul and therefore
-    remove redundant squeeze and unsqueeze ops.
-    """
-
-    def __init__(self):
-        super().__init__(rewrite_once=True, require_type=True)
-
-        self.act = wildcard()
-        self.weight = wildcard()
-
-        self.reshape1 = is_op("reshape")(self.act)
-        self.transpose = is_op("transpose")(self.weight)
-
-        self.lm_head = is_op("nn.dense")(self.reshape1, self.transpose)
-        self.reshape2 = is_op("reshape")(self.lm_head)
-
-        self.pattern = self.reshape2
-
-    def callback(self, pre, post, node_map):
-        pre_node_map = construct_pre_node_map(self.pattern, pre)
-
-        activations = node_map[self.act][0]
-        weight = node_map[self.weight][0]
-        squeeze = node_map[self.reshape1][0]
-        weight_transpose = node_map[self.transpose][0]
-        lm_head = node_map[self.lm_head][0]
-        unsqueeze = node_map[self.reshape2][0]
-
-        if not (len(weight.args) == 1 and isinstance(weight.args[0], tvm.relay.Var)):
-            return post
-        if len(list(activations.checked_type.shape)) != 3:
-            return post
-        if len(list(weight_transpose.checked_type.shape)) != 2:
-            return post
-        if len(list(lm_head.checked_type.shape)) != 2:
-            return post
-        if len(list(unsqueeze.checked_type.shape)) != 3:
-            return post
-
-        new_weight_shape = [1] + list(weight.checked_type.shape)
-        weight_reshape = tvm.relay.reshape(weight, newshape=new_weight_shape)
-        lm_head = tvm.relay.nn.batch_matmul(activations, weight_reshape, transpose_a=False, transpose_b=False)
-
-        return lm_head
 
 
 class GQABroadcastReshape(DFPatternCallback):
@@ -4971,7 +4360,6 @@ def run_forge_compile_passes(
             ExplicateTranspose(),
             DecomposeConv1DToConv2D(),
             PopulateReduceAxes(),
-            DecomposeMultiAxisMax(),
             DecomposeMultiAxisTranspose(),
             EstimateWhereInCausalMask(),
             CastWhereConditionToBool(),
@@ -4981,11 +4369,8 @@ def run_forge_compile_passes(
             DecomposeMultiDimSqueeze(),
             PopulateTransposeAxes(),
             PopulateStridedSliceAxes(),
-            DecomposeMultiAxisMean(),
-            DecomposeMultiAxisSum(),
             ReconstructOnnxResize2d(),
             DecomposeMultiAxisBroadcast(),
-            EnsureKeepdims(),
             RemoveRedundantTake(),
             RemoveRedundantReshape(),
             LowerCopyToNOP(),

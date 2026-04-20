@@ -1000,18 +1000,17 @@ def populate_broadcast_args(graph, nid, compiler_cfg):
 
 def populate_reduce_args(graph, nid, compiler_cfg):
     node = graph["nodes"][nid]
-    dim = int(node["attrs"]["axis"][0][0])
-    assert len(node["attrs"]["axis"][0]) == 1, "Forge only supports reduce with a single axis"
-
+    axes = node["attrs"]["axis"][0]
     keep_dim = int(node["attrs"]["keepdims"][0][0])
 
     input_nid = node["inputs"][0][0]
     input_shape = graph["nodes"][input_nid]["attrs"]["shape"][0][0]
+    rank = len(input_shape)
 
-    if dim >= 0:
-        dim -= len(input_shape)
+    # Normalize to negative indices (consistent with PyTorch convention).
+    dims = [int(ax) - rank if int(ax) >= 0 else int(ax) for ax in axes]
 
-    args = [("dim", f"{dim}"), ("keep_dim", f"{bool(keep_dim)}")]
+    args = [("dim", f"{dims}"), ("keep_dim", f"{bool(keep_dim)}")]
     return args
 
 

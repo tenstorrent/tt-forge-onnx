@@ -5,68 +5,152 @@
 import pytest
 import torch
 from torch import nn
-from forge.verify.verify import verify
 
 import forge
+from forge.verify.verify import verify
 
 
 @pytest.mark.parametrize(
     "input_shape, dim, keepdim",
     [
+        # 1D
         pytest.param(
-            (64,),
-            0,
-            True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            (64,), 0, True, marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs")
         ),
         pytest.param(
             (64,),
             -1,
             True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
         ),
-        ((4, 64), 0, True),
-        ((32, 32), -2, True),
-        ((2, 32, 32), 0, True),
-        ((1, 64, 32), 2, True),
+        pytest.param(
+            (64,),
+            0,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (64,),
+            -1,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        ((32, 64), -2, True),
+        ((32, 64), -2, False),
+        # 2D - multi dim
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        ((4, 32, 64), -1, True),
+        ((4, 32, 64), -1, False),
         ((4, 32, 64), -2, True),
-        ((4, 128, 128, 128), 0, True),
-        ((1, 128, 128, 128), 2, True),
-        ((1, 128, 128, 128), -3, True),
-        ((4, 128, 128, 128), -4, True),
-        pytest.param(
-            (64,),
-            0,
-            False,
-            marks=pytest.mark.xfail(reason="'ttir.squeeze' op Output tensor must have at least one dimension."),
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            False,
-            marks=pytest.mark.xfail(reason="'ttir.squeeze' op Output tensor must have at least one dimension."),
-        ),
-        pytest.param(
-            (4, 64),
-            0,
-            False,
-        ),
-        pytest.param(
-            (32, 32),
-            -2,
-            False,
-        ),
-        ((2, 32, 32), 0, False),
-        ((1, 64, 32), 2, False),
         ((4, 32, 64), -2, False),
-        ((4, 128, 128, 128), 0, False),
-        (
-            (1, 128, 128, 128),
-            2,
-            False,
+        ((4, 32, 64), -3, True),
+        ((4, 32, 64), -3, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        ((4, 32, 64), [0, 2], True),
+        ((4, 32, 64), [0, 2], False),
+        ((4, 32, 64), [1, 2], True),
+        ((4, 32, 64), [1, 2], False),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
         ),
-        ((1, 128, 128, 128), -3, False),
-        ((4, 128, 128, 128), -4, False),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - single dim
+        ((1, 4, 32, 64), 0, True),
+        ((1, 4, 32, 64), 0, False),
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        ((1, 4, 32, 64), -1, True),
+        ((1, 4, 32, 64), -1, False),
+        ((1, 4, 32, 64), -2, True),
+        ((1, 4, 32, 64), -2, False),
+        ((1, 4, 32, 64), -3, True),
+        ((1, 4, 32, 64), -3, False),
+        ((1, 4, 32, 64), -4, True),
+        ((1, 4, 32, 64), -4, False),
+        # 4D - 2-dim combinations
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [0, 2], True),
+        ((1, 4, 32, 64), [0, 2], False),
+        ((1, 4, 32, 64), [0, 3], True),
+        ((1, 4, 32, 64), [0, 3], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+        ((1, 4, 32, 64), [1, 3], True),
+        ((1, 4, 32, 64), [1, 3], False),
+        ((1, 4, 32, 64), [2, 3], True),
+        ((1, 4, 32, 64), [2, 3], False),
+        # 4D - 3-dim combinations
+        ((1, 4, 32, 64), [0, 1, 2], True),
+        ((1, 4, 32, 64), [0, 1, 2], False),
+        ((1, 4, 32, 64), [0, 1, 3], True),
+        ((1, 4, 32, 64), [0, 1, 3], False),
+        ((1, 4, 32, 64), [0, 2, 3], True),
+        ((1, 4, 32, 64), [0, 2, 3], False),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - all dims
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
     ],
 )
 @pytest.mark.push
@@ -79,71 +163,152 @@ def test_reduce_sum(input_shape, dim, keepdim):
             return torch.sum(a, dim=dim, keepdim=keepdim)
 
     inputs = [torch.rand(input_shape)]
-
     framework_model = ReduceSum()
-
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
-
     verify(inputs, framework_model, compiled_model)
 
 
 @pytest.mark.parametrize(
     "input_shape, dim, keepdim",
     [
+        # 1D
         pytest.param(
-            (64,),
-            0,
-            True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            (64,), 0, True, marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs")
         ),
         pytest.param(
             (64,),
             -1,
             True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
         ),
-        ((4, 64), 0, True),
-        ((32, 32), -2, True),
-        ((2, 32, 32), 0, True),
-        ((1, 64, 32), 2, True),
+        pytest.param(
+            (64,),
+            0,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (64,),
+            -1,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        ((32, 64), -2, True),
+        ((32, 64), -2, False),
+        # 2D - multi dim
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        ((4, 32, 64), -1, True),
+        ((4, 32, 64), -1, False),
         ((4, 32, 64), -2, True),
-        ((4, 128, 128, 128), 0, True),
-        ((1, 128, 128, 128), 2, True),
-        ((1, 128, 128, 128), -3, True),
-        ((4, 128, 128, 128), -4, True),
-        pytest.param(
-            (64,),
-            0,
-            False,
-            marks=pytest.mark.xfail(reason="'ttir.squeeze' op Output tensor must have at least one dimension."),
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            False,
-            marks=pytest.mark.xfail(reason="'ttir.squeeze' op Output tensor must have at least one dimension."),
-        ),
-        pytest.param(
-            (4, 64),
-            0,
-            False,
-        ),
-        pytest.param(
-            (32, 32),
-            -2,
-            False,
-        ),
-        ((2, 32, 32), 0, False),
-        ((1, 64, 32), 2, False),
         ((4, 32, 64), -2, False),
-        ((4, 128, 128, 128), 0, False),
-        (
-            (1, 128, 128, 128),
-            2,
-            False,
+        ((4, 32, 64), -3, True),
+        ((4, 32, 64), -3, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        ((4, 32, 64), [0, 2], True),
+        ((4, 32, 64), [0, 2], False),
+        ((4, 32, 64), [1, 2], True),
+        ((4, 32, 64), [1, 2], False),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
         ),
-        ((1, 128, 128, 128), -3, False),
-        ((4, 128, 128, 128), -4, False),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - single dim
+        ((1, 4, 32, 64), 0, True),
+        ((1, 4, 32, 64), 0, False),
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        ((1, 4, 32, 64), -1, True),
+        ((1, 4, 32, 64), -1, False),
+        ((1, 4, 32, 64), -2, True),
+        ((1, 4, 32, 64), -2, False),
+        ((1, 4, 32, 64), -3, True),
+        ((1, 4, 32, 64), -3, False),
+        ((1, 4, 32, 64), -4, True),
+        ((1, 4, 32, 64), -4, False),
+        # 4D - 2-dim combinations
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [0, 2], True),
+        ((1, 4, 32, 64), [0, 2], False),
+        ((1, 4, 32, 64), [0, 3], True),
+        ((1, 4, 32, 64), [0, 3], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+        ((1, 4, 32, 64), [1, 3], True),
+        ((1, 4, 32, 64), [1, 3], False),
+        ((1, 4, 32, 64), [2, 3], True),
+        ((1, 4, 32, 64), [2, 3], False),
+        # 4D - 3-dim combinations
+        ((1, 4, 32, 64), [0, 1, 2], True),
+        ((1, 4, 32, 64), [0, 1, 2], False),
+        ((1, 4, 32, 64), [0, 1, 3], True),
+        ((1, 4, 32, 64), [0, 1, 3], False),
+        ((1, 4, 32, 64), [0, 2, 3], True),
+        ((1, 4, 32, 64), [0, 2, 3], False),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - all dims
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
     ],
 )
 @pytest.mark.push
@@ -156,102 +321,385 @@ def test_reduce_mean(input_shape, dim, keepdim):
             return torch.mean(a, dim=dim, keepdim=keepdim)
 
     inputs = [torch.rand(input_shape)]
-
     framework_model = ReduceMean()
-
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
-
-    verify(inputs, framework_model, compiled_model)
-
-
-@pytest.mark.parametrize("x_shape", [7, 32, 41])
-@pytest.mark.parametrize("y_shape", [7, 32, 41])
-@pytest.mark.parametrize("dim", [1, 2])
-@pytest.mark.push
-def test_mean(x_shape, y_shape, dim):
-    class Mean(nn.Module):
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, x):
-            return torch.mean(x, dim=dim)
-
-    inputs = [
-        torch.rand(1, x_shape, y_shape),
-    ]
-
-    framework_model = Mean()
-
-    compiled_model = forge.compile(framework_model, sample_inputs=inputs)
-
     verify(inputs, framework_model, compiled_model)
 
 
 @pytest.mark.parametrize(
     "input_shape, dim, keepdim",
     [
+        # 1D
         pytest.param(
-            (64,),
-            0,
-            True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            (64,), 0, True, marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs")
         ),
         pytest.param(
             (64,),
             -1,
             True,
-            marks=pytest.mark.xfail(reason="Tensor mismatch between framework and compiled model output"),
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
         ),
-        ((4, 64), 0, True),
-        ((32, 32), -2, True),
-        ((2, 32, 32), 0, True),
-        ((1, 64, 32), 2, True),
+        pytest.param(
+            (64,),
+            0,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (64,),
+            -1,
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        ((32, 64), -2, True),
+        ((32, 64), -2, False),
+        # 2D - multi dim
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (32, 64),
+            [0, 1],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        ((4, 32, 64), -1, True),
+        ((4, 32, 64), -1, False),
         ((4, 32, 64), -2, True),
-        ((4, 128, 128, 128), 0, True),
-        ((1, 128, 128, 128), 2, True),
-        ((1, 128, 128, 128), -3, True),
-        ((4, 128, 128, 128), -4, True),
-        pytest.param(
-            (64,),
-            0,
-            False,
-            marks=pytest.mark.xfail(reason="[mlir::AffineMap collapsedLinearAffineMap] Assertion `end > 0' failed."),
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            False,
-            marks=pytest.mark.xfail(reason="[mlir::AffineMap collapsedLinearAffineMap] Assertion `end > 0' failed."),
-        ),
-        ((4, 64), 0, False),
-        ((32, 32), -2, False),
-        ((2, 32, 32), 0, False),
-        ((1, 64, 32), 2, False),
         ((4, 32, 64), -2, False),
-        ((4, 128, 128, 128), 0, False),
-        ((1, 128, 128, 128), 2, False),
-        ((1, 128, 128, 128), -3, False),
-        ((4, 128, 128, 128), -4, False),
+        ((4, 32, 64), -3, True),
+        ((4, 32, 64), -3, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        pytest.param(
+            (4, 32, 64),
+            [0, 2],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (4, 32, 64),
+            [0, 2],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (4, 32, 64),
+            [1, 2],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (4, 32, 64),
+            [1, 2],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (4, 32, 64),
+            [0, 1, 2],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - single dim
+        ((1, 4, 32, 64), 0, True),
+        ((1, 4, 32, 64), 0, False),
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        ((1, 4, 32, 64), -1, True),
+        ((1, 4, 32, 64), -1, False),
+        ((1, 4, 32, 64), -2, True),
+        ((1, 4, 32, 64), -2, False),
+        ((1, 4, 32, 64), -3, True),
+        ((1, 4, 32, 64), -3, False),
+        ((1, 4, 32, 64), -4, True),
+        ((1, 4, 32, 64), -4, False),
+        # 4D - 2-dim combinations
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [0, 2], True),
+        ((1, 4, 32, 64), [0, 2], False),
+        ((1, 4, 32, 64), [0, 3], True),
+        ((1, 4, 32, 64), [0, 3], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - 3-dim combinations
+        ((1, 4, 32, 64), [0, 1, 2], True),
+        ((1, 4, 32, 64), [0, 1, 2], False),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        # 4D - all dims
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            True,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
+        pytest.param(
+            (1, 4, 32, 64),
+            [0, 1, 2, 3],
+            False,
+            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
+        ),
     ],
 )
 @pytest.mark.push
 def test_reduce_max(input_shape, dim, keepdim):
-    input = (input_shape, dim, keepdim)
-    if input in [((64,), 0, False), ((64,), -1, False)]:
-        pytest.xfail(reason="[mlir::AffineMap collapsedLinearAffineMap] Assertion `end > 0' failed.")
-
     class ReduceMax(nn.Module):
         def __init__(self):
             super().__init__()
 
         def forward(self, a):
-            return torch.max(a, dim=dim, keepdim=keepdim)[0]
+            # torch.amax supports both int and list[int] dims.
+            return torch.amax(a, dim=dim, keepdim=keepdim)
 
     inputs = [torch.rand(input_shape)]
-
     framework_model = ReduceMax()
     framework_model.eval()
-
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
-
     verify(inputs, framework_model, compiled_model)
+
+
+@pytest.mark.parametrize(
+    "input_shape, dim, keepdim",
+    [
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        ((4, 32, 64), [0, 2], True),
+        ((4, 32, 64), [0, 2], False),
+        ((4, 32, 64), [1, 2], True),
+        ((4, 32, 64), [1, 2], False),
+        # 4D - single dim
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        # 4D - multi dim
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+        ((1, 4, 32, 64), [2, 3], True),
+        ((1, 4, 32, 64), [2, 3], False),
+    ],
+)
+@pytest.mark.push
+def test_reduce_sum_backward(input_shape, dim, keepdim):
+    class ReduceSum(nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, a):
+            return torch.sum(a, dim=dim, keepdim=keepdim)
+
+    inputs = [torch.rand(input_shape, requires_grad=True)]
+    framework_model = ReduceSum()
+    compiled_model = forge.compile(framework_model, sample_inputs=inputs, training=True)
+    verify(inputs, framework_model, compiled_model, with_backward=True)
+
+
+@pytest.mark.parametrize(
+    "input_shape, dim, keepdim",
+    [
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        ((4, 32, 64), [0, 2], True),
+        ((4, 32, 64), [0, 2], False),
+        ((4, 32, 64), [1, 2], True),
+        ((4, 32, 64), [1, 2], False),
+        # 4D - single dim
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        # 4D - multi dim
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+        ((1, 4, 32, 64), [2, 3], True),
+        ((1, 4, 32, 64), [2, 3], False),
+    ],
+)
+@pytest.mark.push
+def test_reduce_mean_backward(input_shape, dim, keepdim):
+    class ReduceMean(nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, a):
+            return torch.mean(a, dim=dim, keepdim=keepdim)
+
+    inputs = [torch.rand(input_shape, requires_grad=True)]
+    framework_model = ReduceMean()
+    compiled_model = forge.compile(framework_model, sample_inputs=inputs, training=True)
+    verify(inputs, framework_model, compiled_model, with_backward=True)
+
+
+@pytest.mark.parametrize(
+    "input_shape, dim, keepdim",
+    [
+        # 2D - single dim
+        ((32, 64), 0, True),
+        ((32, 64), 0, False),
+        ((32, 64), 1, True),
+        ((32, 64), 1, False),
+        ((32, 64), -1, True),
+        ((32, 64), -1, False),
+        # 3D - single dim
+        ((4, 32, 64), 0, True),
+        ((4, 32, 64), 0, False),
+        ((4, 32, 64), 1, True),
+        ((4, 32, 64), 1, False),
+        ((4, 32, 64), 2, True),
+        ((4, 32, 64), 2, False),
+        # 3D - multi dim
+        ((4, 32, 64), [0, 1], True),
+        ((4, 32, 64), [0, 1], False),
+        # 4D - single dim
+        ((1, 4, 32, 64), 1, True),
+        ((1, 4, 32, 64), 1, False),
+        ((1, 4, 32, 64), 2, True),
+        ((1, 4, 32, 64), 2, False),
+        ((1, 4, 32, 64), 3, True),
+        ((1, 4, 32, 64), 3, False),
+        # 4D - multi dim
+        ((1, 4, 32, 64), [0, 1], True),
+        ((1, 4, 32, 64), [0, 1], False),
+        ((1, 4, 32, 64), [1, 2], True),
+        ((1, 4, 32, 64), [1, 2], False),
+    ],
+)
+@pytest.mark.push
+def test_reduce_max_backward(input_shape, dim, keepdim):
+    class ReduceMax(nn.Module):
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, a):
+            return torch.amax(a, dim=dim, keepdim=keepdim)
+
+    inputs = [torch.rand(input_shape, requires_grad=True)]
+    framework_model = ReduceMax()
+    compiled_model = forge.compile(framework_model, sample_inputs=inputs, training=True)
+    verify(inputs, framework_model, compiled_model, with_backward=True)

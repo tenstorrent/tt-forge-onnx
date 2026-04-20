@@ -4,6 +4,9 @@
 
 #include "op_common.hpp"
 
+#include <algorithm>
+#include <numeric>
+
 #include "autograd/autograd.hpp"
 #include "graph_lib/node_types.hpp"
 #include "graph_lib/shape.hpp"
@@ -165,20 +168,33 @@ long initial_flops_estimate_output_dim(std::tuple<graphlib::Shape, std::vector<g
 std::tuple<graphlib::Shape, std::vector<graphlib::DimBroadcast>> reduce_ops_shape(
     const Op &op, const std::vector<std::vector<std::uint32_t>> &in_shapes)
 {
-    int dim = op.attr_as<std::vector<int>>("dim_arg")[0];
+    std::vector<int> dims = op.attr_as<std::vector<int>>("dim_arg");
     bool keep_dim = op.attr_as<bool>("keep_dim");
+    int ndim = static_cast<int>(in_shapes[0].size());
 
-    if (dim < 0)
-        dim += in_shapes[0].size();
-
-    TT_ASSERT(dim >= 0 && dim < static_cast<int>(in_shapes[0].size()), "Reduce ops should have valid dim.");
+    // Normalize negative dims to positive and validate each against the input rank.
+    for (auto &d : dims)
+    {
+        if (d < 0)
+            d += ndim;
+        TT_ASSERT(d >= 0 && d < ndim, "Reduce ops should have valid dim.");
+    }
 
     std::vector<std::uint32_t> ret = in_shapes[0];
 
     if (keep_dim)
-        ret[dim] = 1;
+    {
+        // Set each reduced dim to 1; non-reduced dims are unchanged.
+        for (int d : dims) ret[d] = 1;
+    }
     else
-        ret.erase(ret.begin() + dim);
+    {
+        // Erase reduced dims in descending order so earlier erasures do not shift
+        // the positions of later ones.
+        std::vector<int> sorted_dims = dims;
+        std::sort(sorted_dims.begin(), sorted_dims.end(), std::greater<int>());
+        for (int d : sorted_dims) ret.erase(ret.begin() + d);
+    }
 
     return {graphlib::Shape::create(ret), {}};
 }

@@ -1,14 +1,29 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 
 # SPDX-License-Identifier: Apache-2.0
+from typing import List, Tuple, Union
+
 from forge._C.ops import OpType
 from ..tensor import Tensor
 from .common import ForgeOp as op
 
 
-def ReduceSum(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> Tensor:
+def _normalize_dims(dim: Union[int, List[int], Tuple[int, ...]], rank: int = 4) -> List[int]:
+    """Normalize dim argument to a list of ints, each validated to be in [-rank, rank-1]."""
+    dims: List[int] = [dim] if isinstance(dim, int) else list(dim)
+    for d in dims:
+        assert (d >= -rank) and (d <= rank - 1), f"dim {d} out of range for rank-{rank} tensor"
+    return dims
+
+
+def ReduceSum(
+    name: str,
+    operandA: Tensor,
+    dim: Union[int, List[int], Tuple[int, ...]],
+    keep_dim: bool = True,
+) -> Tensor:
     """
-    Reduce by summing along the given dimension
+    Reduce by summing along one or more dimensions.
 
     Parameters
     ----------
@@ -18,25 +33,29 @@ def ReduceSum(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> T
     operandA: Tensor
         First operand
 
-    dim: int
-        Dimension along which to reduce. A positive number 0 - 3 or negative from -1 to -4.
+    dim: int or list/tuple of ints
+        Dimension(s) along which to reduce.  Each value must be in [-4, 3].
+
+    keep_dim: bool
+        If True, the reduced dimensions are kept with size 1.
 
     Returns
     -------
     Tensor
         Forge tensor
     """
-
-    assert (dim >= -4) and (dim <= 3)
-    # if dim < 0:
-    #     dim += 4
-
-    return op(OpType.ReduceSum, name, operandA, dim_arg=[dim], keep_dim=keep_dim).get_tensor()
+    dims = _normalize_dims(dim)
+    return op(OpType.ReduceSum, name, operandA, dim_arg=dims, keep_dim=keep_dim).get_tensor()
 
 
-def ReduceAvg(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> Tensor:
+def ReduceAvg(
+    name: str,
+    operandA: Tensor,
+    dim: Union[int, List[int], Tuple[int, ...]],
+    keep_dim: bool = True,
+) -> Tensor:
     """
-    Reduce by averaging along the given dimension
+    Reduce by averaging along one or more dimensions.
 
     Parameters
     ----------
@@ -46,25 +65,29 @@ def ReduceAvg(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> T
     operandA: Tensor
         First operand
 
-    dim: int
-        Dimension along which to reduce. A positive number 0 - 3 or negative from -1 to -4.
+    dim: int or list/tuple of ints
+        Dimension(s) along which to reduce.  Each value must be in [-4, 3].
+
+    keep_dim: bool
+        If True, the reduced dimensions are kept with size 1.
 
     Returns
     -------
     Tensor
         Forge tensor
     """
-
-    assert (dim >= -4) and (dim <= 3)
-    # if dim < 0:
-    #     dim += 4
-
-    return op(OpType.ReduceAvg, name, operandA, dim_arg=[dim], keep_dim=keep_dim).get_tensor()
+    dims = _normalize_dims(dim)
+    return op(OpType.ReduceAvg, name, operandA, dim_arg=dims, keep_dim=keep_dim).get_tensor()
 
 
-def ReduceMax(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> Tensor:
+def ReduceMax(
+    name: str,
+    operandA: Tensor,
+    dim: Union[int, List[int], Tuple[int, ...]],
+    keep_dim: bool = True,
+) -> Tensor:
     """
-    Reduce by taking maximum along the given dimension
+    Reduce by taking the maximum along one or more dimensions.
 
     Parameters
     ----------
@@ -74,17 +97,19 @@ def ReduceMax(name: str, operandA: Tensor, dim: int, keep_dim: bool = True) -> T
     operandA: Tensor
         First operand
 
-    dim: int
-        Dimension along which to reduce. A positive number 0 - 3 or negative from -1 to -4.
+    dim: int or list/tuple of ints
+        Dimension(s) along which to reduce.  Each value must be in [-4, 3].
+
+    keep_dim: bool
+        If True, the reduced dimensions are kept with size 1.
 
     Returns
     -------
     Tensor
         Forge tensor
     """
-    assert (dim >= -4) and (dim <= 3)
-
-    return op(OpType.ReduceMax, name, operandA, dim_arg=[dim], keep_dim=keep_dim).get_tensor()
+    dims = _normalize_dims(dim)
+    return op(OpType.ReduceMax, name, operandA, dim_arg=dims, keep_dim=keep_dim).get_tensor()
 
 
 def Argmax(name: str, operandA: Tensor, dim: int = None, keep_dim=False) -> Tensor:
