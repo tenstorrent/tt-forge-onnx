@@ -2,32 +2,99 @@ name: Build Docker Image
 
 on:
   workflow_dispatch:
+    inputs:
+      mlir_override:
+        description: 'Git SHA of commit in tenstorrent/tt-mlir or branch name'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      mlir_override:
+        description: 'Git SHA of commit in tenstorrent/tt-mlir or branch name'
+        required: false
+        type: string
+    outputs:
+      docker-image:
+        description: "Built docker image name"
+        value: ${{ jobs.build-image.outputs.docker-image }}
+
 
 permissions:
-  actions: write
-  id-token: write
   packages: write
   checks: write
-  contents: write
 
 jobs:
-  docker-build:
-    uses: ./.github/workflows/build-image.yml
-    secrets: inherit
 
-  build:
-    uses: ./.github/workflows/build.yml
-    name: "Build tt-forge-fe"
-    secrets: inherit
-    needs: docker-build
-    with:
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      build: Release
+  build-image:
+    runs-on: tt-ubuntu-2404-large-stable
+    outputs:
+      docker-image: ${{ steps.build.outputs.docker-image }}
+    steps:
+      - name: Fix permissions
+        shell: bash
+        run: sudo chown ubuntu:ubuntu -R $(pwd)
 
-  build-and-test-release-docker:
-    uses: ./.github/workflows/call-build-and-test-release-docker.yml
-    needs: [ build ]
-    secrets: inherit
-    with:
-      wheel_release_artifact_run_id: ${{ needs.build.outputs.run_id }}
-      wheel_release_artifact_name: forge-wheel
+      - uses: actions/checkout@v5
+        with:
+          repository: 'tenstorrent/tt-forge-onnx'
+          submodules: recursive
+          fetch-depth: 0 # Fetch all history and tags
+
+      - name: Update submodule if mlir_override is set
+        if: ${{ inputs.mlir_override }}
+        run: |
+          cd third_party/tt-mlir
+          git fetch origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+          git checkout ${{ inputs.mlir_override }}
+          branch_name=$(git rev-parse --abbrev-ref HEAD)
+          commit_sha=$(git rev-parse HEAD)
+          commit_title=$(git log -1 --pretty=%s)
+          echo "Branch name: $branch_name"
+          echo "Commit SHA: $commit_sha"
+          echo "Commit title: $commit_title"
+          echo "::notice::Using tt-mlir branch: $branch_name, commit: $commit_sha, title: $commit_title"
+          cd ../..
+
+      # Clean everything from submodules (needed to avoid issues
+      # with cmake generated files leftover from previous builds)
+      - name: Cleanup submodules
+        run: |
+          git submodule foreach --recursive git clean -ffdx
+          git submodule foreach --recursive git reset --hard
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: Build Docker images and output the image name
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          .github/build-docker-images.sh | tee docker.log
+          DOCKER_CI_IMAGE=$(tail -n 1 docker.log)
+          echo "DOCKER_CI_IMAGE $DOCKER_CI_IMAGE"
+          echo "docker-image=$DOCKER_CI_IMAGE" >> "$GITHUB_OUTPUT"
+
+  set-latest:
+    # Set the latest tag on the IRD image
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+      - name: Set latest tag on the image
+        run: |
+          DOCKER_CI_IMAGE=${{ needs.build-image.outputs.docker-image }}
+          DOCKER_TAG=$(echo $DOCKER_CI_IMAGE | sed 's/^.*://')
+          IMAGE_NAME=ghcr.io/tenstorrent/tt-forge-onnx/tt-forge-onnx-ird-ubuntu-24-04
+          echo "Setting latest tag on the image $IMAGE_NAME:$DOCKER_TAG"
+          skopeo copy "docker://$IMAGE_NAME:$DOCKER_TAG" "docker://$IMAGE_NAME:latest"
