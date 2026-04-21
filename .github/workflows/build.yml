@@ -32,6 +32,10 @@ on:
         required: false
         default: 'All'
         type: string
+      sha_override:
+        description: 'Git SHA or branch name to build from (defaults to HEAD)'
+        required: false
+        type: string
     outputs:
       run_id:
         description: 'Run id the workflow where to find installation (or undefined if build is not successful)'
@@ -87,6 +91,7 @@ jobs:
         submodules: recursive
         clean: true
         fetch-depth: 0 # Fetch all history and tags
+        ref: ${{ inputs.sha_override || '' }}
 
     # Clean everything from submodules (needed to avoid issues
     # with cmake generated files leftover from previous builds)

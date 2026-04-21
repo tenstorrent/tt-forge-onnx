@@ -1,0 +1,47 @@
+name: Stable version release
+
+on:
+  workflow_dispatch:
+    inputs:
+      forge_fe_sha_override:
+        description: 'Git SHA of commit in tenstorrent/tt-forge-fe or branch name'
+        required: true
+        type: string
+      should_overwrite_release:
+        description: 'Should we overwrite an existing pypi wheel'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+  id-token: write
+  packages: write
+  checks: write
+
+jobs:
+  build-image:
+    uses: ./.github/workflows/build-image.yml
+    secrets: inherit
+
+  build:
+    uses: ./.github/workflows/build.yml
+    name: "Build tt-forge-fe"
+    secrets: inherit
+    needs: build-image
+    with:
+      docker-image: ${{ needs.build-image.outputs.docker-image }}
+      build: Release
+      sha_override: ${{ inputs.forge_fe_sha_override }}
+
+  release:
+    uses: ./.github/workflows/call-release.yml
+    needs: [ build ]
+    secrets: inherit
+    with:
+      artifact_release_run_id: ${{ needs.build.outputs.run_id }}
+      wheel_release_artifact_name: forge-wheel
+      is_nightly_release: false
+      forge_fe_sha_override: ${{ inputs.forge_fe_sha_override }}
+      should_overwrite_release: ${{ inputs.should_overwrite_release }}

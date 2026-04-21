@@ -1,0 +1,69 @@
+name: tt-forge-fe release (call)
+
+on:
+  workflow_call:
+    inputs:
+      artifact_release_run_id:
+        description: 'Run id of the release wheel'
+        type: string
+        required: true
+      wheel_release_artifact_name:
+        description: 'Artifact name of the wheel'
+        type: string
+        required: true
+      is_nightly_release:
+        description: 'Is release a nightly'
+        type: boolean
+        required: true
+      forge_fe_sha_override:
+        description: 'Git SHA of commit in tenstorrent/tt-forge-fe or branch name'
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      should_overwrite_release:
+        description: 'Should we overwrite an existing pypi wheel'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      release_tag:
+        description: 'Release tag'
+        value: ${{ jobs.publish-release-wheel.outputs.release_tag }}
+
+permissions:
+  contents: write
+  actions: write
+  id-token: write
+  packages: write
+  checks: write
+
+jobs:
+  publish-release-wheel:
+    uses: ./.github/workflows/call-publish-release-wheel.yml
+    secrets: inherit
+    with:
+      wheel_release_artifact_run_id: ${{ inputs.artifact_release_run_id }}
+      wheel_release_artifact_name: ${{ inputs.wheel_release_artifact_name }}
+      is_nightly_release: ${{ inputs.is_nightly_release }}
+      should_overwrite_release: ${{ inputs.should_overwrite_release }}
+
+  build-and-test-release-docker:
+    uses: ./.github/workflows/call-build-and-test-release-docker.yml
+    needs: [ publish-release-wheel ]
+    secrets: inherit
+    with:
+      wheel_release_artifact_run_id: ${{ inputs.artifact_release_run_id }}
+      wheel_release_artifact_name: ${{ inputs.wheel_release_artifact_name }}
+      wheel_version_override: ${{ needs.publish-release-wheel.outputs.release_tag }}
+      forge_fe_sha_override: ${{ inputs.forge_fe_sha_override }}
+      caller_workflow: ${{ github.workflow }}
+
+  publish-release:
+    uses: ./.github/workflows/call-publish-release.yml
+    if: always()
+    needs: [ publish-release-wheel, build-and-test-release-docker ]
+    secrets: inherit
+    with:
+      release_tag: ${{ needs.publish-release-wheel.outputs.release_tag }}
+      docker_image_base: ${{ needs.build-and-test-release-docker.outputs.docker_image_base }}
+      forge_fe_sha_override: ${{ inputs.forge_fe_sha_override }}
