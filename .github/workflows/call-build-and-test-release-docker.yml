@@ -16,7 +16,7 @@ on:
         type: string
         required: false
       forge_fe_sha_override:
-        description: 'Git SHA of commit in tenstorrent/tt-forge-fe or branch name'
+        description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
         required: false
         type: string
         default: ${{ github.sha }}
@@ -34,7 +34,7 @@ on:
 
 jobs:
   build-release-docker:
-    name: Build tt-forge-fe release Docker image
+    name: Build tt-forge-onnx release Docker image
     runs-on: ubuntu-latest
     outputs:
       docker-image: ${{ steps.build-docker.outputs.docker-image }}

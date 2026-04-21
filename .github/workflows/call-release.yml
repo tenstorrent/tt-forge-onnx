@@ -1,4 +1,4 @@
-name: tt-forge-fe release (call)
+name: Release (call)
 
 on:
   workflow_call:
@@ -16,7 +16,7 @@ on:
         type: boolean
         required: true
       forge_fe_sha_override:
-        description: 'Git SHA of commit in tenstorrent/tt-forge-fe or branch name'
+        description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
         required: false
         type: string
         default: ${{ github.sha }}

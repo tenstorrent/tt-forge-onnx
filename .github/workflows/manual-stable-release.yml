@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       forge_fe_sha_override:
-        description: 'Git SHA of commit in tenstorrent/tt-forge-fe or branch name'
+        description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
         required: true
         type: string
       should_overwrite_release:
@@ -27,7 +27,7 @@ jobs:
 
   build:
     uses: ./.github/workflows/build.yml
-    name: "Build tt-forge-fe"
+    name: "Build tt-forge-onnx"
     secrets: inherit
     needs: build-image
     with:

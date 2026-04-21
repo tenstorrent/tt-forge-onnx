@@ -67,6 +67,7 @@ jobs:
         uses: slackapi/slack-github-action@v3.0.1
         with:
           webhook-type: webhook-trigger
+          # todo(vvukoman): is this token present in repo?
           webhook: ${{ secrets.SLACK_RELEASE_TESTS_FAIL }}
           payload: |
-            text: "Release tests tt-forge-fe failed: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
+            text: "Release tests tt-forge-onnx failed: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
