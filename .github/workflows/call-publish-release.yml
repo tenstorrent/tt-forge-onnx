@@ -11,7 +11,7 @@ on:
         description: 'Released docker image base'
         type: string
         required: true
-      forge_fe_sha_override:
+      forge_onnx_sha_override:
         description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
         required: false
         type: string
@@ -49,7 +49,7 @@ jobs:
         run: |
           set -o pipefail
           tag="${{ inputs.release_tag }}"
-          commit="${{ inputs.forge_fe_sha_override }}"
+          commit="${{ inputs.forge_onnx_sha_override }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           docker_image_base=${{ inputs.docker_image_base }}
-          commit_tag="${{ inputs.forge_fe_sha_override }}"
+          commit_tag="${{ inputs.forge_onnx_sha_override }}"
           version_tag="${{ inputs.release_tag }}"
 
           latest_tag="latest"

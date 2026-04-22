@@ -5,16 +5,14 @@
 
 set -e
 
-# todo(vvukoman): No need for <project> input, it is always tt-forge-onnx
-# todo(vvukoman): Rename all forge_fe references to forge_onnx
-if [ $# -ne 2 ]; then
-    echo "Error: Exactly 2 arguments are required."
-    echo "Usage: $0 <project> <docker-commit-tag>"
+if [ $# -ne 1 ]; then
+    echo "Error: Exactly 1 argument is required."
+    echo "Usage: $0 <docker-commit-tag>"
     exit 1
 fi
 
-PROJECT=$1
-COMMIT_TAG=$2
+PROJECT="tt-forge-onnx"
+COMMIT_TAG=$1
 
 IMAGE_NAME=ghcr.io/tenstorrent/$PROJECT-slim
 

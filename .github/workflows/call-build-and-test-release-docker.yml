@@ -15,7 +15,7 @@ on:
         description: 'Wheel version override value'
         type: string
         required: false
-      forge_fe_sha_override:
+      forge_onnx_sha_override:
         description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
         required: false
         type: string
@@ -90,10 +90,9 @@ jobs:
         run: |
           set -eo pipefail
 
-          project="tt-forge-onnx"
-          docker_tag="${{ inputs.forge_fe_sha_override }}"
+          docker_tag="${{ inputs.forge_onnx_sha_override }}"
 
-          .github/build-release-docker-image.sh $project $docker_tag | tee docker.log
+          .github/build-release-docker-image.sh $docker_tag | tee docker.log
 
           docker_image=$(tail -n 1 docker.log)
           docker_image_base=$(tail -n 2 docker.log | head -n 1)
