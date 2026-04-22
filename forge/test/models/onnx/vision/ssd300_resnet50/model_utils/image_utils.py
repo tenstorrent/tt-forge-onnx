@@ -2,13 +2,14 @@
 
 # SPDX-License-Identifier: Apache-2.0
 import numpy as np
-import skimage
+from PIL import Image
 
 
 def load_image(image_path):
     """Code from Loading_Pretrained_Models.ipynb - a Caffe2 tutorial"""
     mean, std = 128, 128
-    img = skimage.img_as_float(skimage.io.imread(image_path))
+    img = Image.open(image_path)
+    img = np.array(img).astype(np.float32) / 255.0  # Convert to float [0, 1]
     if len(img.shape) == 2:
         img = np.array([img, img, img]).swapaxes(0, 2)
     return img
@@ -17,17 +18,23 @@ def load_image(image_path):
 def rescale(img, input_height, input_width):
     """Code from Loading_Pretrained_Models.ipynb - a Caffe2 tutorial"""
     aspect = img.shape[1] / float(img.shape[0])
+    # Convert to PIL Image for resizing
+    img_pil = Image.fromarray((img * 255).astype(np.uint8))
+
     if aspect > 1:
         # landscape orientation - wide image
         res = int(aspect * input_height)
-        imgScaled = skimage.transform.resize(img, (input_width, res))
-    if aspect < 1:
+        # PIL resize takes (width, height), skimage takes (height, width)
+        imgScaled = img_pil.resize((res, input_width), Image.BILINEAR)
+    elif aspect < 1:
         # portrait orientation - tall image
         res = int(input_width / aspect)
-        imgScaled = skimage.transform.resize(img, (res, input_height))
-    if aspect == 1:
-        imgScaled = skimage.transform.resize(img, (input_width, input_height))
-    return imgScaled
+        imgScaled = img_pil.resize((input_height, res), Image.BILINEAR)
+    else:
+        imgScaled = img_pil.resize((input_height, input_width), Image.BILINEAR)
+
+    # Convert back to float numpy array [0, 1]
+    return np.array(imgScaled).astype(np.float32) / 255.0
 
 
 def crop_center(img, cropx, cropy):
