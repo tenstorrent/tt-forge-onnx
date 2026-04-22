@@ -3,146 +3,45 @@ name: On PR
 on:
   workflow_dispatch:
     inputs:
-      mlir_override:
-        description: 'Git SHA of commit in tenstorrent/tt-mlir'
-        required: false
+      forge_onnx_sha_override:
+        description: 'Git SHA of commit in tenstorrent/tt-forge-onnx or branch name'
+        required: true
         type: string
-      test_group_cnt:
-        description: 'Test group count for models regression tests'
-        required: false
-        default: "6"
-        type: choice
-        options:
-          - "3"
-          - "4"
-          - "5"
-          - "6"
-          - "7"
-          - "8"
-          - "9"
-          - "10"
-      enable-verbose-output:
-        description: 'Enable verbose pytest output (-svv flag). Shows print statements and detailed test execution information for models regression tests'
+      should_overwrite_release:
+        description: 'Should we overwrite an existing pypi wheel'
+        type: boolean
         required: false
         default: false
-        type: boolean
-  pull_request:
-    branches: [ "main" ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.mlir_override }}
-  cancel-in-progress: true
 
 permissions:
+  contents: write
+  actions: write
+  id-token: write
   packages: write
   checks: write
-  id-token: write
-  actions: write
-
 
 jobs:
-  generate-test-models-config:
-    runs-on: ubuntu-latest
-    outputs:
-      test_group_cnt: ${{ steps.set-config.outputs.test_group_cnt }}
-      test_group_ids: ${{ steps.set-config.outputs.test_group_ids }}
-      enable_verbose: ${{ steps.set-config.outputs.enable_verbose }}
-    steps:
-      - name: Generate test-models configuration
-        id: set-config
-        run: |
-          input_test_group_cnt="${{ inputs.test_group_cnt }}"
-          if [ -z "$input_test_group_cnt" ] || [ "$input_test_group_cnt" == "null" ]; then
-            test_group_cnt="6"
-          else
-            test_group_cnt="$input_test_group_cnt"
-          fi
-
-
-          test_group_ids="[$(seq -s ',' 1 $test_group_cnt)]"
-
-          input_verbose="${{ inputs.enable-verbose-output }}"
-          if [ -z "$input_verbose" ] || [ "$input_verbose" == "null" ]; then
-            enable_verbose="true"
-          else
-            enable_verbose="$input_verbose"
-          fi
-
-          echo "test_group_cnt=$test_group_cnt" >> $GITHUB_OUTPUT
-          echo "test_group_ids=$test_group_ids" >> $GITHUB_OUTPUT
-          echo "enable_verbose=$enable_verbose" >> $GITHUB_OUTPUT
-
-  spdx:
-    uses: ./.github/workflows/spdx.yml
-    secrets: inherit
-  pre-commit:
-    uses: ./.github/workflows/pre-commit.yml
-    secrets: inherit
-  docker-build:
+  build-image:
     uses: ./.github/workflows/build-image.yml
     secrets: inherit
-    with:
-      mlir_override: ${{ inputs.mlir_override }}
+
   build:
-    needs: docker-build
     uses: ./.github/workflows/build.yml
+    name: "Build tt-forge-onnx"
     secrets: inherit
+    needs: build-image
     with:
-      mlir_override: ${{ inputs.mlir_override }}
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-  build-docs:
-    uses: ./.github/workflows/build-docs.yml
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    secrets: inherit
-  test:
-    needs:
-      - docker-build
-      - build
-      - generate-test-models-config
-    uses: ./.github/workflows/test-sub.yml
-    secrets: inherit
-    with:
-      test_mark: 'push'
-      test_group_cnt: 2
-      test_group_ids: '[1,2]'
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      run_id: ${{ github.run_id }}
-      runs-on: '[{"runs-on": "n150"}, {"runs-on": "n300"}]'
+      docker-image: ${{ needs.build-image.outputs.docker-image }}
+      build: Release
+      sha_override: ${{ inputs.forge_onnx_sha_override }}
 
-  test-models:
-    needs:
-      - docker-build
-      - build
-      - generate-test-models-config
-    uses: ./.github/workflows/test-sub.yml
+  release:
+    uses: ./.github/workflows/call-release.yml
+    needs: [ build ]
     secrets: inherit
     with:
-      test_mark: 'pr_models_regression'
-      test_group_cnt: ${{ needs.generate-test-models-config.outputs.test_group_cnt }}
-      test_group_ids: ${{ needs.generate-test-models-config.outputs.test_group_ids }}
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      run_id: ${{ github.run_id }}
-      runs-on: '[{"runs-on": "n150"}, {"runs-on": "n300"}]'
-      enable-verbose-output: ${{ needs.generate-test-models-config.outputs.enable_verbose == 'true' }}
-
-  check-all-green:
-    if: always()
-    needs:
-      - generate-test-models-config
-      - pre-commit
-      - spdx
-      - docker-build
-      - build-docs
-      - build
-      - test
-      - test-models
-    runs-on: Ubuntu-latest
-    steps:
-    - name: Check if the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
-      with:
-        jobs: ${{ toJSON(needs) }}
-        allowed-skips: perf-benchmark
+      artifact_release_run_id: ${{ needs.build.outputs.run_id }}
+      wheel_release_artifact_name: forge-wheel
+      is_nightly_release: false
+      forge_onnx_sha_override: ${{ inputs.forge_onnx_sha_override }}
+      should_overwrite_release: ${{ inputs.should_overwrite_release }}
