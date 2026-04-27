@@ -212,9 +212,8 @@ def _add_so_dependencies(install_dir: Path) -> None:
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
 
-    def collect_and_add_libs(lib_dir: Path) -> None:
+    def collect_libs(lib_dir: Path) -> set[str]:
         all_libs = set()
-        copied_libs = set()
         for so_file in install_dir.rglob("*.so*"):
             if so_file.is_symlink() or not so_file.is_file():
                 continue
@@ -223,6 +222,10 @@ def _add_so_dependencies(install_dir: Path) -> None:
 
         print(f"Total dependencies found: {len(all_libs)}")
         print(all_libs)
+        return all_libs
+
+    def copy_libs(lib_dir: Path, all_libs: Set[str]) -> None:
+        copied_libs = set()
         for dep in all_libs:
             dep_path = Path(dep).resolve()
             if dep_path.parts[:-1] != install_dir.parts and not is_standard_library(dep):
@@ -233,15 +236,16 @@ def _add_so_dependencies(install_dir: Path) -> None:
                     shutil.copy2(dep, dest_path)
                     # adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
                     copied_libs.add(dest_path)
-                    adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/../lib")
+                    adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/lib")
             else:
                 print(f"Skipping standard/our library dependency: {dep}")
 
         print(f"Copied dependencies {len(copied_libs)}:")
         print(copied_libs)
 
-    collect_and_add_libs(install_dir)
-    collect_and_add_libs(install_dir / "lib")
+    alllibs = collect_libs(install_dir)
+    alllibs.update(collect_libs(install_dir / "lib"))
+    copy_libs(install_dir / "lib", alllibs)
 
 
 with open("README.md", "r") as f:
