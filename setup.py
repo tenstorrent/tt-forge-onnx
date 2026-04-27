@@ -112,7 +112,7 @@ def _prune_bloat_from_wheel(install_dir: str) -> None:
     _remove_bloat_dir(install_dir / "lib" / "pkgconfig")
     _remove_bloat_dir(install_dir / "include")
     _remove_bloat_dir(install_dir / "tt-metal" / ".cpmcache")
-    _fix_file(install_dir / "lib" / "libtt-umd.so.0", "$ORIGIN:$ORIGIN/lib")
+    _fix_file(install_dir / "lib" / "libtt-umd.so.0")
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so")
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so.0.*")
     _strip_shared_objects(install_dir)
