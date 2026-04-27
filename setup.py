@@ -112,6 +112,9 @@ def _prune_bloat_from_wheel(install_dir: str) -> None:
     _remove_bloat_dir(install_dir / "lib" / "pkgconfig")
     _remove_bloat_dir(install_dir / "include")
     _remove_bloat_dir(install_dir / "tt-metal" / ".cpmcache")
+    _remove_bloat_file(install_dir / "lib" / "libtt-umd.so")
+    _remove_bloat_file(install_dir / "lib" / "libtt-umd.so.0.*")
+    adjust_rpath(install_dir / "lib" / "libtt-umd.so.0", "$ORIGIN:$ORIGIN/lib")
     _strip_shared_objects(install_dir)
 
 
@@ -157,6 +160,36 @@ def _remove_bloat_dir(dir_path: Path) -> None:
         shutil.rmtree(dir_path)
 
 
+def _remove_bloat_file(file_path: Path) -> None:
+    # Handle wildcard patterns
+    if "*" in file_path.as_posix():
+        parent = file_path.parent
+        pattern = file_path.name
+        for matched_file in parent.glob(pattern):
+            if matched_file.is_file():
+                print(f"Removing bloat file: {matched_file}")
+                matched_file.unlink()
+    else:
+        if file_path.exists() and file_path.is_file():
+            print(f"Removing bloat file: {file_path}")
+            file_path.unlink()
+
+
+def adjust_rpath(so_file: str, new_rpath: str) -> None:
+    """Adjust rpath of a .so file using patchelf."""
+    patchelf_path = shutil.which("patchelf")
+    if patchelf_path is None:
+        print("patchelf not found; skipping rpath adjustment")
+        return
+
+    try:
+        subprocess.run([patchelf_path, "--set-rpath", new_rpath, so_file], check=True)
+        rel = Path(so_file).relative_to(install_dir)
+        print(f"Adjusted rpath: {rel}")
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
+
+
 def _add_so_dependencies(install_dir: Path) -> None:
     """Copy non-standard .so dependencies into install_dir/lib and adjust rpath."""
 
@@ -197,20 +230,6 @@ def _add_so_dependencies(install_dir: Path) -> None:
         except (subprocess.CalledProcessError, FileNotFoundError):
             print(f"{so_path} is NOT a standard library.")
         return False
-
-    def adjust_rpath(so_file: str, new_rpath: str) -> None:
-        """Adjust rpath of a .so file using patchelf."""
-        patchelf_path = shutil.which("patchelf")
-        if patchelf_path is None:
-            print("patchelf not found; skipping rpath adjustment")
-            return
-
-        try:
-            subprocess.run([patchelf_path, "--set-rpath", new_rpath, so_file], check=True)
-            rel = Path(so_file).relative_to(install_dir)
-            print(f"Adjusted rpath: {rel}")
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
 
     def collect_libs(lib_dir: Path) -> set[str]:
         all_libs = set()
