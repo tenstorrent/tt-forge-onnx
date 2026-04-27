@@ -3,12 +3,9 @@
 
 import pytest
 import torch
-import onnx
-from pathlib import Path
-
-from third_party.tt_forge_models.regnet.pytorch import ModelLoader, ModelVariant
 
 import forge
+from third_party.tt_forge_models.regnet.image_classification.onnx import ModelLoader, ModelVariant
 from forge.forge_property_utils import (
     Framework,
     ModelArch,
@@ -36,45 +33,22 @@ def test_regnet_img_classification_onnx(variant, forge_tmp_path):
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.REGNET,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_CLASSIFICATION,
         source=Source.HUGGINGFACE,
     )
 
-    # Load model and input using tt_forge_models
+    # Load model and input
     loader = ModelLoader(variant=variant)
-    torch_model = loader.load_model(dtype_override=torch.float32)
-    input_tensor = loader.load_inputs(dtype_override=torch.float32)
-    inputs = [input_tensor]
-
-    # Export ONNX model from PyTorch
-    onnx_path = Path(forge_tmp_path) / f"{variant.value}_exported.onnx"
-    if not onnx_path.exists():
-        torch.onnx.export(
-            torch_model,
-            input_tensor,
-            onnx_path,
-            input_names=["input"],
-            output_names=["output"],
-            opset_version=18,
-            dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-        )
-
-    # Load ONNX model properly
-    model_name = f"onnx_regnet_{variant.value}"
-    onnx_model = onnx.load(str(onnx_path))
-    onnx.checker.check_model(onnx_model)
-    framework_model = forge.OnnxModule(model_name, onnx_model)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs(dtype_override=torch.float32)
+    framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile
-    compiled_model = forge.compile(
-        framework_model,
-        sample_inputs=inputs,
-        module_name=module_name,
-    )
+    compiled_model = forge.compile(onnx_model, inputs, module_name=module_name)
 
     # Verify
     _, co_out = verify(inputs, framework_model, compiled_model)
 
     # Post-processing
-    loader.output_postprocess(co_out)
+    loader.torch_loader.output_postprocess(co_out)

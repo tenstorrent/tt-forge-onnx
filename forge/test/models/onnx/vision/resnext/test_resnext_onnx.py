@@ -3,10 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import torch
-from pytorchcv.model_provider import get_model as ptcv_get_model
 
 import forge
+from third_party.tt_forge_models.resnext.image_classification.onnx import ModelLoader, ModelVariant
 from forge.forge_property_utils import (
     Framework,
     ModelArch,
@@ -16,47 +15,30 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.onnx.vision.resnext.model_utils.utils import (
-    get_image_tensor,
-    post_processing,
-)
-from test.utils import download_model
-import onnx
-
 variants = [
-    pytest.param("resnext14_32x4d", marks=pytest.mark.pr_models_regression),
-    "resnext26_32x4d",
-    "resnext50_32x4d",
-    "resnext101_64x4d",
+    pytest.param(ModelVariant.RESNEXT14_32X4D_OSMR, marks=pytest.mark.pr_models_regression),
+    ModelVariant.RESNEXT26_32X4D_OSMR,
+    ModelVariant.RESNEXT50_32X4D_OSMR,
+    ModelVariant.RESNEXT101_64X4D_OSMR,
 ]
 
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", variants)
 def test_resnext_onnx(variant, forge_tmp_path):
-
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.RESNEXT,
         source=Source.OSMR,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Load the model and prepare input data
-    torch_model = download_model(ptcv_get_model, variant, pretrained=True)
-    torch_model.eval()
-    input_batch = get_image_tensor()
-    inputs = [input_batch]
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/{variant}.onnx"
-    torch.onnx.export(torch_model, inputs[0], onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model and input
+    loader = ModelLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Compile model
@@ -69,5 +51,4 @@ def test_resnext_onnx(variant, forge_tmp_path):
         compiled_model,
     )
 
-    # Post processing
-    post_processing(co_out)
+    loader.print_cls_results(co_out)

@@ -2,66 +2,34 @@
 
 # SPDX-License-Identifier: Apache-2.0
 import pytest
-import torch
-from datasets import load_dataset
-from transformers import AutoFeatureExtractor, WhisperModel
-
-import forge
-from forge.forge_property_utils import Framework, ModelArch, Source, Task, record_model_properties
-from forge.verify.verify import verify
-
-from test.utils import download_model
 import onnx
 
-
-class Wrapper(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, input_features, decoder_input_ids):
-        inputs = {"input_features": input_features, "decoder_input_ids": decoder_input_ids}
-        output = self.model(**inputs)
-        return output
-
-
-variants = ["openai/whisper-large-v3"]
+import forge
+from third_party.tt_forge_models.whisper.audio_classification.onnx import ModelLoader, ModelVariant
+from forge.forge_property_utils import Framework, ModelArch, Source, Task, record_model_properties
+from forge.verify.verify import verify
 
 
 @pytest.mark.skip_model_analysis
 @pytest.mark.nightly
-@pytest.mark.parametrize("variant", variants, ids=variants)
-def test_whisper_large_v3_onnx(variant, tmp_path):
-
+def test_whisper_large_v3_onnx(forge_tmp_path, variant=ModelVariant.WHISPER_LARGE_V3):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.WHISPER,
-        variant=variant,
+        variant=variant.value,
         task=Task.NLP_CAUSAL_LM,
         source=Source.HUGGINGFACE,
     )
 
     pytest.xfail(reason="Requires multi-chip support")
 
-    # Load Model and feature extractor
-    model = download_model(WhisperModel.from_pretrained, variant, return_dict=False)
-    torch_model = Wrapper(model)
-    feature_extractor = download_model(AutoFeatureExtractor.from_pretrained, variant)
-
-    # prepare input
-    ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
-    input_audio = feature_extractor(ds[0]["audio"]["array"], return_tensors="pt")
-    input_features = input_audio.input_features
-    decoder_input_ids = torch.tensor([[1, 1]]) * model.config.decoder_start_token_id
-    inputs = [input_features, decoder_input_ids]
-
-    # Export model to ONNX
-    onnx_path = f"{tmp_path}/whisper_v3.onnx"
-    torch.onnx.export(torch_model, (inputs[0], inputs[1]), onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
+    # Load model and input
+    loader = ModelLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
+    prep = loader.torch_loader._variant_config.pretrained_model_name
+    onnx_path = f"{forge_tmp_path}/{prep}.onnx"
 
     # passing model file instead of model proto due to size of the model(>2GB) - #https://github.com/onnx/onnx/issues/3775#issuecomment-943416925
     onnx.checker.check_model(onnx_path)
@@ -71,7 +39,7 @@ def test_whisper_large_v3_onnx(variant, tmp_path):
     compiled_model = forge.compile(framework_model, inputs, module_name=module_name)
 
     # Model Verification and inference
-    _, cout = verify(
+    verify(
         inputs,
         framework_model,
         compiled_model,

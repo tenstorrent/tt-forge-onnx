@@ -2,127 +2,95 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 import pytest
-from transformers import (
-    Swinv2ForMaskedImageModeling,
-    Swinv2ForImageClassification,
-    Swinv2Model,
-    ViTImageProcessor,
-)
-import onnx
 import torch
-import forge
 
-from test.models.onnx.vision.swin.model_utils.image_utils import load_image
-from test.models.onnx.vision.vision_utils.utils import load_vision_model_and_input
+import forge
+from third_party.tt_forge_models.swin.image_classification.onnx import (
+    ModelLoader as SwinImgClsOnnxLoader,
+    ModelVariant as SwinImgClsOnnxVariant,
+)
+from third_party.tt_forge_models.swin.masked_image_modeling.onnx import (
+    ModelLoader as SwinMimOnnxLoader,
+    ModelVariant as SwinMimOnnxVariant,
+)
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
+from forge.verify.verify import verify
 
 
 @pytest.mark.nightly
 @pytest.mark.xfail
-@pytest.mark.parametrize("variant", ["microsoft/swinv2-tiny-patch4-window8-256"])
+@pytest.mark.parametrize("variant", [SwinImgClsOnnxVariant.SWINV2_TINY_HF])
 def test_swin_v2_tiny_image_classification_onnx(variant, forge_tmp_path):
-
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.SWIN,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_CLASSIFICATION,
         source=Source.HUGGINGFACE,
     )
     pytest.xfail(reason="Segmentation Fault")
 
-    # Load the model
-    framework_model = Swinv2ForImageClassification.from_pretrained(variant)
-    framework_model.eval()
-
-    # Prepare input data
-    feature_extractor = ViTImageProcessor.from_pretrained(variant)
-    inputs = load_image(feature_extractor)
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/swin_v2_obj_cls.onnx"
-    torch.onnx.export(
-        framework_model, inputs[0], onnx_path, opset_version=17, input_names=["input"], output_names=["output"]
-    )
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model and input
+    loader = SwinImgClsOnnxLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inp = loader.load_inputs()
+    inputs = [inp] if isinstance(inp, torch.Tensor) else inp
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile framework model
     compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
+
+    verify(inputs, framework_model, compiled_model)
 
 
 @pytest.mark.pr_models_regression
 @pytest.mark.nightly
-@pytest.mark.parametrize("variant", ["microsoft/swinv2-tiny-patch4-window8-256"])
+@pytest.mark.parametrize("variant", [SwinMimOnnxVariant.SWINV2_TINY])
 def test_swin_v2_tiny_masked_onnx(variant, forge_tmp_path):
-
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.SWIN,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_MASKED_IMAGE_MODELING,
         source=Source.HUGGINGFACE,
     )
 
-    # Load the model
-    framework_model = Swinv2ForMaskedImageModeling.from_pretrained(variant)
-    framework_model.eval()
-
-    # Prepare input data
-    feature_extractor = ViTImageProcessor.from_pretrained(variant)
-    inputs = load_image(feature_extractor)
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/swin_v2_tiny_masked.onnx"
-    torch.onnx.export(
-        framework_model, inputs[0], onnx_path, opset_version=17, input_names=["input"], output_names=["output"]
-    )
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model and input
+    loader = SwinMimOnnxLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inp = loader.load_inputs()
+    inputs = [inp] if isinstance(inp, torch.Tensor) else inp
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile framework model
     compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
 
-
-variants_with_weights = {"swin_v2_t": "Swin_V2_T_Weights"}
+    verify(inputs, framework_model, compiled_model)
 
 
 @pytest.mark.nightly
 @pytest.mark.xfail
-@pytest.mark.parametrize("variant", ["swin_v2_t"])
+@pytest.mark.parametrize("variant", [SwinImgClsOnnxVariant.SWIN_V2_T])
 def test_swin_torchvision(variant, forge_tmp_path):
-
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.SWIN,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_CLASSIFICATION,
         source=Source.TORCHVISION,
     )
 
     # Load model and input
-    weight_name = variants_with_weights[variant]
-    framework_model, inputs = load_vision_model_and_input(variant, "classification", weight_name)
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/swin_v2_torchvision.onnx"
-    torch.onnx.export(
-        framework_model, inputs[0], onnx_path, opset_version=17, input_names=["input"], output_names=["output"]
-    )
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    loader = SwinImgClsOnnxLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inp = loader.load_inputs()
+    inputs = [inp] if isinstance(inp, torch.Tensor) else inp
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile framework model
     compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
+
+    verify(inputs, framework_model, compiled_model)

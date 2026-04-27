@@ -2,7 +2,10 @@
 
 # SPDX-License-Identifier: Apache-2.0
 import pytest
+import torch
+
 import forge
+from third_party.tt_forge_models.ssd300_resnet50.object_detection.onnx import ModelLoader, ModelVariant
 from forge.forge_property_utils import (
     Framework,
     ModelArch,
@@ -12,14 +15,6 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.models.onnx.vision.ssd300_resnet50.model_utils.utils import (
-    load_ssd300_torch_model,
-    load_ssd300_inputs,
-)
-from test.models.onnx.vision.vision_utils.utils import (
-    load_onnx_with_fallback,
-)
-
 
 @pytest.mark.pr_models_regression
 @pytest.mark.nightly
@@ -28,21 +23,16 @@ def test_pytorch_ssd300_resnet50(forge_tmp_path):
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.SSD300RESNET50,
+        variant=ModelVariant.BASE.value,
         source=Source.TORCH_HUB,
         task=Task.CV_IMAGE_CLASSIFICATION,
     )
 
-    # Prepare input
-    inputs = load_ssd300_inputs()
-
-    # Load ONNX model
-    onnx_model = load_onnx_with_fallback(
-        torch_model_loader=load_ssd300_torch_model,
-        s3_onnx_path="test_files/onnx/ssd300_resnet50/ssd300_resnet50.onnx",
-        onnx_filename="ssd300_resnet50.onnx",
-        forge_tmp_path=forge_tmp_path,
-        inputs=inputs,
-    )
+    # Load model and input
+    loader = ModelLoader(variant=ModelVariant.BASE)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inp = loader.load_inputs()
+    inputs = [inp] if isinstance(inp, torch.Tensor) else inp
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile
