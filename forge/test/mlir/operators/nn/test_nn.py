@@ -810,41 +810,6 @@ def test_conv2d_with_padding(shape, padding):
     verify(inputs, framework_model, compiled_model)
 
 
-@pytest.mark.xfail(
-    reason="RuntimeError: Found Unsupported operations while lowering from TTForge to TTIR in forward graph - adv_index"
-)
-@pytest.mark.parametrize(
-    "img, grid",
-    [
-        ((1, 2, 4, 4), (1, 6, 2, 2)),
-        ((1, 32, 50, 50), (1, 2500, 4, 2)),
-        ((1, 3, 8, 8), (1, 3, 3, 2)),
-        ((1, 3, 16, 16), (1, 8, 8, 2)),
-        ((5, 2, 10, 10), (5, 12, 3, 2)),
-        ((3, 8, 32, 32), (3, 25, 4, 2)),
-    ],
-)
-@pytest.mark.parametrize("align_corners", [True, False])
-def test_grid_sample(img, grid, align_corners, test_device):
-    class GridSampleModule(nn.Module):
-        def __init__(self, interpolation="bilinear", align_corners=align_corners):
-            super(GridSampleModule, self).__init__()
-            self.interpolation = interpolation
-            self.align_corners = align_corners
-
-        def forward(self, img, grid):
-            output = F.grid_sample(img, grid, mode=self.interpolation, align_corners=align_corners)
-            return output
-
-    # TO-DO: Support for nearest interpolation mode is yet to be added
-    model = GridSampleModule(interpolation="bilinear", align_corners=align_corners)
-    model.eval()
-    img = torch.randn(img)
-    grid = torch.randn(grid)
-    output = model(img, grid)
-    compiled_model = forge.compile(model, sample_inputs=[img, grid], module_name="grid_sample")
-
-
 @pytest.mark.parametrize(
     "input_shape, output_size",
     [

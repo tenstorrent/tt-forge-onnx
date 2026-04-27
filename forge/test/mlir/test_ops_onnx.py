@@ -4,7 +4,10 @@
 import pytest
 import torch
 import numpy as np
+import onnx
+import onnx.helper as oh
 from onnx import helper, TensorProto, numpy_helper
+from onnx import TensorProto as otp
 
 import forge
 from forge.verify.verify import verify
@@ -476,3 +479,46 @@ def test_convbn():
     compiled_model = forge.compile(onnx_model, inputs)
 
     verify(inputs, onnx_module, compiled_model)
+
+
+@pytest.mark.push
+@pytest.mark.parametrize(
+    "data_shape, grid_shape, mode, padding_mode, align_corners",
+    [
+        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 1),
+        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 0),
+        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 1),
+        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 0),
+        pytest.param((1, 64, 96, 96), (1, 128, 64, 2), "bilinear", "zeros", 1),
+        pytest.param((1, 64, 96, 96), (1, 128, 64, 2), "nearest", "zeros", 1),
+        pytest.param((1, 64, 80, 144), (1, 128, 64, 2), "nearest", "zeros", 1),
+    ],
+)
+def test_gridsample(data_shape, grid_shape, mode, padding_mode, align_corners):
+    n, c, h, w = data_shape
+    gn, gh, gw, _ = grid_shape
+
+    data_vi = oh.make_tensor_value_info("data", otp.FLOAT, list(data_shape))
+    grid_vi = oh.make_tensor_value_info("grid", otp.FLOAT, list(grid_shape))
+    out_vi = oh.make_tensor_value_info("output", otp.FLOAT, [n, c, gh, gw])
+    node = oh.make_node(
+        "GridSample",
+        inputs=["data", "grid"],
+        outputs=["output"],
+        align_corners=align_corners,
+        mode=mode,
+        padding_mode=padding_mode,
+    )
+    graph = oh.make_graph([node], "gridsample", [data_vi, grid_vi], [out_vi])
+    onnx_model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 18)])
+    onnx.checker.check_model(onnx_model)
+
+    rng = np.random.default_rng(0)
+    data = torch.from_numpy(rng.standard_normal(data_shape).astype(np.float32))
+    grid = torch.from_numpy(rng.uniform(-1.0, 1.0, grid_shape).astype(np.float32))
+
+    inputs = [data, grid]
+
+    framework_model = forge.OnnxModule("gridsample", onnx_model)
+    compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name="gridsample")
+    verify(inputs, framework_model=framework_model, compiled_model=compiled_model)

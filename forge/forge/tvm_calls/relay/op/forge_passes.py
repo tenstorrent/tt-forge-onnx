@@ -4446,37 +4446,114 @@ class ExpandMultipleDims(DFPatternCallback):
 
 
 class DecomposeGridSample(DFPatternCallback):
-    """Given an input and a flow-field grid, computes the output using input
-    values and pixel locations from grid. The grid_sample operation is typically used for sampling an input tensor (such as a feature map)
-    at specified coordinates, which are provided by a grid tensor. This operation is widely used in tasks
-    such as image warping, spatial transformers, and differentiable image resizing.
+    """Decomposes ``image.grid_sample(data, grid)`` into primitive relay ops
 
-    Args:
-        im (torch.Tensor): Input feature map, shape (N, C, H, W)
-        grid (torch.Tensor): Point coordinates, shape (N, Hg, Wg, 2)
-        align_corners (bool): If set to True, the extrema (-1 and 1) are
-            considered as referring to the center points of the input’s
-            corner pixels. If set to False, they are instead considered as
-            referring to the corner points of the input’s corner pixels,
-            making the sampling more resolution agnostic.
+    Overview
+    --------
+    ``grid_sample`` samples a spatial feature map *data* at floating-point
+    coordinates given by *grid*.  Each grid value is a normalised (x, y) pair
+    in [-1, 1]; the op maps those coordinates to pixel space, looks up one or
+    four neighbouring pixels, and blends them (bilinear) or snaps to the
+    nearest one.
 
-    This decomposition handles the following main cases:
-    1. Image and grid split across batch: The input image and grid are split per batch, ensuring each sample is processed independently.
-    2. Grid coordinates handling: The grid coordinates (x, y) are extracted from the flow-field grid and mapped to pixel indices, considering
-       the `align_corners` flag to adjust for how the extrema are interpreted.
-    3. Boundary handling: The image is padded to handle boundary conditions, ensuring that when grid coordinates point outside the valid image range,
-       they are clamped to the image bounds.
-    4. Bilinear interpolation: For each pixel in the grid, the surrounding pixels are retrieved using bilinear interpolation, which computes the
-       weighted average of the nearest four pixels based on the grid's fractional coordinates.
-    5. Efficient computation: The image is reshaped and flattened for efficient indexing, and bilinear interpolation is computed using the
-       precomputed weights and indices.
-    6. Results reconstruction: The interpolated values are computed for each channel and combined back into the final result, which is concatenated
-       along the batch dimension.
+    Signatures
+    ----------
+    data  : (N, C, H, W)   float32  — feature map to sample from
+    grid  : (N, Hg, Wg, 2) float32  — grid[..., 0] = x (col), grid[..., 1] = y (row)
+    output: (N, C, Hg, Wg) float32  — sampled values
 
-    Returns:
-        torch.Tensor: A tensor with sampled points, shape (N, C, Hg, Wg)
-    This decomposition is adapted from the implementation in
-    MMCV: https://mmcv.readthedocs.io/en/latest/_modules/mmcv/ops/point_sample.html
+    Attributes
+    ----------
+    mode          : "bilinear" | "nearest"
+    padding_mode  : "zeros"  (only mode currently supported)
+    align_corners : True  → grid ±1 maps to the *centre* of the corner pixels
+                            unnorm_x = (x + 1) / 2 * (W - 1)
+                  : False → grid ±1 maps to the *edge* of the corner pixels
+                            unnorm_x = (x + 1) * W / 2 - 0.5
+                    The False convention is resolution-agnostic and common in
+                    recent BEV / camera-projection networks.
+
+    Decomposition steps
+    -------------------
+    The callback rewrites a single ``image.grid_sample`` node into a sequence
+    of relay primitives.  The steps below describe one batch element (N is
+    handled by splitting on axis 0 and concatenating results at the end).
+
+    Step 1 — Batch split
+        ``relay.split(data, N, axis=0)`` and ``relay.split(grid, N, axis=0)``
+        produce per-sample slices (1, C, H, W) and (1, Hg, Wg, 2).
+        Static shape specialisation requires N to be known at compile time.
+
+    Step 2 — Coordinate unnormalisation
+        ``strided_slice`` extracts the x and y coordinate planes from the
+        (1, Hg, Wg, 2) grid tensor; ``squeeze`` removes the trailing dim.
+        The normalised values are then mapped to pixel space:
+          align_corners=True:  unnorm = (coord + 1) / 2 * (dim - 1)
+          align_corners=False: unnorm = (coord + 1) * dim / 2 - 0.5
+
+    Step 3 — Zero-padding
+        ``relay.nn.pad`` adds a 1-pixel border of zeros around the spatial
+        dims, producing a (1, C, H+2, W+2) padded image.  Out-of-bounds
+        grid coordinates are later clamped into this border, so they
+        automatically sample zero — implementing padding_mode="zeros".
+
+    Step 4 — Integer pixel indices  [hardware workaround A]
+        The padded pixel index is:
+            x0_p = cast(floor(unnorm_x + 1), int32)
+        The "+1" pre-shift combines two effects:
+          (a) It is the pad offset, so no separate addition is needed later.
+          (b) It keeps the floor argument ≥ 0 for all valid grid coords.
+              - align_corners=True:  unnorm ∈ [0, W-1]     → shifted ∈ [1, W]
+              - align_corners=False: unnorm ∈ [-0.5, W-0.5] → shifted ∈ [0.5, W+0.5]
+        This matters because ``DecomposeFloor`` rewrites ``floor`` as a
+        Less/Where chain; the TT hardware evaluates ``Less(x, 0)`` as always
+        False, so negative non-integers are truncated toward zero instead of
+        being floored.  The pre-shift ensures the negative branch never fires.
+        floor(x + 1) == floor(x) + 1 for all x, so the resulting index is
+        mathematically identical to the standard padded index.
+        A final ``relay.clip`` clamps fully out-of-range coords to the padded
+        boundary (indices [0, padded_dim - 1]).
+
+    Step 5 — Bilinear weights  [hardware workaround B]
+        Standard formula: dx0 = unnorm_x - floor(unnorm_x)  (fractional part)
+        On TT hardware, Cast(int32_from_floor_chain, float32) silently
+        returns zero, so dx0 computed that way would corrupt the interpolation.
+        Fix — exploit the identity dx0 + dx1 = 1:
+            dx1 = cast(x1_p, float32) - x_shifted   ← x1_p is x0_p+1, never
+            dx0 = 1.0 - dx1                            derived from a floor cast
+        The four bilinear corner weights (squeezed to (Hg, Wg) — see below):
+            wa = dx1 * dy1   corner (x1, y1)
+            wb = dx1 * dy0   corner (x1, y0)
+            wc = dx0 * dy1   corner (x0, y1)
+            wd = dx0 * dy0   corner (x0, y0)
+        Weights are squeezed from (1, Hg, Wg) to (Hg, Wg) because a
+        (C, 1, H, W) * (1, 1, H, W) broadcast multiply silently produces
+        zeros on TT hardware.  [hardware workaround C]
+
+    Step 6 — Flattened 2-D → 1-D indexing  [hardware workaround D]
+        The padded image is reshaped to (1, C, H_p * W_p).  Pixel addresses
+        are computed as:
+            flat = cast_f32(x) + cast_f32(y) * padded_w
+        The intermediate arithmetic is kept in float32 because int32 * int32
+        multiply silently returns zeros on TT hardware.  The final result is
+        cast back to int32 for the gather step.
+
+    Step 7 — Per-channel gather  [hardware workaround E]
+        The flat image is split along the channel axis (C slices of shape
+        (1, H_p * W_p)).  Each channel slice is transposed to (H_p*W_p, 1)
+        so that ``relay.adv_index`` treats it as an embedding table of
+        H_p*W_p rows with 1 element each — the standard Embedding layout.
+        For bilinear mode, the four corner index vectors are concatenated into
+        a single (4*Hg*Wg,) tensor and passed to ONE ``adv_index`` call per
+        channel.  The result (4*Hg*Wg, 1) is split into four equal parts,
+        transposed, and reshaped to (Hg, Wg) before applying the weights.
+        A single adv_index is required because multiple adv_index ops that
+        read the same embedding table return zeros on TT hardware.
+
+    Step 8 — Output reconstruction
+        Per-channel results (Hg, Wg) are reshaped to (1, Hg, Wg), concatenated
+        along axis 0 to form (C, Hg, Wg), then reshaped to (1, C, Hg, Wg).
+        Batch results are concatenated along axis 0 to give (N, C, Hg, Wg).
     """
 
     def __init__(self):
@@ -4490,36 +4567,38 @@ class DecomposeGridSample(DFPatternCallback):
     def callback(self, pre, post, node_map):
         from tvm.relay.frontend.common import infer_shape
 
-        # Attributes extraction
-        data = node_map[self.data][0]
-        grid = node_map[self.grid][0].args[0]
+        data_node = node_map[self.data][0]
+        grid_node = node_map[self.grid][0].args[0]
         mode = post.attrs["method"]
         align_corners = post.attrs["align_corners"]
 
-        # Split the image and grid tensors across the batch size
-        batch_size = infer_shape(data)[0]
-        split_im = tvm.relay.split(data, indices_or_sections=batch_size, axis=0)
-        split_grid = tvm.relay.split(grid, indices_or_sections=batch_size, axis=0)
+        # Step 1: split along batch axis so each element has a known static shape
+        batch_size = infer_shape(data_node)[0]
+        split_im = tvm.relay.split(data_node, indices_or_sections=batch_size, axis=0)
+        split_grid = tvm.relay.split(grid_node, indices_or_sections=batch_size, axis=0)
         results = []
-        for batch_idx in range(batch_size):
-            data = split_im[batch_idx]
-            grid = split_grid[batch_idx]
-            n, c, h, w = infer_shape(data)
-            gn, gh, gw, _ = infer_shape(grid)
-            assert (
-                len(infer_shape(data)) == 4 and len(infer_shape(grid)) == 4
-            ), "Length of data and grid shapes should be 4."
 
-            # Extract x and y components from the grid
-            x = tvm.relay.strided_slice(grid, begin=[0, 0, 0, 0], end=[gn, gh, gw, 1], strides=[1, 1, 1, 1])
-            x = tvm.relay.squeeze(x, axis=[3])
-            y = tvm.relay.strided_slice(grid, begin=[0, 0, 0, 1], end=[gn, gh, gw, 2], strides=[1, 1, 1, 1])
-            y = tvm.relay.squeeze(y, axis=[3])
-            # Map grid coordinates to image pixel indices
+        for batch_idx in range(batch_size):
+            im_b = split_im[batch_idx]
+            grid_b = split_grid[batch_idx]
+            n, c, h, w = infer_shape(im_b)
+            gn, gh, gw, _ = infer_shape(grid_b)
+
+            # Step 2: extract x/y planes and unnormalise to pixel coordinates
+            x = tvm.relay.squeeze(
+                tvm.relay.strided_slice(grid_b, [0, 0, 0, 0], [gn, gh, gw, 1], [1, 1, 1, 1]),
+                axis=[3],
+            )
+            y = tvm.relay.squeeze(
+                tvm.relay.strided_slice(grid_b, [0, 0, 0, 1], [gn, gh, gw, 2], [1, 1, 1, 1]),
+                axis=[3],
+            )
             if align_corners:
+                # ±1 → pixel centres: unnorm = (coord + 1) / 2 * (dim - 1)
                 x = ((x + tvm.relay.const(1.0)) / tvm.relay.const(2.0)) * tvm.relay.const(float(w - 1))
                 y = ((y + tvm.relay.const(1.0)) / tvm.relay.const(2.0)) * tvm.relay.const(float(h - 1))
             else:
+                # ±1 → pixel edges: unnorm = (coord + 1) * dim / 2 - 0.5
                 x = ((x + tvm.relay.const(1.0)) * tvm.relay.const(float(w)) - tvm.relay.const(1.0)) / tvm.relay.const(
                     2.0
                 )
@@ -4527,116 +4606,119 @@ class DecomposeGridSample(DFPatternCallback):
                     2.0
                 )
 
-            # Compute integer pixel indices for bilinear interpolation
-            if mode == "bilinear":
-                x0 = tvm.relay.floor(x).astype("int32")
-                y0 = tvm.relay.floor(y).astype("int32")
-            else:
-                assert False, f"Unsupported mode: {mode}. Only 'bilinear' is supported."
-
-            # Compute next indices for interpolation
-            x1 = x0 + tvm.relay.const(1, dtype="int32")
-            y1 = y0 + tvm.relay.const(1, dtype="int32")
-
-            # Compute interpolation weights
-            if mode == "bilinear":
-                wa = tvm.relay.expand_dims(
-                    (tvm.relay.cast(x1, "float32") - x) * (tvm.relay.cast(y1, "float32") - y), axis=1
-                )
-                wb = tvm.relay.expand_dims(
-                    (tvm.relay.cast(x1, "float32") - x) * (y - tvm.relay.cast(y0, "float32")), axis=1
-                )
-                wc = tvm.relay.expand_dims(
-                    (x - tvm.relay.cast(x0, "float32")) * (tvm.relay.cast(y1, "float32") - y), axis=1
-                )
-                wd = tvm.relay.expand_dims(
-                    (x - tvm.relay.cast(x0, "float32")) * (y - tvm.relay.cast(y0, "float32")), axis=1
-                )
-
-            # Add padding to the input image to handle boundary conditions
-            im_padded = tvm.relay.nn.pad(data, pad_width=((0, 0), (0, 0), (1, 1), (1, 1)))
+            # Step 3: 1-pixel zero-pad; OOB coords clip into the zero border
+            im_padded = tvm.relay.nn.pad(im_b, pad_width=((0, 0), (0, 0), (1, 1), (1, 1)))
             padded_h = h + 2
             padded_w = w + 2
-            temp_w = padded_w - 1
-            temp_h = padded_h - 1
+            temp_w = padded_w - 1  # max valid padded x index
+            temp_h = padded_h - 1  # max valid padded y index
 
-            # Adjust indices to include padding and clip within valid image bounds
-            pad_const = tvm.relay.const(1, dtype="int32")
-            x0 = tvm.relay.clip(x0 + pad_const, a_min=0, a_max=temp_w)
-            x1 = tvm.relay.clip(x1 + pad_const, a_min=0, a_max=temp_w)
-            y0 = tvm.relay.clip(y0 + pad_const, a_min=0, a_max=temp_h)
-            y1 = tvm.relay.clip(y1 + pad_const, a_min=0, a_max=temp_h)
-            # Precompute constants and reshape padded image for flattened indexing
-            padded_w_const = tvm.relay.const(padded_w, dtype="int32")
-            im_padded = tvm.relay.reshape(im_padded, (n, c, -1))
+            # Step 4: compute padded integer indices
+            # x_shifted = unnorm_x + 1  combines the pad offset with the
+            # non-negativity guarantee required by the hardware (workaround A).
+            x_shifted = x + tvm.relay.const(1.0, "float32")
+            y_shifted = y + tvm.relay.const(1.0, "float32")
 
-            # Compute flattened indices for each corner in a compact way
-            def compute_flattened_indices(x, y):
-                return tvm.relay.reshape(x + y * padded_w_const, newshape=[-1])
-
-            x0_y0_flattened = compute_flattened_indices(x0, y0)
-            x0_y1_flattened = compute_flattened_indices(x0, y1)
-            x1_y0_flattened = compute_flattened_indices(x1, y0)
-            x1_y1_flattened = compute_flattened_indices(x1, y1)
-
-            num_splits = infer_shape(im_padded)[1]
-            split_im_padded = tvm.relay.split(im_padded, indices_or_sections=num_splits, axis=1)
-            x0_y0_parts = []
-            x0_y1_parts = []
-            x1_y0_parts = []
-            x1_y1_parts = []
-            x0_y0 = x0 + y0 * padded_w_const
-            t1, t2 = infer_shape(tvm.relay.squeeze(x0_y0, axis=[0]))
-            flatten_shape = [t1, t2]
-
-            # Perform bilinear interpolation for each channel
-            for i in range(num_splits):
-                im_part = split_im_padded[i]
-                im_part = tvm.relay.squeeze(im_part, axis=[0])
-                im_part = tvm.relay.transpose(im_part, [1, 0])
-                im_part = tvm.relay.expand_dims(im_part, axis=1)
-
-                x0_y0 = tvm.relay.expand_dims(
-                    tvm.relay.reshape(tvm.relay.take(im_part, x0_y0_flattened, axis=0), newshape=flatten_shape), axis=0
-                )
-                x0_y0_parts.append(x0_y0)
-
-                x0_y1 = tvm.relay.expand_dims(
-                    tvm.relay.reshape(tvm.relay.take(im_part, x0_y1_flattened, axis=0), newshape=flatten_shape), axis=0
-                )
-                x0_y1_parts.append(x0_y1)
-
-                x1_y0 = tvm.relay.expand_dims(
-                    tvm.relay.reshape(tvm.relay.take(im_part, x1_y0_flattened, axis=0), newshape=flatten_shape), axis=0
-                )
-                x1_y0_parts.append(x1_y0)
-
-                x1_y1 = tvm.relay.expand_dims(
-                    tvm.relay.reshape(tvm.relay.take(im_part, x1_y1_flattened, axis=0), newshape=flatten_shape), axis=0
-                )
-                x1_y1_parts.append(x1_y1)
-
-            # Concatenate parts back for all channels
-            x0_y0 = tvm.relay.concatenate(x0_y0_parts, axis=0)
-            x0_y1 = tvm.relay.concatenate(x0_y1_parts, axis=0)
-            x1_y0 = tvm.relay.concatenate(x1_y0_parts, axis=0)
-            x1_y1 = tvm.relay.concatenate(x1_y1_parts, axis=0)
-
-            # Expand dimensions to align with batch/channel format
-            x0_y0, x0_y1, x1_y0, x1_y1 = [tvm.relay.expand_dims(x, axis=1) for x in [x0_y0, x0_y1, x1_y0, x1_y1]]
-
-            # Compute the final output using bilinear weights
             if mode == "bilinear":
-                output = x0_y0 * wa + x0_y1 * wb + x1_y0 * wc + x1_y1 * wd
-                output = tvm.relay.transpose(output, [1, 0, 2, 3])
-            else:
-                assert False, f"Unsupported mode: {mode}. Only 'bilinear' is supported."
+                # floor(x_shifted) gives x0_p, the lower padded column index
+                x0_p = tvm.relay.cast(tvm.relay.floor(x_shifted), "int32")
+                y0_p = tvm.relay.cast(tvm.relay.floor(y_shifted), "int32")
+                x1_p = x0_p + tvm.relay.const(1, dtype="int32")  # upper column
+                y1_p = y0_p + tvm.relay.const(1, dtype="int32")  # upper row
 
+                # Step 5: bilinear weights (workarounds B and C)
+                # dx1 = distance from x_shifted to the *upper* integer boundary
+                # dx0 = 1 - dx1  (distance to the *lower* integer boundary)
+                dx1 = tvm.relay.cast(x1_p, "float32") - x_shifted
+                dy1 = tvm.relay.cast(y1_p, "float32") - y_shifted
+                dx0 = tvm.relay.const(1.0) - dx1
+                dy0 = tvm.relay.const(1.0) - dy1
+                # Squeeze from (1, Hg, Wg) → (Hg, Wg) to avoid broadcast-multiply bug
+                wa_2d = tvm.relay.squeeze(dx1 * dy1, axis=[0])  # weight for (x1, y1)
+                wb_2d = tvm.relay.squeeze(dx1 * dy0, axis=[0])  # weight for (x1, y0)
+                wc_2d = tvm.relay.squeeze(dx0 * dy1, axis=[0])  # weight for (x0, y1)
+                wd_2d = tvm.relay.squeeze(dx0 * dy0, axis=[0])  # weight for (x0, y0)
+
+                # Clamp indices to padded image bounds
+                x0 = tvm.relay.clip(x0_p, a_min=0, a_max=temp_w)
+                y0 = tvm.relay.clip(y0_p, a_min=0, a_max=temp_h)
+                x1 = tvm.relay.clip(x1_p, a_min=0, a_max=temp_w)
+                y1 = tvm.relay.clip(y1_p, a_min=0, a_max=temp_h)
+
+            elif mode == "nearest":
+                # Round to nearest: floor(x + 0.5); combined with pre-shift → floor(x_shifted + 0.5)
+                x0 = tvm.relay.clip(
+                    tvm.relay.cast(tvm.relay.floor(x_shifted + tvm.relay.const(0.5, "float32")), "int32"),
+                    a_min=0,
+                    a_max=temp_w,
+                )
+                y0 = tvm.relay.clip(
+                    tvm.relay.cast(tvm.relay.floor(y_shifted + tvm.relay.const(0.5, "float32")), "int32"),
+                    a_min=0,
+                    a_max=temp_h,
+                )
+            else:
+                assert False, f"Unsupported mode: {mode}. Supported modes: ‘bilinear’, ‘nearest’."
+
+            # Step 6: flatten padded image to (n, c, H_p*W_p) for 1-D index gather
+            # flat index = x + y * padded_w  (row-major, computed in float32 — workaround D)
+            padded_w_f32 = tvm.relay.const(float(padded_w), dtype="float32")
+            im_flat = tvm.relay.reshape(im_padded, (n, c, -1))
+
+            def flat_idx(xi, yi):
+                """2-D padded (xi, yi) → 1-D flat index, float32 arithmetic."""
+                return tvm.relay.reshape(
+                    tvm.relay.cast(
+                        tvm.relay.cast(xi, "float32") + tvm.relay.cast(yi, "float32") * padded_w_f32,
+                        "int32",
+                    ),
+                    newshape=[-1],
+                )
+
+            idx_x0y0 = flat_idx(x0, y0)
+            if mode == "bilinear":
+                idx_x0y1 = flat_idx(x0, y1)
+                idx_x1y0 = flat_idx(x1, y0)
+                idx_x1y1 = flat_idx(x1, y1)
+
+            # Step 7: per-channel gather
+            # Split into C channel slices of shape (1, H_p*W_p), transpose each
+            # to (H_p*W_p, 1) to match the adv_index Embedding table layout.
+            split_channels = tvm.relay.split(im_flat, indices_or_sections=c, axis=1)
+            output_parts = []
+
+            for i in range(c):
+                ch = tvm.relay.transpose(tvm.relay.squeeze(split_channels[i], axis=[0]), [1, 0])
+
+                if mode == "bilinear":
+                    # Concatenate all 4 corner index vectors into one (4*Hg*Wg,) tensor
+                    # and issue a SINGLE adv_index — workaround E prevents silent zeros
+                    # from multiple adv_index calls on the same channel table.
+                    all_idx = tvm.relay.concatenate([idx_x0y0, idx_x0y1, idx_x1y0, idx_x1y1], axis=0)
+                    # adv_index((H_p*W_p, 1), (4*Hg*Wg,)) → (4*Hg*Wg, 1)
+                    corners = tvm.relay.split(tvm.relay.adv_index([ch, all_idx]), indices_or_sections=4, axis=0)
+
+                    def corner(k, _c=corners):
+                        # (Hg*Wg, 1) → transpose → (1, Hg*Wg) → reshape → (Hg, Wg)
+                        return tvm.relay.reshape(tvm.relay.transpose(_c[k], [1, 0]), newshape=[gh, gw])
+
+                    val = corner(0) * wa_2d + corner(1) * wb_2d + corner(2) * wc_2d + corner(3) * wd_2d
+                else:
+                    # nearest: single gather, reshape to (Hg, Wg)
+                    sampled = tvm.relay.adv_index([ch, idx_x0y0])  # (Hg*Wg, 1)
+                    val = tvm.relay.reshape(tvm.relay.transpose(sampled, [1, 0]), newshape=[gh, gw])
+
+                output_parts.append(tvm.relay.reshape(val, [1, gh, gw]))
+
+            # Step 8: reconstruct (n, c, gh, gw) from per-channel (1, gh, gw) slices
+            output = tvm.relay.reshape(
+                tvm.relay.concatenate(output_parts, axis=0),  # (c, gh, gw)
+                newshape=[n, c, gh, gw],
+            )
             results.append(output)
 
-        # Concatenate results along the batch dimension
-        final_output = tvm.relay.concatenate(results, axis=0)
-        return final_output
+        # Concatenate batch results → (N, C, Hg, Wg)
+        return tvm.relay.concatenate(results, axis=0)
 
 
 class DecomposeFloor(DFPatternCallback):
