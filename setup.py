@@ -112,18 +112,18 @@ def _prune_bloat_from_wheel(install_dir: str) -> None:
     _remove_bloat_dir(install_dir / "lib" / "pkgconfig")
     _remove_bloat_dir(install_dir / "include")
     _remove_bloat_dir(install_dir / "tt-metal" / ".cpmcache")
-    _fix_file(install_dir / "lib" / "libtt-umd.so.0")
+    _fix_file(install_dir / "lib" / "libtt-umd.so.0", install_dir)
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so")
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so.0.*")
     _strip_shared_objects(install_dir)
 
 
-def _fix_file(file_path: Path) -> None:
+def _fix_file(file_path: Path, install_dir: Path) -> None:
     if file_path.is_symlink():
         target = file_path.resolve()
         file_path.unlink()
         shutil.copy2(target, file_path)
-    adjust_rpath(file_path, "$ORIGIN:$ORIGIN/lib")
+    adjust_rpath(file_path, "$ORIGIN:$ORIGIN/lib", install_dir)
 
 
 def _remove_broken_symlinks(root: Path) -> None:
@@ -183,7 +183,7 @@ def _remove_bloat_file(file_path: Path) -> None:
             file_path.unlink()
 
 
-def adjust_rpath(so_file: str, new_rpath: str) -> None:
+def adjust_rpath(so_file: str, new_rpath: str, install_dir: Path) -> None:
     """Adjust rpath of a .so file using patchelf."""
     patchelf_path = shutil.which("patchelf")
     if patchelf_path is None:
@@ -263,7 +263,7 @@ def _add_so_dependencies(install_dir: Path) -> None:
                     shutil.copy2(dep, dest_path)
                     # adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
                     copied_libs.add(dest_path)
-                    adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/lib")
+                    adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/lib", install_dir)
             else:
                 print(f"Skipping standard/our library dependency: {dep}")
 
