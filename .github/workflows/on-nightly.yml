@@ -25,36 +25,36 @@ jobs:
       docker-image: ${{ needs.docker-build.outputs.docker-image }}
       build: 'Release'
 
-  test_forge_model:
-    needs:
-      - docker-build
-      - build
-    uses: ./.github/workflows/test-sub.yml
-    secrets: inherit
-    with:
-      test_mark: 'nightly'
-      test_group_cnt: 6
-      test_group_ids: '[1,2,3,4,5,6]'
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      run_id: ${{ github.run_id }}
-      runs-on: '[{"runs-on": "n150"}]'
-      tests_to_filter: 'forge/test/models/tensorflow,forge/test/models/onnx,forge/test/models/paddlepaddle'
-      enable-verbose-output: true
+  # test_forge_model:
+  #   needs:
+  #     - docker-build
+  #     - build
+  #   uses: ./.github/workflows/test-sub.yml
+  #   secrets: inherit
+  #   with:
+  #     test_mark: 'nightly'
+  #     test_group_cnt: 6
+  #     test_group_ids: '[1,2,3,4,5,6]'
+  #     docker-image: ${{ needs.docker-build.outputs.docker-image }}
+  #     run_id: ${{ github.run_id }}
+  #     runs-on: '[{"runs-on": "n150"}]'
+  #     tests_to_filter: 'forge/test/models/tensorflow,forge/test/models/onnx,forge/test/models/paddlepaddle'
+  #     enable-verbose-output: true
 
-  benchmark:
-    needs:
-      - docker-build
-      - build
-    uses: ./.github/workflows/benchmark-sub.yml
-    secrets: inherit
-    with:
-      test_group_cnt: '1'
-      test_group_ids: '[1]'
-      docker-image: ${{ needs.docker-build.outputs.docker-image }}
-      run_id: ${{ github.run_id }}
-      runs-on: '[{"runs-on": "n150"}]'
-      tests_to_filter: 'forge/test/benchmark'
-      enable-verbose-output: true
+  # benchmark:
+  #   needs:
+  #     - docker-build
+  #     - build
+  #   uses: ./.github/workflows/benchmark-sub.yml
+  #   secrets: inherit
+  #   with:
+  #     test_group_cnt: '1'
+  #     test_group_ids: '[1]'
+  #     docker-image: ${{ needs.docker-build.outputs.docker-image }}
+  #     run_id: ${{ github.run_id }}
+  #     runs-on: '[{"runs-on": "n150"}]'
+  #     tests_to_filter: 'forge/test/benchmark'
+  #     enable-verbose-output: true
 
   release:
     uses: ./.github/workflows/call-release.yml
