@@ -112,10 +112,18 @@ def _prune_bloat_from_wheel(install_dir: str) -> None:
     _remove_bloat_dir(install_dir / "lib" / "pkgconfig")
     _remove_bloat_dir(install_dir / "include")
     _remove_bloat_dir(install_dir / "tt-metal" / ".cpmcache")
+    _fix_file(install_dir / "lib" / "libtt-umd.so.0", "$ORIGIN:$ORIGIN/lib")
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so")
     _remove_bloat_file(install_dir / "lib" / "libtt-umd.so.0.*")
-    adjust_rpath(install_dir / "lib" / "libtt-umd.so.0", "$ORIGIN:$ORIGIN/lib")
     _strip_shared_objects(install_dir)
+
+
+def _fix_file(file_path: Path) -> None:
+    if file_path.is_symlink():
+        target = file_path.resolve()
+        file_path.unlink()
+        shutil.copy2(target, file_path)
+    adjust_rpath(file_path, "$ORIGIN:$ORIGIN/lib")
 
 
 def _remove_broken_symlinks(root: Path) -> None:
