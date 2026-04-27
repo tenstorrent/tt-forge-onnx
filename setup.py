@@ -212,33 +212,36 @@ def _add_so_dependencies(install_dir: Path) -> None:
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"Failed to adjust rpath for {so_file}: {exc}")
 
-    lib_dir = install_dir / "lib"
-    all_libs = set()
-    copied_libs = set()
-    for so_file in install_dir.rglob("*.so*"):
-        if so_file.is_symlink() or not so_file.is_file():
-            continue
+    def collect_and_add_libs(lib_dir: Path) -> None:
+        all_libs = set()
+        copied_libs = set()
+        for so_file in install_dir.rglob("*.so*"):
+            if so_file.is_symlink() or not so_file.is_file():
+                continue
 
-        all_libs.update(get_so_dependencies(str(so_file)))
+            all_libs.update(get_so_dependencies(str(so_file)))
 
-    print(f"Total dependencies found: {len(all_libs)}")
-    print(all_libs)
-    for dep in all_libs:
-        dep_path = Path(dep).resolve()
-        if dep_path.parts[:-1] != install_dir.parts and not is_standard_library(dep):
-            dep_path = Path(dep)
-            dest_path = lib_dir / dep_path.name
-            if not dest_path.exists():
-                print(f"Copying dependency {dep} to {dest_path}...")
-                shutil.copy2(dep, dest_path)
-                # adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
-                copied_libs.add(dest_path)
-                adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/../lib")
-        else:
-            print(f"Skipping standard/our library dependency: {dep}")
+        print(f"Total dependencies found: {len(all_libs)}")
+        print(all_libs)
+        for dep in all_libs:
+            dep_path = Path(dep).resolve()
+            if dep_path.parts[:-1] != install_dir.parts and not is_standard_library(dep):
+                dep_path = Path(dep)
+                dest_path = lib_dir / dep_path.name
+                if not dest_path.exists():
+                    print(f"Copying dependency {dep} to {dest_path}...")
+                    shutil.copy2(dep, dest_path)
+                    # adjust_rpath(dest_path, "$ORIGIN/../lib:$ORIGIN")
+                    copied_libs.add(dest_path)
+                    adjust_rpath(str(dest_path), "$ORIGIN:$ORIGIN/../lib")
+            else:
+                print(f"Skipping standard/our library dependency: {dep}")
 
-    print(f"Copied dependencies {len(copied_libs)}:")
-    print(copied_libs)
+        print(f"Copied dependencies {len(copied_libs)}:")
+        print(copied_libs)
+
+    collect_and_add_libs(install_dir)
+    collect_and_add_libs(install_dir / "lib")
 
 
 with open("README.md", "r") as f:
