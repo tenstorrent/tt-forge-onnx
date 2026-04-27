@@ -4,10 +4,9 @@
 
 # From: https://huggingface.co/alibaba-damo/mgp-str-base
 import pytest
-import torch
-import onnx
 
 import forge
+from third_party.tt_forge_models.mgp_str_base.image_classification.onnx import ModelLoader
 from forge.forge_property_utils import (
     Framework,
     ModelArch,
@@ -19,20 +18,6 @@ from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import verify
 
-from test.models.onnx.vision.mgp_str_base.model_utils.utils import (
-    load_input,
-    load_model,
-)
-
-
-class Wrapper(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, inputs):
-        return self.model(inputs)[0]
-
 
 @pytest.mark.nightly
 @pytest.mark.parametrize(
@@ -42,7 +27,6 @@ class Wrapper(torch.nn.Module):
     ],
 )
 def test_mgp_scene_text_recognition_onnx(variant, forge_tmp_path):
-
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
@@ -52,35 +36,21 @@ def test_mgp_scene_text_recognition_onnx(variant, forge_tmp_path):
         task=Task.CV_IMAGE_ENCODING,
     )
 
-    # Load model and wrap
-    framework_model = load_model(variant)
-    framework_model = Wrapper(framework_model).eval()
-
-    # Load input
-    inputs, processor = load_input(variant)
-    inputs = [inputs[0]]
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/mgp_str_base.onnx"
-    torch.onnx.export(
-        framework_model, inputs[0], onnx_path, opset_version=17, input_names=["input"], output_names=["output"]
-    )
-
-    # Load and check ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model and input
+    loader = ModelLoader()
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile ONNX model
-    compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name=module_name)
+    compiled_model = forge.compile(onnx_model, inputs, module_name=module_name)
 
     # Model Verification
     _, co_out = verify(
         inputs, framework_model, compiled_model, VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.95))
     )
 
-    # Post-processing
     output = (co_out[0], co_out[1], co_out[2])
-    generated_text = processor.batch_decode(output)["generated_text"]
+    generated_text = loader.torch_loader.processor.batch_decode(output)["generated_text"]
 
     print(f"Generated text: {generated_text}")

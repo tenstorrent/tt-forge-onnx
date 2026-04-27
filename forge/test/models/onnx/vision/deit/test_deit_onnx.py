@@ -2,9 +2,6 @@
 
 # SPDX-License-Identifier: Apache-2.0
 import pytest
-import torch
-from datasets import load_dataset
-from transformers import AutoFeatureExtractor, ViTForImageClassification
 
 import forge
 from forge.forge_property_utils import (
@@ -16,15 +13,14 @@ from forge.forge_property_utils import (
 )
 from forge.verify.verify import verify
 
-from test.utils import download_model
-import onnx
+from third_party.tt_forge_models.deit.image_classification.onnx import ModelLoader, ModelVariant
 from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 
 variants = [
-    pytest.param("facebook/deit-base-patch16-224", marks=pytest.mark.pr_models_regression),
-    "facebook/deit-small-patch16-224",
-    "facebook/deit-tiny-patch16-224",
+    pytest.param(ModelVariant.BASE, marks=pytest.mark.pr_models_regression),
+    pytest.param(ModelVariant.SMALL),
+    pytest.param(ModelVariant.TINY),
 ]
 
 
@@ -36,36 +32,22 @@ def test_deit_onnx(variant, forge_tmp_path):
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.DEIT,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_CLASSIFICATION,
         source=Source.HUGGINGFACE,
     )
 
-    # Load model
-    image_processor = download_model(AutoFeatureExtractor.from_pretrained, variant)
-    torch_model = download_model(ViTForImageClassification.from_pretrained, variant, return_dict=False)
-    torch_model.eval()
-
-    # Prepare input
-    dataset = load_dataset("huggingface/cats-image")
-    image_1 = dataset["test"]["image"][0]
-    img_tensor = image_processor(image_1, return_tensors="pt").pixel_values
-    inputs = [img_tensor]
-
-    # Export model to ONNX
-    onnx_path = f'{forge_tmp_path}/{variant.split("/")[-1].replace("-", "_")}.onnx'
-    torch.onnx.export(torch_model, inputs[0], onnx_path, opset_version=17)
-
-    # Load framework model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    # Load model and input
+    loader = ModelLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Compile model
     compiled_model = forge.compile(onnx_model, inputs, module_name=module_name)
 
     pcc = 0.99
-    if variant == "facebook/deit-base-patch16-224":
+    if variant == ModelVariant.BASE:
         pcc = 0.96
 
     # Model Verification and Inference
@@ -77,6 +59,4 @@ def test_deit_onnx(variant, forge_tmp_path):
     )
 
     # Post processing
-    logits = co_out[0]
-    predicted_class_idx = logits.argmax(-1).item()
-    print("Predicted class: ", torch_model.config.id2label[predicted_class_idx])
+    loader.output_postprocess(co_out=co_out)

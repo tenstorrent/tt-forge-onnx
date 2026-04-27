@@ -4,10 +4,9 @@
 import pytest
 
 import forge
-from forge.verify.verify import verify
-
-from test.models.onnx.multimodal.oft.model_utils.oft_utils import get_inputs, get_models
+from third_party.tt_forge_models.oft_stable_diffusion.text_to_image.onnx import ModelLoader
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
+from forge.verify.verify import verify
 
 
 @pytest.mark.parametrize("variant", ["runwayml/stable-diffusion-v1-5"])
@@ -24,9 +23,10 @@ def test_oft(forge_tmp_path, variant):
 
     pytest.xfail(reason="Segmentation Fault")
 
-    # Load model and inputs
-    pipe, inputs = get_inputs(model=variant)
-    onnx_model, framework_model = get_models(inputs, forge_tmp_path, pipe)
+    # Load model and input
+    loader = ModelLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = list(loader.load_inputs())
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     compiled_model = forge.compile(
@@ -36,4 +36,8 @@ def test_oft(forge_tmp_path, variant):
     )
 
     # Model Verification
-    verify(inputs, framework_model, compiled_model)
+    verify(
+        inputs,
+        framework_model,
+        compiled_model,
+    )

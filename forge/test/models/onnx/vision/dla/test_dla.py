@@ -2,12 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import torch
-import os
-from third_party.tt_forge_models.dla.pytorch import ModelLoader, ModelVariant
-import onnx
 
 import forge
+from third_party.tt_forge_models.dla.image_classification.onnx import ModelLoader, ModelVariant
+
 from forge.forge_property_utils import (
     Framework,
     ModelArch,
@@ -15,8 +13,6 @@ from forge.forge_property_utils import (
     Task,
     record_model_properties,
 )
-from forge.verify.config import VerifyConfig
-from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import verify
 
 
@@ -36,45 +32,30 @@ variants = [
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("variant", variants)
-def test_dla_onnx(variant, tmp_path):
+def test_dla_onnx(variant, forge_tmp_path):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.DLA,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_ENCODING,
         source=Source.TIMM,
     )
 
-    # Load model and input using tt_forge_models
+    # Load model and input
     loader = ModelLoader(variant=variant)
-    torch_model = loader.load_model()
-    input_tensor = loader.load_inputs()
-    inputs = [input_tensor]
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
+    framework_model = forge.OnnxModule(module_name, onnx_model)
 
-    # Export ONNX
-    onnx_path = tmp_path / f"{variant}_exported.onnx"
-    if not os.path.exists(onnx_path):
-        torch.onnx.export(
-            torch_model,
-            input_tensor,
-            onnx_path,
-            input_names=["input"],
-            output_names=["output"],
-            opset_version=18,
-            dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-        )
+    # Compile model
+    compiled_model = forge.compile(onnx_model, inputs, module_name=module_name)
 
-    # Load exported ONNX model
-    model_name = f"onnx_dla_{variant}"
-    onnx_model = onnx.load(str(onnx_path))
-    framework_model = forge.OnnxModule(model_name, onnx_model)
+    # Model Verification and Inference
+    _, co_out = verify(
+        inputs,
+        framework_model,
+        compiled_model,
+    )
 
-    # Compile
-    compiled_model = forge.compile(framework_model, sample_inputs=inputs, module_name=module_name)
-
-    # Verify
-    _, co_out = verify(inputs, framework_model, compiled_model)
-
-    # Post-processing
     loader.print_cls_results(co_out)

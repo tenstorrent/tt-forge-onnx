@@ -11,9 +11,15 @@ import forge
 import torch
 import onnx
 from forge.verify.verify import verify
-from test.utils import download_model
+from third_party.tt_forge_models.detr.object_detection.onnx import (
+    ModelLoader as DetrObjectDetectionOnnxLoader,
+    ModelVariant as DetrObjectDetectionOnnxVariant,
+)
+from third_party.tt_forge_models.detr.segmentation.onnx import (
+    ModelLoader as DetrSegmentationOnnxLoader,
+    ModelVariant as DetrSegmentationOnnxVariant,
+)
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
-from test.models.models_utils import preprocess_input_data
 from third_party.tt_forge_models.tools.utils import get_file
 from PIL import Image
 import numpy as np
@@ -22,32 +28,21 @@ from torchvision import transforms
 
 @pytest.mark.nightly
 @pytest.mark.xfail
-@pytest.mark.parametrize("variant", ["facebook/detr-resnet-50"])
+@pytest.mark.parametrize("variant", [DetrObjectDetectionOnnxVariant.RESNET_50])
 def test_detr_detection_onnx(variant, forge_tmp_path):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.DETR,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_OBJECT_DETECTION,
         source=Source.HUGGINGFACE,
     )
 
     # Load the model
-    framework_model = download_model(DetrForObjectDetection.from_pretrained, variant, return_dict=False)
-    framework_model.eval()
-
-    # Prepare input
-    input_batch = preprocess_input_data()
-    inputs = [input_batch]
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/detr_obj_det.onnx"
-    torch.onnx.export(framework_model, (inputs[0]), onnx_path, opset_version=17)
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    loader = DetrObjectDetectionOnnxLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile framework model
@@ -59,32 +54,21 @@ def test_detr_detection_onnx(variant, forge_tmp_path):
 
 @pytest.mark.nightly
 @pytest.mark.xfail
-@pytest.mark.parametrize("variant", ["facebook/detr-resnet-50-panoptic"])
+@pytest.mark.parametrize("variant", [DetrSegmentationOnnxVariant.RESNET_50_PANOPTIC])
 def test_detr_segmentation_onnx(variant, forge_tmp_path):
     # Record Forge Property
     module_name = record_model_properties(
         framework=Framework.ONNX,
         model=ModelArch.DETR,
-        variant=variant,
+        variant=variant.value,
         task=Task.CV_IMAGE_SEGMENTATION,
         source=Source.HUGGINGFACE,
     )
 
     # Load the model
-    framework_model = download_model(DetrForSegmentation.from_pretrained, variant, return_dict=False)
-    framework_model.eval()
-
-    # Prepare input
-    input_batch = preprocess_input_data()
-    inputs = [input_batch]
-
-    # Export model to ONNX
-    onnx_path = f"{forge_tmp_path}/detr_semseg.onnx"
-    torch.onnx.export(framework_model, (inputs[0]), onnx_path, opset_version=17)
-
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-    onnx.checker.check_model(onnx_model)
+    loader = DetrSegmentationOnnxLoader(variant=variant)
+    onnx_model = loader.load_model(onnx_tmp_path=forge_tmp_path)
+    inputs = loader.load_inputs()
     framework_model = forge.OnnxModule(module_name, onnx_model)
 
     # Forge compile framework model
