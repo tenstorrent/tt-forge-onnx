@@ -1301,6 +1301,14 @@ void handle_change_rank(graphlib::Graph *graph, graphlib::Edge edge)
             return (consumer_size + 1);
         if (op->op_type() == ops::OpType::Unsqueeze)
             return (consumer_size - 1);
+        // For reduction ops with keep_dim=False, the input rank equals output rank + number of reduced dims.
+        // Without this, handle_change_rank would incorrectly insert squeezes before the reduction op
+        // when a producer's rank increases after decomposition (e.g. after Layernorm decomposition).
+        if (op->is_reduce() && !op->op().attr_as<bool>("keep_dim"))
+        {
+            auto dims = op->op().attr_as<std::vector<int>>("dim_arg");
+            return consumer_size + static_cast<std::uint32_t>(dims.size());
+        }
         return consumer_size;
     };
 
