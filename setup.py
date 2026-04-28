@@ -272,6 +272,11 @@ def _add_so_dependencies(install_dir: Path) -> None:
 
     alllibs = collect_libs(install_dir)
     alllibs.update(collect_libs(install_dir / "lib"))
+
+    additional_libs = set(  # Add any known additional dependencies that might not be picked up by ldd
+        ["libgomp.so.1"]  # PaddlePaddle requires libgomp
+    )
+    alllibs.update(additional_libs)
     copy_libs(install_dir / "lib", alllibs)
 
 
