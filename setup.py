@@ -273,10 +273,7 @@ def _add_so_dependencies(install_dir: Path) -> None:
     def get_full_paths(lib_names: Set[str]) -> Set[str]:
         """Convert library names to their full paths using ldconfig or system search."""
         full_paths = set()
-        try:
-            output = subprocess.check_output(["ldconfig", "-p"], text=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
+        output = subprocess.check_output(["ldconfig", "-p"], text=True)
         for lib_name in lib_names:
             for line in output.splitlines():
                 if lib_name in line:
@@ -290,13 +287,6 @@ def _add_so_dependencies(install_dir: Path) -> None:
 
     alllibs = collect_libs(install_dir)
     alllibs.update(collect_libs(install_dir / "lib"))
-
-    additional_libs = get_full_paths(
-        set(  # Add any known additional dependencies that might not be picked up by ldd
-            ["libgomp.so.1"]  # PaddlePaddle requires libgomp
-        )
-    )
-    alllibs.update(additional_libs)
     copy_libs(install_dir / "lib", alllibs)
 
 
