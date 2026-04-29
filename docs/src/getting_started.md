@@ -56,7 +56,16 @@ This section walks you through downloading and installing a wheel. You can insta
 
 1. Make sure you have Python 3.12 installed and you are in an active Python 3.12 virtual environment. This walkthrough uses the same environment you activated to look at TT-SMI in the [Configuring Hardware](#configuring-hardware) section.
 
-2. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge_onnx** and **tt_tvm** wheels:
+2. Install the required system runtime libraries on Ubuntu 24.04:
+
+```bash
+sudo apt-get install -y libgomp1 libmpc3
+```
+
+- `libgomp1` — OpenMP runtime (`libgomp.so.1`), required by PaddlePaddle's `libpaddle.so`.
+- `libmpc3` — GNU MPC library (`libmpc.so.3`), required by the sfpi RISC-V GCC compiler bundled in the wheel.
+
+3. For this walkthrough, TT-Forge-ONNX is used. You need to install the **tt_forge_onnx** and **tt_tvm** wheels:
 
 ```bash
 # Install uv if you don't have it yet
@@ -66,7 +75,7 @@ uv pip install tt_forge_onnx --extra-index-url https://pypi.eng.aws.tenstorrent.
 uv pip install tt_tvm --extra-index-url https://pypi.eng.aws.tenstorrent.com/
 ```
 
-3. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:
+4. To test that everything is running correctly, try an example model. You can use nano or another text editor to paste this code into a file named **forge_example.py** and then run it from the terminal. You should still have your virtual environment running after installing the wheel when running this example:
 
 ```python
 import numpy as np
@@ -93,7 +102,7 @@ output = compiled_model(x, y)
 print("Output:", output)
 ```
 
-4. You have now set up the latest wheel for TT-Forge-ONNX, and can run any models you want inside your virtual environment.
+5. You have now set up the latest wheel for TT-Forge-ONNX, and can run any models you want inside your virtual environment.
 
 ## Other Set up Options
 If you want to keep your environment completely separate in a Docker container, or you want to develop TT-Forge-ONNX further, this section links you to the pages with those options:
