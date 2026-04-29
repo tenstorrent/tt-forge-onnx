@@ -113,8 +113,9 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
+          sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/workflows/
             env/

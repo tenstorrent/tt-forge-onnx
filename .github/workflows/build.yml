@@ -85,7 +85,7 @@ jobs:
         git config --system --add safe.directory ${{ steps.strings.outputs.work-dir }}
         chown -R root:root ${{ steps.strings.outputs.work-dir }}
 
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         repository: 'tenstorrent/tt-forge-onnx'
         submodules: recursive
@@ -198,7 +198,7 @@ jobs:
           git config --system --add safe.directory ${{ steps.strings.outputs.work-dir }}
           chown -R root:root ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: 'tenstorrent/tt-forge-onnx'
           submodules: recursive

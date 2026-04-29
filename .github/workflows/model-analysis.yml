@@ -265,7 +265,7 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: |
             .github/download-artifacts.sh
@@ -426,7 +426,7 @@ jobs:
       - name: Git safe dir
         run: git config --global --add safe.directory ${{ steps.strings.outputs.work-dir }}
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
             submodules: recursive
             fetch-depth: 0 # Fetch all history and tags
