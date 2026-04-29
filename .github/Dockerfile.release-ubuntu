@@ -22,8 +22,8 @@ RUN apt-get update && \
         unzip \
         ca-certificates \
         software-properties-common \
-        libatomic1 \
-        libgomp1 && \
+        libgomp1 \
+        libmpc3 && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
