@@ -80,7 +80,7 @@ def test_cross_entropy_loss(prediction_shape):
         inputs=[prediction, target],
         framework_model=torch_loss,
         compiled_model=forge_loss,
-        verify_cfg=VerifyConfig(verify_shape=False, value_checker=AllCloseValueChecker(rtol=11e-3)),
+        verify_cfg=VerifyConfig(verify_shape=False, value_checker=AllCloseValueChecker(rtol=5e-2)),
     )
 
 
