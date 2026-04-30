@@ -92,7 +92,6 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
 
         desc.shape = shape;
         desc.stride = stride;
-        desc.itemsize = tensor.element_size();
         desc.dataType = torch_scalar_type_to_dt(tensor.scalar_type());
     }
 
@@ -131,7 +130,7 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
         {
             TT_ASSERT(host_storage.has_value(), "Tensor has neither runtime tensor nor host storage");
             rt_tensor = runtime::createBorrowedHostTensor(
-                host_storage->data_ptr(), desc.shape, desc.stride, desc.itemsize, desc.dataType);
+                host_storage->data_ptr(), desc.shape, desc.stride, desc.elementSize(), desc.dataType);
         }
 
         // Skip the toLayout call when the tensor is already in the target layout.
