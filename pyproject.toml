@@ -2,9 +2,6 @@
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.uv.extra-build-dependencies]
-grpcio-tools = ["setuptools"]
-
 [project]
 name = "tt_forge_onnx"
 readme = "README.md"

@@ -1,4 +1,7 @@
 setuptools>=61
+# grpcio-tools>=1.60.0 avoids building 1.48.2 from source on Python 3.12 (no cp312 wheel exists for 1.48.2)
+# orbax-checkpoint pulls grpcio-tools with no version constraint, so uv resolves to the oldest version otherwise
+grpcio-tools>=1.60.0
 # This is needed to avoid issue https://yyz-gitlab.local.tenstorrent.com/devops/devops/-/issues/95
 # jax requires any version of optax which requires any version of chex which in turn
 # requires jax>=0.4.6 which conflicts with our jax == 0.3.16
