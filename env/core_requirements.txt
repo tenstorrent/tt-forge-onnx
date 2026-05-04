@@ -36,6 +36,9 @@ tflite==2.10.0
 ultralytics==8.3.91
 paddlepaddle==2.6.2
 paddlenlp==2.8.1
+# paddle2onnx>=2.1.0 marks onnxoptimizer as python_version < "3.12" so it is
+# not pulled in on Python 3.12, avoiding a source build that fails with newer CMake
+paddle2onnx==2.1.0
 aistudio-sdk==0.2.6
 pytorch_forecasting
 patool
