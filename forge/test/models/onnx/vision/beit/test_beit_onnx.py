@@ -19,10 +19,7 @@ import onnx
 
 variants = [
     pytest.param("microsoft/beit-base-patch16-224", marks=[pytest.mark.xfail]),
-    pytest.param(
-        "microsoft/beit-large-patch16-224",
-        marks=[pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-forge-onnx/issues/2969")],
-    ),
+    pytest.param("microsoft/beit-large-patch16-224"),
 ]
 
 

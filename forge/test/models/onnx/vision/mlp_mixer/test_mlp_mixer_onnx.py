@@ -27,28 +27,13 @@ from test.models.models_utils import print_cls_results
 from test.utils import download_model
 
 varaints = [
-    pytest.param(
-        "mixer_b16_224",
-        marks=[pytest.mark.xfail],
-    ),
-    pytest.param(
-        "mixer_b16_224_in21k",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_b16_224"),
+    pytest.param("mixer_b16_224_in21k"),
     pytest.param("mixer_b16_224_miil"),
-    pytest.param(
-        "mixer_b16_224_miil_in21k",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_b16_224_miil_in21k"),
     pytest.param("mixer_b32_224"),
-    pytest.param(
-        "mixer_l16_224",
-        marks=[pytest.mark.xfail],
-    ),
-    pytest.param(
-        "mixer_l16_224_in21k",
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param("mixer_l16_224"),
+    pytest.param("mixer_l16_224_in21k"),
     pytest.param("mixer_l32_224"),
     pytest.param(
         "mixer_s16_224",
