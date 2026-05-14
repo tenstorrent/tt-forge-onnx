@@ -231,8 +231,8 @@ def _clear_global_verify_config():
 
 
 def _set_global_verify_config(config: DeprecatedVerifyConfig):
-    global g_compiler_config
-    g_compiler_config = config
+    global g_verify_config
+    g_verify_config = config
 
 
 class VerifyTensorMetadata(Enum):
