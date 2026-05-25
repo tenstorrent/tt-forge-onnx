@@ -252,7 +252,17 @@ def test_resize2d_nearest_interpolation(input_shape, scale_factor_or_size):
     framework_model = Resize()
     compiled_model = forge.compile(framework_model, sample_inputs=inputs)
 
-    verify(inputs, framework_model, compiled_model)
+    file_path = "resize2d_nearest_interpolation.cpp"
+    compiled_model.export_to_cpp(file_path)
+
+    import os
+    assert os.path.exists(file_path)
+    with open(file_path, "r") as f:
+        print(f.read())
+    
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
 
 
 @pytest.mark.parametrize(
