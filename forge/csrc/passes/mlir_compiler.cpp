@@ -122,17 +122,38 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
     // Generate MLIR from the Forge graph.
     mlir::OwningOpRef<mlir::ModuleOp> mlir_module = lower_to_mlir(module, context);
 
+    // Dump TTIR module (pre-pass) to file for debugging.
+    {
+        std::string ttirStr;
+        llvm::raw_string_ostream ttirRso(ttirStr);
+        mlir_module->print(ttirRso);
+        ttirRso.flush();
+        std::ofstream ttirFile("/tmp/ttir_module.mlir");
+        if (ttirFile.is_open())
+        {
+            ttirFile << ttirStr;
+        }
+        log_info(LogMLIRCompiler, "TTIR module before running mlir passes:\n{}", ttirStr);
+    }
+
     // Run MLIR pipeline.
     run_mlir_passes<output>(mlir_module, mlir_config);
 
     tt::log_info(LogMLIRCompiler, "MLIR passes run successfully.");
 
-    // Dump TTNN module only at trace log level
-    std::string moduleStr;
-    llvm::raw_string_ostream rso(moduleStr);
-    mlir_module->print(rso);
-    rso.flush();
-    log_trace(LogMLIRCompiler, "TTNN module after running mlir passes:\n{}", moduleStr);
+    // Dump TTNN module to file and trace log.
+    {
+        std::string moduleStr;
+        llvm::raw_string_ostream rso(moduleStr);
+        mlir_module->print(rso);
+        rso.flush();
+        std::ofstream ttnnFile("/tmp/ttnn_module.mlir");
+        if (ttnnFile.is_open())
+        {
+            ttnnFile << moduleStr;
+        }
+        log_info(LogMLIRCompiler, "TTNN module after running mlir passes:\n{}", moduleStr);
+    }
 
     if constexpr (output == MLIROutputKind::Flatbuffer)
     {
