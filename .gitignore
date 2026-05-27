@@ -72,3 +72,9 @@ coverage.xml
 
 # Exclude cached models
 .forge_models_cache/
+
+# tt-npe build artifacts (built by cmake -DTT_NPE_ENABLE=ON)
+third_party/tt-npe/build/
+third_party/tt-npe/install/
+third_party/tt-npe/.cpmcache/
+third_party/tt-npe/
