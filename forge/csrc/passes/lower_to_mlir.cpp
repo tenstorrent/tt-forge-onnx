@@ -843,6 +843,7 @@ class MLIRGenerator
         lowering_handler_map["transpose"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::TransposeOp>;
         lowering_handler_map["unsqueeze"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::UnsqueezeOp>;
         lowering_handler_map["upsample2d"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::Upsample2dOp>;
+        lowering_handler_map["grid_sample"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::GridSampleOp>;
         lowering_handler_map["where"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::WhereOp>;
         lowering_handler_map["fill_cache"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::FillCacheOp>;
         lowering_handler_map["update_cache"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::UpdateCacheOp>;

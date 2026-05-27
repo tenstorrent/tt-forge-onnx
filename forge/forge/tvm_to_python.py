@@ -1363,6 +1363,35 @@ def populate_resize2d_args(graph, nid, compiler_cfg):
     return args
 
 
+def populate_grid_sample_args(graph, nid, compiler_cfg):
+    args = []
+    node = graph["nodes"][nid]
+
+    method = node["attrs"].get("method", [["bilinear"]])[0][0]
+    if method == "bilinear":
+        mode = "bilinear"
+    elif method == "nearest_neighbor":
+        mode = "nearest"
+    else:
+        mode = method
+
+    padding_mode = node["attrs"].get("padding_mode", [["zeros"]])[0][0]
+
+    # TVM relay image.grid_sample uses align_corners attribute directly.
+    # Fallback to coordinate_transformation_mode for ONNX-sourced ops.
+    if "align_corners" in node["attrs"]:
+        ac_val = node["attrs"]["align_corners"][0][0]
+        align_corners = "True" if ac_val in ("True", "true", "1") else "False"
+    else:
+        coord_mode = node["attrs"].get("coordinate_transformation_mode", [["half_pixel"]])[0][0]
+        align_corners = "True" if coord_mode == "align_corners" else "False"
+
+    args.append(("mode", f'"{mode}"'))
+    args.append(("padding_mode", f'"{padding_mode}"'))
+    args.append(("align_corners", f"{align_corners}"))
+    return args
+
+
 def populate_index_copy_args(graph, nid, compiler_cfg):
     dim = graph["nodes"][nid]["attrs"]["axis"][0][0]
     args = []
@@ -1499,6 +1528,7 @@ tvm_to_forge_op_map = {
     "identity": "identity",
     "image.resize1d": "resize1d",
     "image.resize2d": "resize2d",
+    "image.grid_sample": "grid_sample",
     "layernorm": "layernorm",
     "less_equal": "less_equal",
     "less": "less",
@@ -1616,6 +1646,7 @@ forge_op_to_function_name = {
     "reshape": "forge.op.Reshape",
     "resize1d": "forge.op.Resize1d",
     "resize2d": "forge.op.Resize2d",
+    "grid_sample": "forge.op.GridSample",
     "select": "forge.op.Select",
     "sigmoid": "forge.op.Sigmoid",
     "sin": "forge.op.Sine",
@@ -1662,6 +1693,7 @@ forge_ops_needing_arguments = {
     "reshape": populate_reshape_args,
     "resize1d": populate_resize1d_args,
     "resize2d": populate_resize2d_args,
+    "grid_sample": populate_grid_sample_args,
     "select": populate_select_args,
     "softmax": populate_softmax_args,
     "stack": populate_stack_args,
@@ -1853,6 +1885,14 @@ def generate_forge_module(
         logger.info(f"Forge module generation completed: {module_name}")
     else:
         module_writers, flattened_inputs = load_writers_metadata(graph_name, inputs)
+
+
+    if compiler_cfg.default_df_override is not None and isinstance(framework_mod, OnnxModule):
+        df_override_dtype = forge_dataformat_to_pytorch_dtype(compiler_cfg.default_df_override)
+        flattened_inputs = [
+            inp.to(df_override_dtype) if isinstance(inp, torch.Tensor) and torch.is_floating_point(inp) else inp
+            for inp in flattened_inputs
+        ]
 
     counter += 1
     sys.path.append(".")
