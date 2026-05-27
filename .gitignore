@@ -11,6 +11,7 @@ build
 net2pipe_output/
 third_party/llvm
 venv/
+docs/sphinx/_build/
 
 /llk_out/
 
