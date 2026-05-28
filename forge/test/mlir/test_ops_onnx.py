@@ -10,6 +10,7 @@ from onnx import helper, TensorProto, numpy_helper
 from onnx import TensorProto as otp
 
 import forge
+from forge._C import MLIRConfig
 from forge.verify.verify import verify
 
 
@@ -485,13 +486,16 @@ def test_convbn():
 @pytest.mark.parametrize(
     "data_shape, grid_shape, mode, padding_mode, align_corners",
     [
-        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 1),
-        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 0),
-        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 1),
-        pytest.param((1, 4, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 0),
+        # data_shape is NCHW (N, C, H_in, W_in); the tt-metal kernel receives NHWC
+        # so the channel dim C must be divisible by TILE_WIDTH=32.
+        pytest.param((1, 32, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 1),
+        pytest.param((1, 32, 8, 8), (1, 4, 4, 2), "bilinear", "zeros", 0),
+        pytest.param((1, 32, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 1),
+        pytest.param((1, 32, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 0),
         pytest.param((1, 64, 96, 96), (1, 128, 64, 2), "bilinear", "zeros", 1),
         pytest.param((1, 64, 96, 96), (1, 128, 64, 2), "nearest", "zeros", 1),
-        pytest.param((1, 64, 80, 144), (1, 128, 64, 2), "nearest", "zeros", 1),
+        # BEV-representative shape: C=64 (divisible by 32), bilinear mode.
+        pytest.param((1, 64, 80, 144), (1, 128, 64, 2), "bilinear", "zeros", 1),
     ],
 )
 def test_gridsample(data_shape, grid_shape, mode, padding_mode, align_corners):
@@ -522,3 +526,67 @@ def test_gridsample(data_shape, grid_shape, mode, padding_mode, align_corners):
     framework_model = forge.OnnxModule("gridsample", onnx_model)
     compiled_model = forge.compile(onnx_model, sample_inputs=inputs, module_name="gridsample")
     verify(inputs, framework_model=framework_model, compiled_model=compiled_model)
+
+
+@pytest.mark.push
+@pytest.mark.parametrize(
+    "data_shape, grid_shape, mode, padding_mode, align_corners",
+    [
+        # Block-D-representative shape: nearest + align_corners=True triggers
+        # needsPrecomputedGrid path which previously failed with
+        # "Reads are not supported during trace capture" due to from_device
+        # being called inside the trace-capture execution.
+        pytest.param((1, 64, 80, 144), (1, 128, 64, 2), "nearest", "zeros", 1),
+        pytest.param((1, 32, 8, 8), (1, 4, 4, 2), "nearest", "zeros", 1),
+    ],
+)
+def test_gridsample_trace_enabled(data_shape, grid_shape, mode, padding_mode, align_corners):
+    """
+    GridSample with trace enabled — exercises the warmup-cache path that avoids
+    calling from_device inside the trace-capture execution boundary.
+    """
+    n, c, h, w = data_shape
+    gn, gh, gw, _ = grid_shape
+
+    data_vi = oh.make_tensor_value_info("data", otp.FLOAT, list(data_shape))
+    grid_vi = oh.make_tensor_value_info("grid", otp.FLOAT, list(grid_shape))
+    out_vi = oh.make_tensor_value_info("output", otp.FLOAT, [n, c, gh, gw])
+    node = oh.make_node(
+        "GridSample",
+        inputs=["data", "grid"],
+        outputs=["output"],
+        align_corners=align_corners,
+        mode=mode,
+        padding_mode=padding_mode,
+    )
+    graph = oh.make_graph([node], "gridsample_trace", [data_vi, grid_vi], [out_vi])
+    onnx_model = oh.make_model(graph, opset_imports=[oh.make_opsetid("", 18)])
+    onnx.checker.check_model(onnx_model)
+
+    rng = np.random.default_rng(0)
+    data = torch.from_numpy(rng.standard_normal(data_shape).astype(np.float32))
+    grid = torch.from_numpy(rng.uniform(-1.0, 1.0, grid_shape).astype(np.float32))
+    inputs = [data, grid]
+
+    mlir_cfg = (
+        MLIRConfig()
+        .set_optimization_level(2)
+        .set_enable_trace(True)
+    )
+    compiler_cfg = forge.CompilerConfig(mlir_config=mlir_cfg)
+    compiler_cfg.enable_optimization_passes = True
+
+    from forge._C import runtime as forge_runtime
+    ds = forge_runtime.experimental.DeviceSettings()
+    ds.enable_program_cache = True
+    forge_runtime.experimental.configure_devices(ds)
+
+    framework_model = forge.OnnxModule("gridsample_trace", onnx_model)
+    compiled_model = forge.compile(
+        onnx_model, sample_inputs=inputs, module_name="gridsample_trace",
+        compiler_cfg=compiler_cfg,
+    )
+
+    # Run twice: first invocation captures the trace, second executes it.
+    for _ in range(2):
+        verify(inputs, framework_model=framework_model, compiled_model=compiled_model)
