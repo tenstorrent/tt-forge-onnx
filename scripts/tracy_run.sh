@@ -28,11 +28,13 @@
 #   --no-report              Skip generating the CSV report (omits -r flag)
 #   --no-device              Exclude device-side kernel data from report
 #   --no-device-trace        Disable device-side trace profiling (on by default)
-#   --no-dispatch-cores      Disable dispatch-cores profiling (on by default)
-#   --no-sync                Disable host-device sync (on by default)
-#   --no-noc-traces          Disable NOC event trace collection (on by default)
+#   --no-dispatch-cores      Disable dispatch-cores profiling (off by default)
+#   --sync                   Enable host-device sync (off by default; incompatible with --noc-traces)
+#   --no-noc-traces          Disable NOC event trace collection (off by default)
 #   --no-memory-profile      Disable device memory profiling (on by default)
-#   --no-perf-counters       Disable perf-counter capture (on by default)
+#   --no-perf-counters       Disable perf-counter capture (off by default)
+#   --check-exit-code        Abort post-processing if test fails (on by default)
+#   --no-check-exit-code     Continue post-processing even if test fails
 #   --device-analysis-types  Override device analysis types [default: all]
 #   --                       Separator: everything after is the COMMAND
 #
@@ -79,10 +81,11 @@ REPORT=true
 NO_DEVICE=false
 DEVICE_TRACE=true        # --device-trace-profiler: safe with trace mode
 DISPATCH_CORES=false     # --profile-dispatch-cores: disables C++ post-proc; conflicts with trace mode
-SYNC_HOST_DEVICE=false   # --sync-host-device: clashes with run_mlir_compiler device context
+SYNC_HOST_DEVICE=false   # --sync-host-device: improves host-device timestamp accuracy (incompatible with --noc-traces)
 NOC_TRACES=false         # --collect-noc-traces: can conflict with device context
 MEMORY_PROFILE=true      # --device-memory-profiler: safe
 PERF_COUNTERS=false      # --profiler-capture-perf-counters: disables C++ post-proc; enable explicitly
+CHECK_EXIT_CODE=true     # --check-exit-code: abort post-processing if test command fails
 # DEVICE_ANALYSIS_TYPES: space-separated list of analysis types to include.
 # Leave empty to run ALL analysis types (default). Valid types:
 #   trace_fw_duration  trace_kernel_duration  "trace2trace - FW"  "trace2trace - kernel"
@@ -128,8 +131,14 @@ while [[ $# -gt 0 ]]; do
             NOC_TRACES=false; shift ;;
         --no-memory-profile)
             MEMORY_PROFILE=false; shift ;;
+        --perf-counters)
+            PERF_COUNTERS=true; shift ;;
         --no-perf-counters)
             PERF_COUNTERS=false; shift ;;
+        --check-exit-code)
+            CHECK_EXIT_CODE=true; shift ;;
+        --no-check-exit-code)
+            CHECK_EXIT_CODE=false; shift ;;
         --device-analysis-types)
             DEVICE_ANALYSIS_TYPES="$2"; shift 2 ;;
         --)
@@ -201,6 +210,21 @@ fi
 [[ "${DEVICE_TRACE}" == true && "${NO_DEVICE}" == false ]] && export TT_METAL_DEVICE_PROFILER=1
 
 # ---------------------------------------------------------------------------
+# Incompatibility guard: certain flags combined with --noc-traces crash at tt-metal level.
+# Both --dispatch-cores and --sync-host-device cause their respective kernels (ERISC
+# dispatch / sync) to emit NOC events with internal transfer types that
+# coalesceFabricEvents (profiler.cpp:600) does not recognise → TT_FATAL in
+# writeDeviceResultsToFiles(). Guard must run BEFORE TRACY_ARGS is built so that
+# the incompatible flags are not passed to python3 -m tracy.
+# ---------------------------------------------------------------------------
+if [[ "${NOC_TRACES}" == true && "${SYNC_HOST_DEVICE}" == true ]]; then
+    echo "  WARNING: --sync-host-device is incompatible with --noc-traces" >&2
+    echo "           (sync kernel emits invalid NOC transfer types → TT_FATAL in coalesceFabricEvents)." >&2
+    echo "           Disabling --sync-host-device to preserve NOC trace data." >&2
+    SYNC_HOST_DEVICE=false
+fi
+
+# ---------------------------------------------------------------------------
 # Build python3 -m tracy argument list
 # ---------------------------------------------------------------------------
 TRACY_ARGS=()
@@ -210,6 +234,7 @@ TRACY_ARGS=()
 [[ "${DEVICE_TRACE}"    == true  ]] && TRACY_ARGS+=(--device-trace-profiler)
 [[ "${DISPATCH_CORES}"  == true  ]] && TRACY_ARGS+=(--profile-dispatch-cores)
 [[ "${SYNC_HOST_DEVICE}" == true  ]] && TRACY_ARGS+=(--sync-host-device)
+[[ "${CHECK_EXIT_CODE}" == true  ]] && TRACY_ARGS+=(--check-exit-code)
 [[ "${NOC_TRACES}"      == true  ]] && TRACY_ARGS+=(--collect-noc-traces)
 [[ "${MEMORY_PROFILE}"  == true  ]] && TRACY_ARGS+=(--device-memory-profiler)
 [[ "${PERF_COUNTERS}"   == true  ]] && TRACY_ARGS+=(--profiler-capture-perf-counters all)
@@ -240,9 +265,11 @@ echo "  Tools         : ${TRACY_TOOLS}"
 echo "  Op count      : ${OP_COUNT}"
 echo "  Device trace  : ${DEVICE_TRACE}"
 echo "  Dispatch cores: ${DISPATCH_CORES}"
+echo "  Sync host-dev : ${SYNC_HOST_DEVICE}"
 echo "  NOC traces    : ${NOC_TRACES}"
 echo "  Memory profile: ${MEMORY_PROFILE}"
 echo "  Perf counters : ${PERF_COUNTERS}"
+echo "  Check exit    : ${CHECK_EXIT_CODE}"
 [[ -n "${DEVICE_ANALYSIS_TYPES}" ]] && echo "  Analysis types: ${DEVICE_ANALYSIS_TYPES}" || echo "  Analysis types: all (default)"
 echo "  Command       : $*"
 echo "================================================================="
