@@ -115,6 +115,7 @@ class DeprecatedVerifyConfig:
     verify_forge_codegen_vs_framework: bool = (
         False  # Compare Framework output on CPU vs forge codegen from TVM json graphs
     )
+    verify_transpiler_graph: bool = False  # Compare Framework output vs TIR graph output after transpiler conversion
     # Setting this to true will enable intermediate outputs to remain in graph
     # If false, all unused outputs will be removed. This needs to be true for intermediate golden verification
     # if we want to compare all intermediate tensors in graph.
@@ -177,9 +178,9 @@ class DeprecatedVerifyConfig:
             torch.bfloat16: None,
         }
         for dt in [torch.float32, torch.float16, torch.bfloat16]:
-            if not dt in self.rtol:
+            if dt not in self.rtol:
                 self.rtol[dt] = rtol_defaults[dt]
-            if not dt in self.atol:
+            if dt not in self.atol:
                 self.atol[dt] = atol_defaults[dt]
 
         if self.pcc is None:

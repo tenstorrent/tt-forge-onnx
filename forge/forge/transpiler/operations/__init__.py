@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
+"""
+Operations package for TIR nodes.
+Imports all operations to register them.
+"""
+# Import all operations to register them
+from forge.transpiler.operations.arithmetic import (
+    AddNode,
+    SubNode,
+    MulNode,
+    DivNode,
+    PowNode,
+    MatMulNode,
+)
+from forge.transpiler.operations.activation import (
+    ReluNode,
+    SigmoidNode,
+    TanhNode,
+    SoftmaxNode,
+    LogSoftmaxNode,
+    LeakyReluNode,
+    DropoutNode,
+    SqrtNode,
+    ErfNode,
+    ReciprocalNode,
+)
+from forge.transpiler.operations.conv import Conv1dNode, Conv2dNode, Conv3dNode
+from forge.transpiler.operations.pooling import (
+    MaxPool1dNode,
+    MaxPool2dNode,
+    MaxPool3dNode,
+    AveragePool1dNode,
+    AveragePool2dNode,
+    AveragePool3dNode,
+)
+from forge.transpiler.operations.shape import (
+    ReshapeNode,
+    TransposeNode,
+    SqueezeNode,
+    UnsqueezeNode,
+    BroadcastNode,
+)
+from forge.transpiler.operations.reduction import (
+    ReduceSumNode,
+    ReduceMeanNode,
+    ReduceMaxNode,
+    ArgMaxNode,
+)
+from forge.transpiler.operations.other import (
+    ConcatNode,
+    ClipNode,
+    CastNode,
+    PadNode,
+    IdentityNode,
+    FullNode,
+    WhereNode,
+)
+from forge.transpiler.operations.comparison import (
+    EqualNode,
+    GreaterNode,
+    LessNode,
+    GreaterOrEqualNode,
+    LessOrEqualNode,
+    LogicalNotNode,
+    LogicalAndNode,
+)
+from forge.transpiler.operations.indexing import (
+    EmbeddingNode,
+    IndexSelectNode,
+    IndexNode,
+)
+from forge.transpiler.operations.normalization import (
+    LayerNormNode,
+)
+
+__all__ = [
+    # Arithmetic
+    "AddNode",
+    "SubNode",
+    "MulNode",
+    "DivNode",
+    "PowNode",
+    "MatMulNode",
+    # Convolution
+    "Conv1dNode",
+    "Conv2dNode",
+    "Conv3dNode",
+    # Activation
+    "ReluNode",
+    "SigmoidNode",
+    "TanhNode",
+    "SoftmaxNode",
+    "LogSoftmaxNode",
+    "LeakyReluNode",
+    "DropoutNode",
+    "SqrtNode",
+    "ErfNode",
+    "ReciprocalNode",
+    # Pooling
+    "MaxPool1dNode",
+    "MaxPool2dNode",
+    "MaxPool3dNode",
+    "AveragePool1dNode",
+    "AveragePool2dNode",
+    "AveragePool3dNode",
+    # Shape
+    "ReshapeNode",
+    "TransposeNode",
+    "SqueezeNode",
+    "UnsqueezeNode",
+    "BroadcastNode",
+    # Reduction
+    "ReduceSumNode",
+    "ReduceMeanNode",
+    "ReduceMaxNode",
+    "ArgMaxNode",
+    # Other
+    "ConcatNode",
+    "ClipNode",
+    "CastNode",
+    "PadNode",
+    "IdentityNode",
+    "FullNode",
+    "WhereNode",
+    # Comparison
+    "EqualNode",
+    "GreaterNode",
+    "LessNode",
+    "GreaterOrEqualNode",
+    "LessOrEqualNode",
+    # Logical
+    "LogicalNotNode",
+    "LogicalAndNode",
+    # Indexing
+    "EmbeddingNode",
+    "IndexSelectNode",
+    "IndexNode",
+    # Normalization
+    "LayerNormNode",
+]
