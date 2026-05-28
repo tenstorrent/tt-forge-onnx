@@ -322,7 +322,7 @@ static bool fuse_per_channel_concat(graphlib::Graph *graph, graphlib::OpNode *co
                     while (input_ndim < concat->shape().size())
                     {
                         // insert unsqueeze tms
-                        ops::Op op_type(ops::OpType::Unsqueeze, {{"dim", 0}, {"orig_shape_len", (int)input_ndim}});
+                        ops::Op op_type(ops::OpType::Unsqueeze, {{"dim", 0}});
                         graph->get_edge_attributes(current_edge)->append_tm(op_type);
                         input_ndim++;
                     }
@@ -388,6 +388,8 @@ static bool fuse_per_channel_concat(graphlib::Graph *graph, graphlib::OpNode *co
                     graph->get_edge_attributes(edge)->set_tms(tms);
                 }
             }
+
+            graphlib::calculate_and_set_node_shape(graph, const_concat);
 
             // Update eltwise op
             auto eltwise_op = ops[0].first;

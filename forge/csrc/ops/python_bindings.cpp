@@ -120,6 +120,7 @@ void OpsModule(py::module &m_ops)
         .value("Unsqueeze", ops::OpType::Unsqueeze)
         .value("UpdateCache", ops::OpType::UpdateCache)
         .value("Upsample2d", ops::OpType::Upsample2d)
+        .value("GridSample", ops::OpType::GridSample)
         .value("Where", ops::OpType::Where)
         .export_values();
 }

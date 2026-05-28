@@ -224,6 +224,7 @@ static bool try_fold_constant_associative(graphlib::Graph *graph, graphlib::OpNo
     b_edges.front().consumer_node_id = b->id();
     b_edges.front().consumer_input_port_id = 1;
     graph->add_edge(b_edges.front(), b_attr);
+    graphlib::calculate_and_set_node_shape(graph, b);
     graphlib::try_consteval_op(graph, b);
 
     return true;

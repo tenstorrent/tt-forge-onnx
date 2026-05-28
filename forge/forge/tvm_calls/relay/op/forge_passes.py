@@ -4332,7 +4332,6 @@ def run_forge_compile_passes(
             DecomposeDepthToSpace(),
             DecomposeOnesOrZerosToFull(),
             DecomposeMeshgrid(),
-            DecomposeGridSample(),
             DecomposeFloor(),
             ExpandMultipleDims(),
             DecomposeReverse(),
