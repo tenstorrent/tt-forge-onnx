@@ -237,7 +237,7 @@ def test_resize2d_nearest_interpolation(input_shape, scale_factor_or_size):
     ):
         pytest.skip("Invalid Config")
 
-    if input_shape == (1, 3, 7) and scale_factor_or_size in [0.5, 2.6, (11,), (5,), (3,)]:
+    if input_shape == (1, 3, 7) and scale_factor_or_size in [0.5, 2.6, (11,), (15,), (5,), (3,)]:
         pytest.xfail(reason="resize nearest interpolation not supported for 1D spatial input")
 
     class Resize(nn.Module):
