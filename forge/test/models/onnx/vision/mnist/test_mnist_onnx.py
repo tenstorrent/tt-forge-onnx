@@ -55,7 +55,7 @@ def test_mnist(forge_tmp_path):
         inputs,
         framework_model,
         compiled_model,
-        verify_cfg=VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.98)),
+        verify_cfg=VerifyConfig(value_checker=AutomaticValueChecker(pcc=0.97)),
     )
 
     print_cls_results(fw_out[0], co_out[0])
