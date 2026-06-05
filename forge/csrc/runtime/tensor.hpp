@@ -88,7 +88,7 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
     TensorImpl(torch::Tensor& tensor) : host_storage(tensor), rt_tensor(std::nullopt)
     {
         auto shape = std::vector<uint32_t>(tensor.sizes().begin(), tensor.sizes().end());
-        auto stride = std::vector<uint32_t>(tensor.strides().begin(), tensor.strides().end());
+        auto stride = std::vector<int64_t>(tensor.strides().begin(), tensor.strides().end());
 
         desc.shape = shape;
         desc.stride = stride;
