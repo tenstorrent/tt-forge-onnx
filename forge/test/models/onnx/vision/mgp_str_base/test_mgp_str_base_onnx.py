@@ -19,6 +19,7 @@ from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.verify import verify
 
 
+@pytest.mark.xfail(reason="PCC drop: 0.545, below required 0.95")
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "variant",

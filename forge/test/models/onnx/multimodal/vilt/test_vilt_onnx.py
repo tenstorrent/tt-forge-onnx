@@ -15,7 +15,6 @@ from forge.forge_property_utils import (
 from forge.verify.verify import verify
 
 
-@pytest.mark.xfail(reason="https://github.com/tenstorrent/tt-forge-onnx/issues/2969")
 @pytest.mark.nightly
 def test_vilt_question_answering_onnx(forge_tmp_path, variant=ModelVariant.VQA):
     # Record Forge Property

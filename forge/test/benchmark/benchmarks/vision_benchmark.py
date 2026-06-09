@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import time
 from typing import Callable, Optional, Union
@@ -50,6 +51,7 @@ def get_compiler_cfg(
         .set_enable_l1_interleaved_fallback_analysis(True)
         .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi2)
         .set_enable_remove_dead_values(True)
+        .set_max_legal_layouts(8)
     )
     compiler_cfg = CompilerConfig(mlir_config=mlir_config)
     compiler_cfg.enable_optimization_passes = True
@@ -267,4 +269,17 @@ def benchmark_vision_forge_onnx(
     result["pcc"] = pcc_value
     result["config"]["training"] = training
     result["config"]["warmup_iterations"] = warmup_loop_count
+
+    # Release device resources while Python is still fully running so that
+    # TTSystem::~TTSystem() (C++ atexit) finds all devices already closed.
+    # Without this, MeshTraceBuffer teardown during atexit calls
+    # ShmTrackingProcessor::track_deallocate() on a partially-closed MeshDevice
+    # and crashes (SIGSEGV).
+    del compiled
+    gc.collect()
+    from forge._C.runtime.experimental import TTSystem
+
+    if TTSystem.is_initialized():
+        TTSystem.get_system().close_devices()
+
     return result

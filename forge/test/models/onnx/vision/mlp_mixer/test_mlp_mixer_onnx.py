@@ -17,28 +17,13 @@ from forge.verify.config import VerifyConfig
 from forge.verify.value_checkers import AutomaticValueChecker
 
 varaints = [
-    pytest.param(
-        ModelVariant.MIXER_B16_224,
-        marks=[pytest.mark.xfail],
-    ),
-    pytest.param(
-        ModelVariant.MIXER_B16_224_IN21K,
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param(ModelVariant.MIXER_B16_224),
+    pytest.param(ModelVariant.MIXER_B16_224_IN21K),
     pytest.param(ModelVariant.MIXER_B16_224_MIIL),
-    pytest.param(
-        ModelVariant.MIXER_B16_224_MIIL_IN21K,
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param(ModelVariant.MIXER_B16_224_MIIL_IN21K),
     pytest.param(ModelVariant.MIXER_B32_224),
-    pytest.param(
-        ModelVariant.MIXER_L16_224,
-        marks=[pytest.mark.xfail],
-    ),
-    pytest.param(
-        ModelVariant.MIXER_L16_224_IN21K,
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param(ModelVariant.MIXER_L16_224),
+    pytest.param(ModelVariant.MIXER_L16_224_IN21K),
     pytest.param(ModelVariant.MIXER_L32_224),
     pytest.param(
         ModelVariant.MIXER_S16_224,
