@@ -122,17 +122,24 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
     // Generate MLIR from the Forge graph.
     mlir::OwningOpRef<mlir::ModuleOp> mlir_module = lower_to_mlir(module, context);
 
+
+    std::string moduleStrTTIR;
+    llvm::raw_string_ostream rsoTTIR(moduleStrTTIR);
+    mlir_module->print(rsoTTIR);
+    rsoTTIR.flush();
+    log_info(LogMLIRCompiler, "TTIR:\n{}", moduleStrTTIR);
+
     // Run MLIR pipeline.
     run_mlir_passes<output>(mlir_module, mlir_config);
 
     tt::log_info(LogMLIRCompiler, "MLIR passes run successfully.");
 
     // Dump TTNN module only at trace log level
-    std::string moduleStr;
-    llvm::raw_string_ostream rso(moduleStr);
-    mlir_module->print(rso);
-    rso.flush();
-    log_trace(LogMLIRCompiler, "TTNN module after running mlir passes:\n{}", moduleStr);
+    std::string moduleStrTTNN;
+    llvm::raw_string_ostream rsoTTNN(moduleStrTTNN);
+    mlir_module->print(rsoTTNN);
+    rsoTTNN.flush();
+    log_info(LogMLIRCompiler, "TTNN:\n{}", moduleStrTTNN);
 
     if constexpr (output == MLIROutputKind::Flatbuffer)
     {

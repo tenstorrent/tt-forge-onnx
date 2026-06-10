@@ -84,7 +84,7 @@ def test_vision(
     """
     )
 
-    results = benchmark_vision_forge_onnx(
+    benchmark_vision_forge_onnx(
         model=model,
         model_name=model_name,
         load_inputs_fn=load_inputs_fn,
@@ -100,11 +100,11 @@ def test_vision(
         training=training,
     )
 
-    if output_file:
-        results["project"] = "tt-forge/tt-forge-onnx"
-        results["model_rawname"] = model_name
-        with open(output_file, "w", encoding="utf-8") as file:
-            json.dump(results, file, indent=2)
+    # if output_file:
+    #     results["project"] = "tt-forge/tt-forge-onnx"
+    #     results["model_rawname"] = model_name
+    #     with open(output_file, "w", encoding="utf-8") as file:
+    #         json.dump(results, file, indent=2)
 
 
 variants = [

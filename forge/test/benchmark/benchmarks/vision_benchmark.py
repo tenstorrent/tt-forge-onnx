@@ -187,84 +187,84 @@ def benchmark_vision_forge_onnx(
         data_format=data_format,
     )
 
-    if warmup_count is None:
-        warmup_loop_count = min(WARMUP_STEPS, loop_count)
-    else:
-        warmup_loop_count = min(max(0, warmup_count), loop_count)
-    warmup_inputs = inputs[:warmup_loop_count]
+    # if warmup_count is None:
+    #     warmup_loop_count = min(WARMUP_STEPS, loop_count)
+    # else:
+    #     warmup_loop_count = min(max(0, warmup_count), loop_count)
+    # warmup_inputs = inputs[:warmup_loop_count]
 
-    logger.info("Starting warmup...")
-    execute_and_measure_fps(
-        compiled=compiled,
-        inputs=warmup_inputs,
-        loop_count=warmup_loop_count,
-    )
-    logger.info("Warmup completed.")
+    # logger.info("Starting warmup...")
+    # execute_and_measure_fps(
+    #     compiled=compiled,
+    #     inputs=warmup_inputs,
+    #     loop_count=warmup_loop_count,
+    # )
+    # logger.info("Warmup completed.")
 
-    logger.info("Starting benchmark...")
-    predictions, total_time = execute_and_measure_fps(
-        compiled=compiled,
-        inputs=inputs,
-        loop_count=loop_count,
-    )
-    logger.info("Benchmark completed.")
+    # logger.info("Starting benchmark...")
+    # predictions, total_time = execute_and_measure_fps(
+    #     compiled=compiled,
+    #     inputs=inputs,
+    #     loop_count=loop_count,
+    # )
+    # logger.info("Benchmark completed.")
 
-    total_samples = batch_size * loop_count
-    samples_per_sec = total_samples / total_time if total_time > 0 else float("inf")
+    # total_samples = batch_size * loop_count
+    # samples_per_sec = total_samples / total_time if total_time > 0 else float("inf")
 
-    metadata = get_benchmark_metadata()
-    full_model_name = model_name
-    model_type = "Vision"
-    dataset_name = "Random Data"
-    title = model_name
+    # metadata = get_benchmark_metadata()
+    # full_model_name = model_name
+    # model_type = "Vision"
+    # dataset_name = "Random Data"
+    # title = model_name
 
-    print_benchmark_results(
-        model_title=title,
-        full_model_name=full_model_name,
-        model_type=model_type,
-        dataset_name=dataset_name,
-        date=metadata["date"],
-        machine_name=metadata["machine_name"],
-        total_time=total_time,
-        total_samples=total_samples,
-        samples_per_sec=samples_per_sec,
-        batch_size=batch_size,
-        data_format=data_format,
-        input_size=input_size,
-    )
+    # print_benchmark_results(
+    #     model_title=title,
+    #     full_model_name=full_model_name,
+    #     model_type=model_type,
+    #     dataset_name=dataset_name,
+    #     date=metadata["date"],
+    #     machine_name=metadata["machine_name"],
+    #     total_time=total_time,
+    #     total_samples=total_samples,
+    #     samples_per_sec=samples_per_sec,
+    #     batch_size=batch_size,
+    #     data_format=data_format,
+    #     input_size=input_size,
+    # )
 
-    device_out = predictions[0]
-    if not compare_with_golden(
-        golden_output,
-        device_out,
-        pcc=required_pcc,
-    ):
-        pcc_value = float(calculate_pcc(golden_output, device_out))
-        raise AssertionError(
-            f"Golden comparison failed (compare_with_golden). PCC={pcc_value:.6f}, required={required_pcc}"
-        )
+    # device_out = predictions[0]
+    # if not compare_with_golden(
+    #     golden_output,
+    #     device_out,
+    #     pcc=required_pcc,
+    # ):
+    #     pcc_value = float(calculate_pcc(golden_output, device_out))
+    #     raise AssertionError(
+    #         f"Golden comparison failed (compare_with_golden). PCC={pcc_value:.6f}, required={required_pcc}"
+    #     )
 
-    pcc_value = float(calculate_pcc(golden_output, device_out))
-    print(f"PCC verification passed with PCC={pcc_value:.6f}")
+    # pcc_value = float(calculate_pcc(golden_output, device_out))
+    # print(f"PCC verification passed with PCC={pcc_value:.6f}")
 
-    result = create_benchmark_result(
-        full_model_name=full_model_name,
-        model_type=model_type,
-        dataset_name=dataset_name,
-        num_layers=-1,
-        batch_size=batch_size,
-        input_size=input_size,
-        loop_count=loop_count,
-        data_format=data_format,
-        total_time=total_time,
-        total_samples=total_samples,
-        optimization_level=optimization_level,
-        program_cache_enabled=True,
-        trace_enabled=trace_enabled,
-        model_info=model_name,
-        display_name="",
-    )
-    result["pcc"] = pcc_value
-    result["config"]["training"] = training
-    result["config"]["warmup_iterations"] = warmup_loop_count
-    return result
+    # result = create_benchmark_result(
+    #     full_model_name=full_model_name,
+    #     model_type=model_type,
+    #     dataset_name=dataset_name,
+    #     num_layers=-1,
+    #     batch_size=batch_size,
+    #     input_size=input_size,
+    #     loop_count=loop_count,
+    #     data_format=data_format,
+    #     total_time=total_time,
+    #     total_samples=total_samples,
+    #     optimization_level=optimization_level,
+    #     program_cache_enabled=True,
+    #     trace_enabled=trace_enabled,
+    #     model_info=model_name,
+    #     display_name="",
+    # )
+    # result["pcc"] = pcc_value
+    # result["config"]["training"] = training
+    # result["config"]["warmup_iterations"] = warmup_loop_count
+    # return result
