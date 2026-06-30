@@ -19,6 +19,7 @@ permissions:
   id-token: write
   packages: write
   checks: write
+  pull-requests: write
 
 jobs:
   build-image:
@@ -45,3 +46,12 @@ jobs:
       is_nightly_release: false
       forge_onnx_sha_override: ${{ inputs.forge_onnx_sha_override }}
       should_overwrite_release: ${{ inputs.should_overwrite_release }}
+
+  # The current .version was just released, so bump it for the next cycle and
+  # open a PR with the change. Skipped on overwrite releases, which re-publish
+  # an already-released (and already-bumped) version.
+  bump-version:
+    needs: [ release ]
+    if: ${{ success() && !inputs.should_overwrite_release }}
+    uses: ./.github/workflows/call-bump-version.yml
+    secrets: inherit
