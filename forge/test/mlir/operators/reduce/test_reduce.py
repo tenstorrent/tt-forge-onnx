@@ -172,27 +172,10 @@ def test_reduce_sum(input_shape, dim, keepdim):
     "input_shape, dim, keepdim",
     [
         # 1D
-        pytest.param(
-            (64,), 0, True, marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs")
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (64,),
-            0,
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((64,), 0, True),
+        ((64,), -1, True),
+        ((64,), 0, False),
+        ((64,), -1, False),
         # 2D - single dim
         ((32, 64), 0, True),
         ((32, 64), 0, False),
@@ -203,18 +186,8 @@ def test_reduce_sum(input_shape, dim, keepdim):
         ((32, 64), -2, True),
         ((32, 64), -2, False),
         # 2D - multi dim
-        pytest.param(
-            (32, 64),
-            [0, 1],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (32, 64),
-            [0, 1],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((32, 64), [0, 1], True),
+        ((32, 64), [0, 1], False),
         # 3D - single dim
         ((4, 32, 64), 0, True),
         ((4, 32, 64), 0, False),
