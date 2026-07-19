@@ -1,7 +1,7 @@
 # Testing
 
 This page describes how to run different kinds of tests in the `tt-forge-onnx` project. If you haven't built the project yet,
-please refer to the [Build](build.md) page.
+please refer to the [Build](getting_started_build_from_source.md) page.
 
 ## Unit tests
 

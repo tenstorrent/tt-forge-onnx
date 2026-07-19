@@ -2,7 +2,7 @@
 
 TT-Forge is a comprehensive compiler designed to facilitate the development and optimization of machine learning models. It encompasses various components, each serving a specific purpose in the compiling and running machine learning pipelines. This document provides an overview of the key components with focus on [TT-Forge-ONNX](https://github.com/tenstorrent/tt-forge-onnx).
 
-### Table of contents
+## Table of contents
 - [TT-Forge Overview](#tt-forge-overview)
 - [TT-TVM Overview](#tt-tvm-overview)
    - [TVM IR](#tvm-ir)
@@ -67,7 +67,9 @@ Coming soon!
 
 ## TT-Forge-ONNX Overview
 
-![Forge-ONNX Overview](imgs/compiler_arch/forge-onnx_overview.svg "Forge-ONNX Overview")
+<!-- TODO: add imgs/compiler_arch/forge-onnx_overview.svg — the diagram was
+     referenced here but has never existed in the repository. -->
+
 
 ### Initialize Compile
 
