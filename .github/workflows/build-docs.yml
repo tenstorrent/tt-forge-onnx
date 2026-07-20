@@ -2,6 +2,12 @@ name: Build Docs
 
 on:
   workflow_call:
+    inputs:
+      deploy:
+        description: 'Run the GitHub Pages steps (Setup Pages + upload artifact). Off for PR checks, which only build the docs.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -42,6 +48,7 @@ jobs:
 
     - name: Setup Pages
       id: pages
+      if: ${{ inputs.deploy }}
       uses: actions/configure-pages@v6
 
     - name: Build Docs
@@ -50,6 +57,7 @@ jobs:
         bash docs/build_docs.sh
 
     - name: Upload artifact
+      if: ${{ inputs.deploy }}
       uses: actions/upload-pages-artifact@57f0e8492b437b7818227931fef2faa1a379839b # v4 + upload-artifact@v7 update
       with:
         path: ./docs/build/html

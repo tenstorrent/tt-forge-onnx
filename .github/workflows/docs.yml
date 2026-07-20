@@ -20,6 +20,8 @@ jobs:
 
   build-docs:
     uses: ./.github/workflows/build-docs.yml
+    with:
+      deploy: true
     secrets: inherit
 
   # Deployment job
