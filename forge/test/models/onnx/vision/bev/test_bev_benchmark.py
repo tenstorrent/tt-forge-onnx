@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import os
 import statistics
 import time
 
@@ -17,6 +18,11 @@ from forge._C import MLIRConfig
 from forge.config import CompilerConfig
 from forge.verify.compare import calculate_atol, calculate_pcc, compare_with_golden
 
+try:
+    from tracy import signpost as _tracy_signpost
+except ImportError:
+    _tracy_signpost = lambda _: None
+
 from test.models.onnx.vision.bev.model_utils.bev_utils import (
     assets_available,
     bev_paths,
@@ -29,6 +35,21 @@ BATCH_SIZE = 1
 N_WARMUP = 3
 N_TIMED = 10
 PCC = 0.99
+
+
+def _flush_device_profiler() -> None:
+    """Flush on-device DRAM profiler buffer to host after timed inference.
+
+    Drains all pending profiler data from the device DRAM circular buffer
+    to the host, ensuring no op timing data is lost at the end of the
+    measured inference run.
+    """
+    try:
+        import ttnn
+        device = ttnn.GetDevice(0)
+        ttnn.ReadDeviceProfiler(device)
+    except Exception:
+        pass
 
 
 def _fmt(vals: list[float]) -> str:
@@ -73,6 +94,7 @@ def _run_benchmark(
     n_warmup: int,
     n_timed: int,
     batch_size: int = 1,
+    profiling: bool = False,
 ) -> tuple[float, float, float, float]:
     if not frames_pool:
         raise ValueError("frames_pool must not be empty")
@@ -101,7 +123,12 @@ def _run_benchmark(
         prep_ms.append((time.perf_counter() - t0) * 1e3)
 
         t0 = time.perf_counter()
+        if profiling:
+            _tracy_signpost("bev_inference-start")
         out = compiled(*inputs)
+        if profiling:
+            _tracy_signpost("bev_inference-end")
+            _flush_device_profiler()
         infer_ms.append((time.perf_counter() - t0) * 1e3)
 
         t0 = time.perf_counter()
@@ -127,16 +154,127 @@ def _get_compiler_cfg() -> CompilerConfig:
         .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
         .set_compute_cfg_fp32_dest_acc_en(True)
         .set_enable_trace(True)
-        .set_enable_ttnn_perf_metrics(True)
-        .set_enable_ttnn_perf_metrics_verbose(True) 
-        .set_ttnn_perf_metrics_output_file("bev_benchmark_perf_metrics.json")
     )
-    compiler_cfg = CompilerConfig(
-        mlir_config=mlir_config,
-    )
+    compiler_cfg = CompilerConfig(mlir_config=mlir_config)
     compiler_cfg.default_df_override = forge._C.DataFormat.Float16_b
     compiler_cfg.enable_optimization_passes = True
     return compiler_cfg
+
+
+def _get_compiler_cfg_conv2d_search_extensions() -> CompilerConfig:
+    """opt_level_2 + HiFi3 + FP32 acc + trace + BFP8 conv2d weights + extended search + reshard.
+
+    Extended optimizer search: actBlockH {0,384,64,32}, double-buffer,
+    reshardIfNotOptimal. BFP8 weights applied via post-analysis pass on all
+    conv2d and conv_transpose2d ops.
+    """
+    mlir_config = (
+        MLIRConfig()
+        .set_enable_consteval(True)
+        .set_optimization_level(2)
+        .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
+        .set_compute_cfg_fp32_dest_acc_en(True)
+        .set_enable_trace(True)
+        .set_enable_conv2d_search_extensions(True)
+    )
+    compiler_cfg = CompilerConfig(mlir_config=mlir_config)
+    compiler_cfg.default_df_override = forge._C.DataFormat.Float16_b
+    compiler_cfg.enable_optimization_passes = True
+    return compiler_cfg
+
+
+def _get_compiler_cfg_conv2d_search_extensions_bf8() -> CompilerConfig:
+    """opt_level_2 + HiFi3 + FP32 acc + trace + extended search + BFP8 weights, no reshard.
+
+    Extended optimizer search: actBlockH {0,384,64,32}, double-buffer.
+    BFP8 weights applied via post-analysis pass. reshardIfNotOptimal disabled.
+    """
+    mlir_config = (
+        MLIRConfig()
+        .set_enable_consteval(True)
+        .set_optimization_level(2)
+        .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
+        .set_compute_cfg_fp32_dest_acc_en(True)
+        .set_enable_trace(True)
+        .set_enable_conv2d_search_extensions(True)
+        .set_experimental_conv2d_weight_dtype(forge._C.DataFormat.Bfp8_b)
+    )
+    compiler_cfg = CompilerConfig(mlir_config=mlir_config)
+    compiler_cfg.default_df_override = forge._C.DataFormat.Float16_b
+    compiler_cfg.enable_optimization_passes = True
+    return compiler_cfg
+
+
+def _get_compiler_cfg_conv2d_search_extensions_reshard() -> CompilerConfig:
+    """opt_level_2 + HiFi3 + FP32 acc + trace + BFP8 conv2d weights + extended search + reshard.
+
+    Extended optimizer search: actBlockH {0,384,64,32}, double-buffer,
+    reshardIfNotOptimal. BFP8 weights applied via post-analysis pass on all
+    conv2d and conv_transpose2d ops.
+    """
+    mlir_config = (
+        MLIRConfig()
+        .set_enable_consteval(True)
+        .set_optimization_level(2)
+        .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
+        .set_compute_cfg_fp32_dest_acc_en(True)
+        .set_enable_trace(True)
+        .set_enable_conv2d_search_extensions(True)
+        .set_enable_conv2d_reshard(True)
+    )
+    compiler_cfg = CompilerConfig(mlir_config=mlir_config)
+    compiler_cfg.default_df_override = forge._C.DataFormat.Float16_b
+    compiler_cfg.enable_optimization_passes = True
+    return compiler_cfg
+
+
+def _get_compiler_cfg_conv2d_search_extensions_reshard_bf8() -> CompilerConfig:
+    """opt_level_2 + HiFi3 + FP32 acc + trace + BFP8 conv2d weights + extended search + reshard.
+
+    Extended optimizer search: actBlockH {0,384,64,32}, double-buffer,
+    reshardIfNotOptimal. BFP8 weights applied via post-analysis pass on all
+    conv2d and conv_transpose2d ops.
+    """
+    mlir_config = (
+        MLIRConfig()
+        .set_enable_consteval(True)
+        .set_optimization_level(2)
+        .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
+        .set_compute_cfg_fp32_dest_acc_en(True)
+        .set_enable_trace(True)
+        .set_enable_conv2d_search_extensions(True)
+        .set_enable_conv2d_reshard(True)
+        .set_experimental_conv2d_weight_dtype(forge._C.DataFormat.Bfp8_b)
+    )
+    compiler_cfg = CompilerConfig(mlir_config=mlir_config)
+    compiler_cfg.default_df_override = forge._C.DataFormat.Float16_b
+    compiler_cfg.enable_optimization_passes = True
+    return compiler_cfg
+
+def _get_compiler_cfg_conv2d_search_extensions_bf8_spatial_packing_enabled() -> CompilerConfig:
+    mlir_config = (
+        MLIRConfig()
+        .set_enable_consteval(True)
+        .set_optimization_level(2)
+        .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi3)
+        .set_compute_cfg_fp32_dest_acc_en(True)
+        .set_enable_trace(True)
+        .set_enable_conv2d_search_extensions(True)
+        .set_experimental_conv2d_weight_dtype(forge._C.DataFormat.Bfp8_b)
+    )
+    cfg = CompilerConfig(mlir_config=mlir_config)
+    cfg.enable_optimization_passes = True
+    cfg.default_df_override = forge._C.DataFormat.Float16_b
+    return cfg
+
+COMPILER_CONFIGS = {
+    "baseline": _get_compiler_cfg,
+    "conv2d_search_extensions": _get_compiler_cfg_conv2d_search_extensions,
+    "conv2d_search_extensions_bf8": _get_compiler_cfg_conv2d_search_extensions_bf8,
+    "conv2d_search_extensions_reshard": _get_compiler_cfg_conv2d_search_extensions_reshard,
+    "conv2d_search_extensions_reshard_bf8": _get_compiler_cfg_conv2d_search_extensions_reshard_bf8,
+    "conv2d_search_extensions_bf8_spatial_packing_enabled": _get_compiler_cfg_conv2d_search_extensions_bf8_spatial_packing_enabled,
+}
 
 
 def _configure_device_settings() -> None:
@@ -147,16 +285,27 @@ def _configure_device_settings() -> None:
     forge_runtime.experimental.configure_devices(device_settings)
 
 
-def _compile_model(onnx_model: onnx.ModelProto, sample_inputs: list[torch.Tensor]):
-    import os
-
+def _compile_model(onnx_model: onnx.ModelProto, sample_inputs: list[torch.Tensor], compiler_cfg: CompilerConfig = None):
     os.environ["TT_METAL_FORCE_REINIT"] = "1"
-    compiled = forge.compile(
-        onnx_model,
-        sample_inputs=sample_inputs,
-        compiler_cfg=_get_compiler_cfg(),
-        module_name="bev_onnx_full_model_new",
-    )
+    os.environ["DISABLE_SLICE_CONV_FUSION"] = "1"
+    if compiler_cfg is None:
+        compiler_cfg = _get_compiler_cfg()
+    # Temporarily pop dispatch/sync profiler env vars during forge.compile()
+    # to prevent OpModel mock-device teardown crash.
+    _dispatch_prof = os.environ.pop("TT_METAL_DEVICE_PROFILER_DISPATCH", None)
+    _sync_prof = os.environ.pop("TT_METAL_PROFILER_SYNC", None)
+    try:
+        compiled = forge.compile(
+            onnx_model,
+            sample_inputs=sample_inputs,
+            compiler_cfg=compiler_cfg,
+            module_name="bev_onnx_full_model_new",
+        )
+    finally:
+        if _dispatch_prof is not None:
+            os.environ["TT_METAL_DEVICE_PROFILER_DISPATCH"] = _dispatch_prof
+        if _sync_prof is not None:
+            os.environ["TT_METAL_PROFILER_SYNC"] = _sync_prof
     _configure_device_settings()
     return compiled
 
@@ -196,6 +345,7 @@ def _print_table(
         )
         print(row)
     print(sep)
+
 
 
 def _validate_against_ground_truth(
@@ -267,7 +417,8 @@ def bev_assets():
 
 
 @pytest.mark.push
-def test_bev_onnx_benchmark(bev_assets):
+@pytest.mark.parametrize("cfg_name", list(COMPILER_CONFIGS.keys()))
+def test_bev_onnx_benchmark(bev_assets, cfg_name):
     onnx_model = onnx.load(str(bev_assets["model"]))
     onnx.checker.check_model(onnx_model)
 
@@ -275,24 +426,29 @@ def test_bev_onnx_benchmark(bev_assets):
     seq_id = sequences[0]
     sample_inputs = load_inputs(seq_id)
 
-    pool_size = min(N_TIMED + N_WARMUP, max(len(sequences), 4))
+    _profiling = bool(os.environ.get("TT_METAL_DEVICE_PROFILER"))
+    # When profiling: 0 warmup and 1 timed run so only 1 inference is captured.
+    _n_warmup = 0 if _profiling else N_WARMUP
+    _n_timed = 1 if _profiling else N_TIMED
+
+    pool_size = min(_n_timed + _n_warmup, max(len(sequences), 4))
     frames_pool = [load_inputs(sequences[i % len(sequences)]) for i in range(pool_size)]
 
+    compiler_cfg = COMPILER_CONFIGS[cfg_name]()
     n_inputs = len(sample_inputs)
-    print(f"\n[bev_benchmark] Compiling model ({n_inputs} inputs, seq={seq_id}) …")
-    compiled = _compile_model(onnx_model, sample_inputs)
-    print("[bev_benchmark] Compilation done.")
+    compiled = _compile_model(onnx_model, sample_inputs, compiler_cfg=compiler_cfg)
 
     _validate_against_ground_truth(compiled, onnx_model, sample_inputs, seq_id)
 
     mean_infer, std_infer, mean_total, samples_per_sec = _run_benchmark(
         compiled,
         frames_pool,
-        n_warmup=N_WARMUP,
-        n_timed=N_TIMED,
+        n_warmup=_n_warmup,
+        n_timed=_n_timed,
         batch_size=BATCH_SIZE,
+        profiling=_profiling,
     )
     _print_table(
-        "BEV ONNX Benchmark (batch_size=1)",
-        [("BEV simple_bev_prep", mean_infer, std_infer, mean_total, samples_per_sec)],
+        f"BEV ONNX Benchmark (batch_size=1, cfg={cfg_name})",
+        [(cfg_name, mean_infer, std_infer, mean_total, samples_per_sec)],
     )

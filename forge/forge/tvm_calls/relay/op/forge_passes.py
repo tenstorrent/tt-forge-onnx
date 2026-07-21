@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
+import os
 import tvm
 
 from tvm.relay import transform
@@ -4276,6 +4277,285 @@ class RemoveEmptyConcat(DFPatternCallback):
             return post
 
 
+class FuseSliceConvClipConcatToGroupedConv(DFPatternCallback):
+    """
+    Fuses a two-branch split-conv pattern into a single grouped convolution.
+
+    ── Matched pattern ──────────────────────────────────────────────────────────
+
+        input [N, C, H, W]
+          │
+          ├─ strided_slice(axes=[1], begin=[0],   end=[C/2])   # branch 0
+          │    └─ nn.conv2d(W0 [OC, C/2, kH, kW], groups=1)
+          │         └─ bias_add(b0 [OC])
+          │              └─ clip(a_min, a_max)
+          │
+          └─ strided_slice(axes=[1], begin=[C/2], end=[C])     # branch 1
+               └─ nn.conv2d(W1 [OC, C/2, kH, kW], groups=1)
+                    └─ bias_add(b1 [OC])
+                         └─ clip(a_min, a_max)
+          │
+          └─ concatenate(axis=1)  →  output [N, 2*OC, H', W']
+
+    ── Rewritten pattern ────────────────────────────────────────────────────────
+
+        input [N, C, H, W]
+          └─ nn.conv2d(W_fused [2*OC, C/2, kH, kW], groups=2, channels=2*OC)
+               └─ nn.bias_add(b_fused [2*OC])
+                    └─ clip(a_min, a_max)  →  output [N, 2*OC, H', W']
+
+    The groups=2 convolution reproduces the original slice-isolation exactly:
+    group 0 receives input channels [0 : C/2] and applies W0 / b0,
+    group 1 receives input channels [C/2 : C] and applies W1 / b1.
+    Weights and biases are simply concatenated along the output-channel axis:
+        W_fused = concat([W0, W1], axis=0)  →  [2*OC, C/2, kH, kW]
+        b_fused = concat([b0, b1], axis=0)  →  [2*OC]
+
+    ── Bias forms handled ───────────────────────────────────────────────────────
+
+    Two relay representations of the bias addition are matched:
+
+      Form A  –  produced by relay.frontend.from_onnx / bind_params_by_name:
+                    nn.bias_add(conv_out, bias_1d [OC])
+
+      Form B  –  produced after the Forge ResolveConvChannels pass, which
+                 reshapes the 1-D bias to [OC, 1, 1] for NCHW broadcast:
+                    expand_dims(bias_1d, axis=1)           →  [OC, 1]
+                    expand_dims([OC, 1], axis=1)           →  [OC, 1, 1]
+                    add(conv_out [N,OC,H,W], [OC, 1, 1])
+
+      In both cases the raw 1-D bias tensor [OC] is extracted and concatenated.
+      The fused output always uses nn.bias_add for clarity.
+
+    ── Optional nn.pad handling ─────────────────────────────────────────────────
+
+    TVM's ONNX frontend expands auto_pad=SAME_UPPER into an explicit nn.pad +
+    nn.conv2d(padding=0).  FuseConvAndPoolPadding collapses it back into the
+    conv padding attribute, but both forms are matched so this callback fires
+    regardless of pass order.  When nn.pad is present in both branches (same
+    pad_width), a single pad is hoisted to the full-channel input before the
+    fused conv.
+
+    ── Guards ───────────────────────────────────────────────────────────────────
+
+      1. concatenate.axis == 1                (channel-axis merge)
+      2. clip ranges identical across branches (same activation clamp)
+      3. both conv2d have groups == 1          (only fuse plain convolutions)
+      4. both conv2d share kernel_size, strides, padding, data_layout
+      5. if nn.pad present: both branches have it with the same pad_width
+      6. in_channels is even                  (equal channel split)
+      7. slice0: begin=[0],   end=[C/2], axes=[1]
+         slice1: begin=[C/2], end=[C],   axes=[1]
+
+    Note: groups=2 is unsupported by TVM's own CPU/GPU codegen (see NOTE at
+    the top of this file) but is lowered correctly by Forge / tt-mlir.
+    """
+
+    # ── Pattern construction ─────────────────────────────────────────────────
+
+    def __init__(self):
+        super().__init__(rewrite_once=True, require_type=True)
+
+        self.input = wildcard()
+
+        # ── Branch 0 ──────────────────────────────────────────────────────────
+        # strided_slice → (optional nn.pad) → nn.conv2d → bias_add → clip
+        self.slice0   = is_op("strided_slice")(self.input)
+
+        # Optional nn.pad between slice and conv (present before FuseConvAndPoolPadding)
+        self.pad_val0 = wildcard()
+        self.pad0     = is_op("nn.pad")(self.slice0, self.pad_val0)
+
+        self.weight0  = wildcard()
+        self.conv0    = is_op("nn.conv2d")(self.pad0 | self.slice0, self.weight0)
+
+        # Bias Form A: nn.bias_add(conv, bias_1d)
+        self.bias0_direct = wildcard()
+        self.biasadd0_A   = is_op("nn.bias_add")(self.conv0, self.bias0_direct)
+
+        # Bias Form B: add(conv, expand_dims(expand_dims(bias_1d)))
+        # ResolveConvChannels reshapes the 1-D bias to [OC,1,1] for NCHW broadcasting
+        self.bias0_raw = wildcard()
+        self.bias0_e1  = is_op("expand_dims")(self.bias0_raw)
+        self.bias0_e2  = is_op("expand_dims")(self.bias0_e1)
+        self.biasadd0_B = is_op("add")(self.conv0, self.bias0_e2)
+
+        self.biasadd0 = self.biasadd0_A | self.biasadd0_B
+        self.clip0    = is_op("clip")(self.biasadd0)
+
+        # ── Branch 1 (identical structure) ────────────────────────────────────
+        self.slice1   = is_op("strided_slice")(self.input)
+
+        self.pad_val1 = wildcard()
+        self.pad1     = is_op("nn.pad")(self.slice1, self.pad_val1)
+
+        self.weight1  = wildcard()
+        self.conv1    = is_op("nn.conv2d")(self.pad1 | self.slice1, self.weight1)
+
+        self.bias1_direct = wildcard()
+        self.biasadd1_A   = is_op("nn.bias_add")(self.conv1, self.bias1_direct)
+
+        self.bias1_raw = wildcard()
+        self.bias1_e1  = is_op("expand_dims")(self.bias1_raw)
+        self.bias1_e2  = is_op("expand_dims")(self.bias1_e1)
+        self.biasadd1_B = is_op("add")(self.conv1, self.bias1_e2)
+
+        self.biasadd1 = self.biasadd1_A | self.biasadd1_B
+        self.clip1    = is_op("clip")(self.biasadd1)
+
+        # ── Root: channel-axis concatenation of the two branches ───────────────
+        self.pattern = is_op("concatenate")(is_tuple([self.clip0, self.clip1]))
+
+    # ── Callback: guards then rewrite ────────────────────────────────────────
+
+    def callback(self, pre, post, node_map):
+        """
+        Called by the TVM rewriter for every subgraph that matches self.pattern.
+
+        Set DISABLE_SLICE_CONV_FUSION=1 to skip this callback (useful for A/B
+        benchmarks comparing fused vs. unfused Block C).
+
+        `pre`      – the original (pre-rewrite) matched subgraph root
+        `post`     – the rewritten subgraph root (inputs already rewritten)
+        `node_map` – maps each pattern node → matched post-graph node
+        Returns the replacement node, or `post` unchanged to decline the rewrite.
+        """
+        if os.environ.get("DISABLE_SLICE_CONV_FUSION"):
+            return post
+
+        # pre_node_map gives access to attributes on the *original* nodes,
+        # which is needed for guard checks (attrs are not available on post nodes).
+        pre_node_map = construct_pre_node_map(self.pattern, pre)
+
+        # ── Guard 1: channel-axis concatenation ───────────────────────────────
+        concat_pre = pre_node_map[self.pattern][0]
+        if int(concat_pre.attrs.axis) != 1:
+            return post
+
+        # ── Guard 2: identical clip range across both branches ─────────────────
+        clip0_pre = pre_node_map[self.clip0][0]
+        clip1_pre = pre_node_map[self.clip1][0]
+        if (float(clip0_pre.attrs.a_min) != float(clip1_pre.attrs.a_min) or
+                float(clip0_pre.attrs.a_max) != float(clip1_pre.attrs.a_max)):
+            return post
+
+        # ── Guard 3 & 4: conv2d groups=1, identical spatial attributes ─────────
+        # pre_node_map[self.convN] resolves to the matched conv2d regardless of
+        # which branch of the pad | no-pad OR pattern fired.
+        conv0_pre = pre_node_map[self.conv0][0]
+        conv1_pre = pre_node_map[self.conv1][0]
+
+        if int(conv0_pre.attrs.groups) != 1 or int(conv1_pre.attrs.groups) != 1:
+            return post
+        if (list(conv0_pre.attrs.kernel_size) != list(conv1_pre.attrs.kernel_size) or
+                list(conv0_pre.attrs.strides)     != list(conv1_pre.attrs.strides)     or
+                list(conv0_pre.attrs.padding)     != list(conv1_pre.attrs.padding)     or
+                conv0_pre.attrs.data_layout       != conv1_pre.attrs.data_layout):
+            return post
+
+        # ── Guard 5: nn.pad consistency ────────────────────────────────────────
+        # If present, both branches must carry it with identical pad_width so we
+        # can safely hoist a single pad to the full-channel input.
+        def _is_pad(node):
+            return hasattr(node, 'op') and node.op.name == 'nn.pad'
+
+        has_pad = _is_pad(conv0_pre.args[0])
+        if has_pad != _is_pad(conv1_pre.args[0]):
+            return post   # asymmetric pad structure
+        if has_pad:
+            pad0_pre = conv0_pre.args[0]
+            pad1_pre = conv1_pre.args[0]
+            if list(pad0_pre.attrs.pad_width) != list(pad1_pre.attrs.pad_width):
+                return post   # pad_widths differ between branches
+
+        # ── Guard 6 & 7: even channel split, correct slice boundaries ──────────
+        in_channels = int(pre_node_map[self.input][0].checked_type.shape[1])
+        if in_channels % 2 != 0:
+            return post
+        half = in_channels // 2
+
+        def _to_int_list(arr):
+            return [int(x) for x in arr]
+
+        slice0_pre = pre_node_map[self.slice0][0]
+        slice1_pre = pre_node_map[self.slice1][0]
+
+        axes0 = _to_int_list(slice0_pre.attrs.axes) if slice0_pre.attrs.axes is not None else []
+        axes1 = _to_int_list(slice1_pre.attrs.axes) if slice1_pre.attrs.axes is not None else []
+        if axes0 != [1] or axes1 != [1]:
+            return post
+
+        begin0 = _to_int_list(slice0_pre.attrs.begin)
+        end0   = _to_int_list(slice0_pre.attrs.end)
+        begin1 = _to_int_list(slice1_pre.attrs.begin)
+        # slice0 must cover [0 : C/2], slice1 must start at C/2
+        if begin0 != [0] or end0 != [half] or begin1 != [half]:
+            return post
+
+        # ── All guards passed: build fused grouped convolution ─────────────────
+
+        # Bias extraction: the OR pattern (biasadd_A | biasadd_B) can match either
+        # form.  We inspect the actual op name on the pre-graph to decide which
+        # wildcard in the node_map holds the raw 1-D bias tensor.
+        def _extract_bias_1d(biasadd_pat, bias_direct_pat, bias_raw_pat):
+            matched_op_name = pre_node_map[biasadd_pat][0].op.name
+            if matched_op_name == 'nn.bias_add':
+                # Form A: nn.bias_add(conv, bias_1d [OC])
+                return node_map[bias_direct_pat][0]
+            else:
+                # Form B: add(conv, expand_dims(expand_dims(bias_1d [OC])))
+                # bias_raw_pat is bound to the original 1-D bias before reshaping
+                return node_map[bias_raw_pat][0]
+
+        act     = node_map[self.input][0]
+        weight0 = node_map[self.weight0][0]
+        weight1 = node_map[self.weight1][0]
+        bias0   = _extract_bias_1d(self.biasadd0, self.bias0_direct, self.bias0_raw)
+        bias1   = _extract_bias_1d(self.biasadd1, self.bias1_direct, self.bias1_raw)
+
+        # Fuse weights along output-channel axis: [OC,C/2,kH,kW] × 2 → [2*OC,C/2,kH,kW]
+        weight_fused = tvm.relay.concatenate([weight0, weight1], axis=0)
+        # Fuse biases: [OC] × 2 → [2*OC]
+        bias_fused   = tvm.relay.concatenate([bias0,   bias1],   axis=0)
+
+        out_channels = int(conv0_pre.attrs.channels) * 2
+
+        # Optional: hoist the shared nn.pad to the full-channel input.
+        # pad_width touches only spatial dims so it is channel-count agnostic.
+        if has_pad:
+            pad_val = node_map[self.pad_val0][0]
+            act = tvm.relay.nn.pad(act, pad_val, pad_width=pad0_pre.attrs.pad_width)
+
+        # groups=2: group 0 sees channels [0:C/2] via W_fused[0:OC],
+        #           group 1 sees channels [C/2:C] via W_fused[OC:2*OC]
+        fused_conv = tvm.relay.nn.conv2d(
+            act,
+            weight_fused,
+            strides=conv0_pre.attrs.strides,
+            padding=conv0_pre.attrs.padding,
+            dilation=conv0_pre.attrs.dilation,
+            groups=2,
+            channels=out_channels,
+            kernel_size=conv0_pre.attrs.kernel_size,
+            data_layout=conv0_pre.attrs.data_layout,
+            kernel_layout=conv0_pre.attrs.kernel_layout,
+            out_dtype=conv0_pre.attrs.out_dtype,
+        )
+        fused_bias = tvm.relay.nn.bias_add(fused_conv, bias_fused)
+        fused_clip = tvm.relay.clip(
+            fused_bias,
+            a_min=float(clip0_pre.attrs.a_min),
+            a_max=float(clip0_pre.attrs.a_max),
+        )
+        logger.info(
+            f"FuseSliceConvClipConcatToGroupedConv fired: "
+            f"IC={in_channels} OC={out_channels} groups=2 "
+            f"kernel={list(conv0_pre.attrs.kernel_size)} "
+            f"padding={list(conv0_pre.attrs.padding)} has_pad={has_pad}"
+        )
+        return fused_clip
+
+
 def _get_callback_name(callback):
     if isinstance(callback, DFPatternCallback):
         return type(callback).__name__
@@ -4311,11 +4591,22 @@ def run_pattern_callbacks(
 
     for callback in callbacks:
         callback_name = _get_callback_name(callback)
+        is_fuse_slice_conv = isinstance(callback, FuseSliceConvClipConcatToGroupedConv)
+        if is_fuse_slice_conv:
+            logger.info(
+                f"[FuseSliceConvClipConcatToGroupedConv] Relay IR BEFORE:\n"
+                f"{tvm.relay.astext(relay_module['main'], show_meta_data=False)}"
+            )
         try:
             relay_module = _run_pattern_callback(relay_module, callback, callback_name)
         except Exception as ex:
             logger.error(f'Failed on "{callback_name}" TVM callback')
             raise ex
+        if is_fuse_slice_conv:
+            logger.info(
+                f"[FuseSliceConvClipConcatToGroupedConv] Relay IR AFTER:\n"
+                f"{tvm.relay.astext(relay_module['main'], show_meta_data=False)}"
+            )
         if run_verify:
             logger.trace(f"Verifying {callback_name}")
             verify_tvm_compile(relay_module, params, inputs, target, framework_outputs, callback_name, verify_cfg)
@@ -4338,6 +4629,7 @@ def run_forge_compile_passes(
             ConvertLayout(),
             ResolveConvChannels(),
             FuseConvAndPoolPadding(),
+            FuseSliceConvClipConcatToGroupedConv(),
             DecomposeDynamicResize2d(),
             DecomposePRelu(),
             DecomposeRoll(),

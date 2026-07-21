@@ -83,8 +83,13 @@ DEVICE_TRACE=true        # --device-trace-profiler: safe with trace mode
 DISPATCH_CORES=false     # --profile-dispatch-cores: disables C++ post-proc; conflicts with trace mode
 SYNC_HOST_DEVICE=false   # --sync-host-device: improves host-device timestamp accuracy (incompatible with --noc-traces)
 NOC_TRACES=false         # --collect-noc-traces: can conflict with device context
+MID_RUN_DUMP=false       # --dump-device-data-mid-run: flush DRAM profiler buffer after EACH op
+                         #   Fixes DRAM circular buffer overflow for large models (>70 ops)
+                         #   INCOMPATIBLE with --dispatch-cores (hard crash)
 MEMORY_PROFILE=true      # --device-memory-profiler: safe
 PERF_COUNTERS=false      # --profiler-capture-perf-counters: disables C++ post-proc; enable explicitly
+LEGACY_DEVICE=false      # --legacy-device: pass --no-runtime-analysis → skip C++ post-proc, use legacy Python
+                         #   Required when block C (>70 ops) DRAM buffer overflows in CPP_POST_PROCESS mode
 CHECK_EXIT_CODE=true     # --check-exit-code: abort post-processing if test command fails
 # DEVICE_ANALYSIS_TYPES: space-separated list of analysis types to include.
 # Leave empty to run ALL analysis types (default). Valid types:
@@ -129,12 +134,18 @@ while [[ $# -gt 0 ]]; do
             NOC_TRACES=true; shift ;;
         --no-noc-traces)
             NOC_TRACES=false; shift ;;
+        --mid-run-dump)
+            MID_RUN_DUMP=true; shift ;;
         --no-memory-profile)
             MEMORY_PROFILE=false; shift ;;
         --perf-counters)
             PERF_COUNTERS=true; shift ;;
         --no-perf-counters)
             PERF_COUNTERS=false; shift ;;
+        --legacy-device)
+            LEGACY_DEVICE=true; shift ;;
+        --no-legacy-device)
+            LEGACY_DEVICE=false; shift ;;
         --check-exit-code)
             CHECK_EXIT_CODE=true; shift ;;
         --no-check-exit-code)
@@ -168,6 +179,21 @@ TRACY_TOOLS="${TT_METAL_SRC}/build/tools/profiler/bin"
 TRACY_PY_MODULE="${TT_METAL_SRC}/tools"
 if [[ -d "${TT_MLIR_BUILD}/install/tt-metal/tools/tracy" ]]; then
     TRACY_PY_MODULE="${TT_MLIR_BUILD}/install/tt-metal/tools"
+fi
+
+# ---------------------------------------------------------------------------
+# Auto-install patched post-processors into the tt-metal install tree.
+# process_ops_logs.py and process_device_log.py fix pandas 2.x compatibility
+# and ERISC dispatch-core support. Must be copied after every cmake --build.
+# ---------------------------------------------------------------------------
+TRACY_INSTALL="${TT_MLIR_BUILD}/install/tt-metal/tools/tracy"
+if [[ -d "${TRACY_INSTALL}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    for _f in process_ops_logs.py process_device_log.py; do
+        if [[ -f "${SCRIPT_DIR}/${_f}" ]]; then
+            cp "${SCRIPT_DIR}/${_f}" "${TRACY_INSTALL}/${_f}"
+        fi
+    done
 fi
 
 # ---------------------------------------------------------------------------
@@ -208,6 +234,20 @@ fi
 # Device-side kernel cycle timestamps — requires TT_RUNTIME_ENABLE_PERF_TRACE=ON build.
 # Only enabled when device tracing is active (default: on).
 [[ "${DEVICE_TRACE}" == true && "${NO_DEVICE}" == false ]] && export TT_METAL_DEVICE_PROFILER=1
+# Enable TTNN op profiler Tracy messages (TT_DNN_DEVICE_OP zones) and trace tracking.
+# python -m tracy sets these internally; we bypass that launcher so must set them explicitly.
+# Without TTNN_OP_PROFILER=1, TracyOpMeshWorkload() skips all message emission and
+# tracy_ops_data.csv ends up empty ("There are currently no messages!"), which causes
+# profile_log_device.csv to have only headers and no per-op device timing data.
+[[ "${DEVICE_TRACE}" == true && "${NO_DEVICE}" == false ]] && export TTNN_OP_PROFILER=1
+[[ "${DEVICE_TRACE}" == true && "${NO_DEVICE}" == false ]] && export TT_METAL_PROFILER_TRACE_TRACKING=1
+# Synchronous per-op DRAM buffer flush — prevents circular-buffer overflow for large models
+# (documented threshold: >70 ops).  Equivalent to --mid-run-dump at the tt-metal level.
+# Always set when mid-run dump is active; also set unconditionally here so that runs
+# without --mid-run-dump still flush correctly when the model is large.
+# NOTE: TT_METAL_PROFILER_SYNC is temporarily popped during forge.compile() by the BEV test
+# files (_compile_model) and restored immediately after — this is intentional and safe.
+export TT_METAL_PROFILER_SYNC=1
 
 # ---------------------------------------------------------------------------
 # Incompatibility guard: certain flags combined with --noc-traces crash at tt-metal level.
@@ -217,6 +257,12 @@ fi
 # writeDeviceResultsToFiles(). Guard must run BEFORE TRACY_ARGS is built so that
 # the incompatible flags are not passed to python3 -m tracy.
 # ---------------------------------------------------------------------------
+if [[ "${MID_RUN_DUMP}" == true && "${DISPATCH_CORES}" == true ]]; then
+    echo "  ERROR: --mid-run-dump is incompatible with --dispatch-cores (tt-metal hard crash)." >&2
+    echo "         Use --mid-run-dump only with NOC traces (--noc-traces)." >&2
+    exit 1
+fi
+
 if [[ "${NOC_TRACES}" == true && "${SYNC_HOST_DEVICE}" == true ]]; then
     echo "  WARNING: --sync-host-device is incompatible with --noc-traces" >&2
     echo "           (sync kernel emits invalid NOC transfer types → TT_FATAL in coalesceFabricEvents)." >&2
@@ -236,8 +282,10 @@ TRACY_ARGS=()
 [[ "${SYNC_HOST_DEVICE}" == true  ]] && TRACY_ARGS+=(--sync-host-device)
 [[ "${CHECK_EXIT_CODE}" == true  ]] && TRACY_ARGS+=(--check-exit-code)
 [[ "${NOC_TRACES}"      == true  ]] && TRACY_ARGS+=(--collect-noc-traces)
+[[ "${MID_RUN_DUMP}"    == true  ]] && TRACY_ARGS+=(--dump-device-data-mid-run)
 [[ "${MEMORY_PROFILE}"  == true  ]] && TRACY_ARGS+=(--device-memory-profiler)
 [[ "${PERF_COUNTERS}"   == true  ]] && TRACY_ARGS+=(--profiler-capture-perf-counters all)
+[[ "${LEGACY_DEVICE}"  == true  ]] && TRACY_ARGS+=(--no-runtime-analysis)
 # Expand each space-separated analysis type into its own --device-analysis-types flag
 # (the Tracy option uses action="append"). Empty = omit flag = run all types.
 if [[ -n "${DEVICE_ANALYSIS_TYPES}" ]]; then
@@ -267,8 +315,10 @@ echo "  Device trace  : ${DEVICE_TRACE}"
 echo "  Dispatch cores: ${DISPATCH_CORES}"
 echo "  Sync host-dev : ${SYNC_HOST_DEVICE}"
 echo "  NOC traces    : ${NOC_TRACES}"
+echo "  Mid-run dump  : ${MID_RUN_DUMP}"
 echo "  Memory profile: ${MEMORY_PROFILE}"
 echo "  Perf counters : ${PERF_COUNTERS}"
+echo "  Legacy device : ${LEGACY_DEVICE}"
 echo "  Check exit    : ${CHECK_EXIT_CODE}"
 [[ -n "${DEVICE_ANALYSIS_TYPES}" ]] && echo "  Analysis types: ${DEVICE_ANALYSIS_TYPES}" || echo "  Analysis types: all (default)"
 echo "  Command       : $*"

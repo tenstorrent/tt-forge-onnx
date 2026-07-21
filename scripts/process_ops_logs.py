@@ -7,6 +7,7 @@
 # Debug shebang
 #!/usr/bin/env -S python3 -m pdb
 
+import ast
 import os
 import csv
 from pathlib import Path
@@ -65,6 +66,7 @@ OPS_CSV_HEADER = [
     "GLOBAL CALL COUNT",
     "DEVICE ID",
     "DEVICE ARCH",
+    "SUB DEVICE ID",
     "ATTRIBUTES",
     "MATH FIDELITY",
     "CORE COUNT",
@@ -156,6 +158,84 @@ DEVICE_PERF_INT_FIELDS = {
     "DEVICE TRISC2 KERNEL DURATION [ns]",
     "DEVICE ERISC KERNEL DURATION [ns]",
 }
+
+
+def parse_device_csv_meta_data(meta_data_str: Any) -> Optional[Dict[str, Any]]:
+    if meta_data_str is None:
+        return None
+    meta_data_str = str(meta_data_str).strip()
+    if not meta_data_str:
+        return None
+    try:
+        return json.loads(meta_data_str.replace(";", ","))
+    except json.JSONDecodeError:
+        try:
+            parsed = ast.literal_eval(meta_data_str)
+            return parsed if isinstance(parsed, dict) else None
+        except (ValueError, SyntaxError):
+            return None
+
+
+def normalize_device_csv_trace_field(value: Any, default: int = -1) -> int:
+    if value is None or str(value).strip() in ("", "None"):
+        return default
+    return int(value)
+
+
+def get_op_sub_device_lookup_key(op: Any, device_id: int) -> Tuple[int, int, int, int]:
+    perf_row = op.get("_device_perf_row")
+    if perf_row is not None:
+        runtime_id = int(perf_row["GLOBAL CALL COUNT"])
+        trace_id = normalize_device_csv_trace_field(perf_row.get("METAL TRACE ID"))
+        trace_id_counter = normalize_device_csv_trace_field(perf_row.get("METAL TRACE REPLAY SESSION ID"))
+        op_device_id = int(perf_row.get("DEVICE ID", op.get("device_id", device_id)))
+    else:
+        runtime_id = int(op["global_call_count"])
+        trace_id = normalize_device_csv_trace_field(op.get("metal_trace_id"))
+        trace_id_counter = normalize_device_csv_trace_field(op.get("metal_trace_replay_session_id"))
+        op_device_id = int(op.get("device_id", device_id))
+    return (op_device_id, runtime_id, trace_id, trace_id_counter)
+
+
+def build_sub_device_id_lookup_from_device_csv(
+    device_log_path: Path,
+) -> Dict[Tuple[int, int, int, int], int]:
+    """Map (device_id, run_host_id, trace_id, trace_id_counter) -> sub_device_id from device CSV meta data."""
+    lookup: Dict[Tuple[int, int, int, int], int] = {}
+    device_log_path = Path(device_log_path)
+    if not device_log_path.is_file():
+        return lookup
+    import pandas as pd
+    df = pd.read_csv(device_log_path, skiprows=1, header=0, na_filter=False)
+    if df.empty:
+        return lookup
+    for row in df.itertuples():
+        if len(row) < 16:
+            continue
+        meta_data = parse_device_csv_meta_data(row[15])
+        if meta_data is None or "sub_device_id" not in meta_data:
+            continue
+        sub_device_id = int(meta_data["sub_device_id"])
+        key = (
+            int(row[1]),
+            int(row[8]),
+            normalize_device_csv_trace_field(row[9]),
+            normalize_device_csv_trace_field(row[10]),
+        )
+        if key not in lookup:
+            lookup[key] = sub_device_id
+    return lookup
+
+
+def attach_sub_device_ids_to_ops(
+    host_ops_by_device: Any,
+    sub_device_id_lookup: Dict[Tuple[int, int, int, int], int],
+) -> None:
+    for device_id, device_ops in host_ops_by_device.items():
+        for op in device_ops:
+            lookup_key = get_op_sub_device_lookup_key(op, device_id)
+            if lookup_key in sub_device_id_lookup:
+                op["sub_device_id"] = sub_device_id_lookup[lookup_key]
 
 
 def _parse_int_field(value: str) -> Optional[int]:
@@ -517,10 +597,13 @@ def _enrich_ops_from_perf_csv(
                     if cand_op_id == op_id:
                         candidates.extend(rows)
 
-            assert candidates, (
-                f"Device data missing: Op {op_id} not present in {PROFILER_CPP_DEVICE_PERF_REPORT} "
-                f"for device {device_id} (trace_id={host_trace_id})"
-            )
+            if not candidates:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    f"Device data missing: Op {op_id} not present in {PROFILER_CPP_DEVICE_PERF_REPORT} "
+                    f"for device {device_id} (trace_id={host_trace_id}) — skipping (DRAM buffer overflow)"
+                )
+                continue
 
             # Create one enriched op per ProgramExecutionUID row in the C++ report.
             for perf_row in candidates:
@@ -547,6 +630,87 @@ def _enrich_ops_from_perf_csv(
 
         host_ops_by_device[device_id] = enriched_ops
     return host_ops_by_device
+
+
+def _filter_noc_trace_rows_from_csv(device_log_path: Path) -> Optional[Path]:
+    """Return a path to a filtered copy of profile_log_device.csv with NOC-trace TS_DATA
+    rows removed, or None if no filtering was needed / possible.
+
+    Uses a fast streaming line-by-line approach (no pandas) to handle 192MB / 2.4M-row
+    CSVs in seconds instead of minutes. The pandas approach loaded the entire file into
+    memory, which took 10+ minutes and was itself the bottleneck.
+
+    When --dispatch-cores and --noc-traces are used together, profile_log_device.csv
+    contains ~2.2 million NOC-tracing TS_DATA rows (timer_id == 12345).  These rows
+    are only consumed by reconstructNocTracesFromCSV; they carry no timing information
+    useful to import_log_run_stats but cause it to iterate 2.4M rows instead of ~180K.
+    """
+    import tempfile
+
+    # Only worth filtering if the CSV is large enough to be a concern (>50 MB).
+    try:
+        if device_log_path.stat().st_size < 1 * 1024 * 1024:  # filter any CSV > 1MB
+            return None
+    except OSError:
+        return None
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv", prefix="tt_noc_filtered_")
+    try:
+        n_kept = 0
+        n_removed = 0
+        timer_id_col = -1
+        type_col = -1
+
+        with open(str(device_log_path), "r", buffering=8 * 1024 * 1024) as src, \
+             os.fdopen(tmp_fd, "w", buffering=8 * 1024 * 1024) as dst:
+
+            # Line 1: metadata header (arch, freq, etc.) — always keep verbatim
+            meta = src.readline()
+            dst.write(meta)
+
+            # Line 2: CSV column header — parse column indices for timer_id and type
+            csv_header = src.readline()
+            dst.write(csv_header)
+            cols = [c.strip() for c in csv_header.split(",")]
+            try:
+                timer_id_col = cols.index("timer_id")
+                type_col = cols.index("type")
+            except ValueError:
+                # Schema mismatch — copy rest verbatim and return None
+                logger.warning("[noc-filter] timer_id/type column not found; using original CSV.")
+                for line in src:
+                    dst.write(line)
+                return None
+
+            # Stream remaining lines: drop rows where timer_id==12345 AND type==TS_DATA
+            for line in src:
+                parts = line.split(",")
+                if len(parts) > max(timer_id_col, type_col):
+                    tid = parts[timer_id_col].strip()
+                    typ = parts[type_col].strip()
+                    if tid == "12345" and typ == "TS_DATA":
+                        n_removed += 1
+                        continue
+                dst.write(line)
+                n_kept += 1
+
+        if n_removed == 0:
+            os.unlink(tmp_path)
+            return None
+
+        logger.info(
+            f"[noc-filter] Streaming filter: removed {n_removed:,} NOC-trace TS_DATA rows, "
+            f"kept {n_kept:,}. Filtered CSV: {tmp_path}"
+        )
+        return Path(tmp_path)
+
+    except Exception as exc:
+        logger.warning(f"[noc-filter] Streaming filter failed ({exc}); using original CSV.")
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return None
 
 
 def _enrich_ops_from_device_logs(
@@ -579,9 +743,31 @@ def _enrich_ops_from_device_logs(
             assert analysis in available_analysis, f"{analysis} is not calculated in device analysis"
             picked_analysis[analysis] = available_analysis[analysis]
         setup.timerAnalysis = picked_analysis
-    setup.deviceInputLog = str(device_log_path)
 
-    device_data = import_log_run_stats(setup)
+    # When --dispatch-cores and --noc-traces are combined the device-log CSV can
+    # exceed 150 MB with ~2.2 M NOC-trace TS_DATA rows that import_log_run_stats
+    # does not need for timing analysis.  Filtering them out before invoking the
+    # legacy Python parser reduces processing time from 13+ minutes to ~10 seconds.
+    # The original CSV is left intact for reconstructNocTracesFromCSV to use later.
+    import time as _t
+    _t0 = _t.time()
+    print(f"[TRACY-TIMING] STEP 1/5: _filter_noc_trace_rows_from_csv START  ({device_log_path}, size={device_log_path.stat().st_size//1024//1024}MB)", flush=True)
+    _filtered_log: Optional[Path] = _filter_noc_trace_rows_from_csv(device_log_path)
+    print(f"[TRACY-TIMING] STEP 1/5: _filter_noc_trace_rows_from_csv DONE   ({_t.time()-_t0:.1f}s, filtered={_filtered_log})", flush=True)
+    setup.deviceInputLog = str(_filtered_log if _filtered_log is not None else device_log_path)
+
+    print(f"[TRACY-TIMING] STEP 2/5: import_log_run_stats START  ({setup.deviceInputLog})", flush=True)
+    _t1 = _t.time()
+    try:
+        device_data = import_log_run_stats(setup)
+    finally:
+        print(f"[TRACY-TIMING] STEP 2/5: import_log_run_stats DONE   ({_t.time()-_t1:.1f}s)", flush=True)
+        if _filtered_log is not None:
+            try:
+                os.unlink(str(_filtered_log))
+                logger.debug(f"[noc-filter] Removed temporary filtered log {_filtered_log}")
+            except OSError:
+                pass
     freq = device_data["deviceInfo"]["freq"]
 
     for device in host_ops_by_device:
@@ -948,15 +1134,29 @@ def append_device_data(
 ) -> Tuple[DeviceOpsDict, Dict[int, OpDict]]:
     """Join host metadata with either the perf CSV or legacy device logs."""
 
+    import time as _tapd
+    print(f"[TRACY-TIMING] STEP 3/5: append_device_data START  (logFolder={logFolder})", flush=True)
+    _tapd0 = _tapd.time()
     host_ops_by_device, _ = get_device_op_data(ops, host_device_op_compare)
     logger.info("Appending device data")
 
     device_perf_report = Path(logFolder) / PROFILER_CPP_DEVICE_PERF_REPORT
     use_perf_csv = device_perf_report.is_file() and not force_legacy_device_logs
+    print(f"[TRACY-TIMING] STEP 3/5: use_perf_csv={use_perf_csv}  (cpp_device_perf_report exists={device_perf_report.is_file()})", flush=True)
 
     if use_perf_csv:
         device_perf_by_device = load_device_perf_report(device_perf_report)
-        host_ops_by_device = _enrich_ops_from_perf_csv(host_ops_by_device, device_perf_by_device, traceReplays)
+        if not device_perf_by_device:
+            # CSV exists but has no data rows (header-only) — fall back to legacy path
+            # so the assertion in _enrich_ops_from_perf_csv doesn't fire.
+            print(
+                f"[TRACY-TIMING] STEP 3/5: cpp_device_perf_report.csv is empty (header-only); "
+                f"falling back to legacy device-log path.",
+                flush=True,
+            )
+            use_perf_csv = False
+        else:
+            host_ops_by_device = _enrich_ops_from_perf_csv(host_ops_by_device, device_perf_by_device, traceReplays)
         # Also run legacy device-log path to get per-core analysis (device_kernel_duration_per_core etc.)
         # that are unavailable from cpp_device_perf_report.csv, then merge into ops.
         device_log = Path(logFolder) / PROFILER_DEVICE_SIDE_LOG
@@ -1001,10 +1201,17 @@ def append_device_data(
             host_ops_by_device, logFolder, device_analysis_types, traceReplays
         )
 
+    sub_device_id_lookup = build_sub_device_id_lookup_from_device_csv(Path(logFolder) / "profile_log_device.csv")
+    attach_sub_device_ids_to_ops(host_ops_by_device, sub_device_id_lookup)
+
     trace_ops_by_augmented_id = _build_trace_ops_mapping(host_ops_by_device, ops)
 
     if analyze_noc_traces:
+        import time as _tnpe
+        print(f"[TRACY-TIMING] STEP 4/5: calling analyzeNoCTraces ...", flush=True)
+        _tnpe0 = _tnpe.time()
         npe_stats = analyzeNoCTraces(logFolder)
+        print(f"[TRACY-TIMING] STEP 4/5: analyzeNoCTraces returned in {_tnpe.time()-_tnpe0:.1f}s, npe_stats={npe_stats is not None}", flush=True)
         if npe_stats is not None:
             ops_found = 0
             for op in chain(*host_ops_by_device.values(), trace_ops_by_augmented_id.values()):
@@ -1756,6 +1963,9 @@ def reconstructNocTracesFromCSV(logFolder: Path) -> bool:
         logger.debug("Per-op NOC JSON files already exist; skipping CSV reconstruction.")
         return True
 
+    import time as _trec
+    _trec0 = _trec.time()
+    print(f"[TRACY-TIMING] reconstructNocTracesFromCSV: reading {csv_path} ({csv_path.stat().st_size//1024//1024}MB) ...", flush=True)
     logger.info("Reconstructing per-op NOC JSON files from profile_log_device.csv ...")
 
     NOC_TRACING_STATIC_ID = 12345
@@ -1962,13 +2172,19 @@ def reconstructNocTracesFromCSV(logFolder: Path) -> bool:
 
     # Write per-op JSON files: noc_trace_dev0_ID{run_host_id}.json
     written = 0
+    total_ops = len(events_by_op)
+    print(f"[TRACY-TIMING] reconstructNocTracesFromCSV: read done in {_trec.time()-_trec0:.1f}s, {total_ops} ops to write ...", flush=True)
+    _tw0 = _trec.time()
     for run_id, events in events_by_op.items():
         out_path = logFolder / f"noc_trace_dev0_ID{run_id}.json"
         with open(out_path, "w") as fh:
             json.dump(events, fh, separators=(",", ":"))
         written += 1
+        if written % 5 == 0 or written == total_ops:
+            print(f"[TRACY-TIMING] reconstructNocTracesFromCSV: wrote {written}/{total_ops} JSON files ({_trec.time()-_tw0:.1f}s)", flush=True)
 
     logger.info(f"Reconstructed {written} per-op NOC JSON files from profile_log_device.csv.")
+    print(f"[TRACY-TIMING] reconstructNocTracesFromCSV: DONE — {written} files written in {_trec.time()-_trec0:.1f}s total", flush=True)
     return True
 
 
@@ -1982,11 +2198,15 @@ def analyzeNoCTraces(logFolder: Path):
 
         # If per-op JSON files are missing (combined --dispatch-cores + --noc-traces run),
         # reconstruct them from profile_log_device.csv before running tt-npe.
+        print(f"[TRACY-TIMING] STEP 4/5: analyzeNoCTraces START  (logFolder={logFolder})", flush=True)
+        print(f"[TRACY-TIMING] STEP 4a/5: reconstructNocTracesFromCSV START", flush=True)
         logger.info("[noc] Step 1/3: reconstructing per-op NOC JSON files ...")
         _t0 = _time.time()
         reconstructNocTracesFromCSV(logFolder)
+        print(f"[TRACY-TIMING] STEP 4a/5: reconstructNocTracesFromCSV DONE  ({_time.time()-_t0:.1f}s)", flush=True)
         logger.info(f"[noc] Step 1/3 done in {_time.time()-_t0:.1f}s")
 
+        print(f"[TRACY-TIMING] STEP 4b/5: analyze_noc_traces_in_dir START", flush=True)
         logger.info("[noc] Step 2/3: tt-npe module imported successfully; running NPE analysis ...")
         logger.info("[noc]   emit_viz_timeline_files=False  (disabled: causes hang on large dispatch+NOC trace files)")
         logger.info("[noc]   compress_timeline_files=False")
@@ -1998,8 +2218,10 @@ def analyzeNoCTraces(logFolder: Path):
             quiet=False,
             compress_timeline_files=False,
         )
+        print(f"[TRACY-TIMING] STEP 4b/5: analyze_noc_traces_in_dir DONE  ({_time.time()-_t1:.1f}s)", flush=True)
         logger.info(f"[noc] Step 2/3 done in {_time.time()-_t1:.1f}s")
         logger.info("[noc] Step 3/3: returning stats to caller ...")
+        print(f"[TRACY-TIMING] STEP 4/5: analyzeNoCTraces DONE", flush=True)
         return result
     except ImportError:
         logger.warning("Could not import tt-npe module. Ensure tt-npe is built, then source 'tt-npe/ENV_SETUP'")

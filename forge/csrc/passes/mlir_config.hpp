@@ -254,6 +254,26 @@ struct MLIRConfig
     /// DataFormat values are rejected by set_experimental_weight_dtype().
     std::optional<tt::DataFormat> experimental_weight_dtype = std::nullopt;
 
+    /// Experimental: converts Conv2d weight tensors to a reduced-precision
+    /// block-floating-point format AFTER config selection (post-analysis).
+    ///
+    /// Unlike experimental_weight_dtype (which runs before analysis), this
+    /// runs after TTNNOptimizer so the optimizer always uses BF16 L1 estimates
+    /// (conservative, no CB clashes). Only weight DRAM storage is compressed;
+    /// output activations remain in BF16.
+    ///
+    ///   DataFormat::Bfp8_b — BFP BFloat8 (8-bit mantissa, 2× DRAM saving)
+    ///   DataFormat::Bfp4_b — BFP BFloat4 (4-bit mantissa, 4× DRAM saving)
+    ///   std::nullopt        — no conversion (pipeline default "none")
+    std::optional<tt::DataFormat> experimental_conv2d_weight_dtype = std::nullopt;
+
+    /// Pipeline option: enable-conv2d-search-extensions   default: false
+    /// When true: extended Conv2d optimizer search space (actBlockH {0,384,64,32},
+    ///            double-buffer, reshardIfNotOptimal).
+    /// When false: conservative baseline (actBlockH {0,64,32} only).
+    /// Set false to A/B-test optimizer changes against upstream baseline.
+    std::optional<bool> enable_conv2d_search_extensions = std::nullopt;
+
     // -------------------------------------------------------------------------
     // Graph transformation passes
     // -------------------------------------------------------------------------
@@ -455,7 +475,20 @@ struct MLIRConfig
         experimental_weight_dtype = d;
         return *this;
     }
-
+    MLIRConfig& set_experimental_conv2d_weight_dtype(tt::DataFormat d)
+    {
+        if (d != tt::DataFormat::Bfp8_b && d != tt::DataFormat::Bfp4_b)
+            throw std::invalid_argument(
+                "experimental_conv2d_weight_dtype only accepts "
+                "DataFormat::Bfp8_b or DataFormat::Bfp4_b");
+        experimental_conv2d_weight_dtype = d;
+        return *this;
+    }
+    MLIRConfig& set_enable_conv2d_search_extensions(bool v)
+    {
+        enable_conv2d_search_extensions = v;
+        return *this;
+    }
     MLIRConfig& set_enable_erase_inverse_ops(bool v)
     {
         enable_erase_inverse_ops = v;

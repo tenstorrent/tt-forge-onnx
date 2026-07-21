@@ -231,6 +231,16 @@ PYBIND11_MODULE(_C, m)
             { return self.set_experimental_weight_dtype(dtype); },
             py::arg("dtype"))
         .def(
+            "set_experimental_conv2d_weight_dtype",
+            [](tt::passes::MLIRConfig &self, tt::DataFormat dtype)
+            { return self.set_experimental_conv2d_weight_dtype(dtype); },
+            py::arg("dtype"))
+        .def(
+            "set_enable_conv2d_search_extensions",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_conv2d_search_extensions(enable); },
+            py::arg("enable"))
+        .def(
             "set_enable_erase_inverse_ops",
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_erase_inverse_ops(enable); },
             py::arg("enable"))
