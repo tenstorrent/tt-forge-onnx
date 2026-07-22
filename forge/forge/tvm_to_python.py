@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 # import forge._C.pattern_matcher as pypattern_matcher
+from forge.config import CompilerConfig
 from forge.module import OnnxModule, ForgeModule, TFLiteModule
 from forge.verify.config import _get_global_verify_config
 import forge
