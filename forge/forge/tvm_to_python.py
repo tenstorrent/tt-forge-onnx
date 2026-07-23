@@ -1184,8 +1184,12 @@ def populate_clip_transpose_args(graph, nid, compiler_cfg):
     min = float(node["attrs"]["a_min"][0][0])
     max = float(node["attrs"]["a_max"][0][0])
 
-    if min == float("inf"):
-        min = "float('inf')"
+    # TVM emits a_min == -inf when the ONNX Clip has no lower bound (e.g. an
+    # omitted `min` on opset <= 10, or a -inf min constant). Emit a valid Python
+    # literal for it; a bare `-inf` in the generated code raises NameError. This
+    # mirrors the a_max == +inf handling below.
+    if min == float("-inf"):
+        min = "float('-inf')"
 
     if max == float("inf"):
         max = "float('inf')"

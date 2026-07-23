@@ -92,6 +92,51 @@ def test_arithmetic():
 
 
 @pytest.mark.push
+def test_clip_no_min():
+    # ONNX Clip with only an upper bound: the omitted `min` lowers to a_min == -inf
+    # in the TVM frontend. Exercises the -inf codegen path in
+    # populate_clip_transpose_args (a bare `-inf` literal would raise NameError).
+    input_shape = [2, 32, 32]
+
+    input = helper.make_tensor_value_info("input", TensorProto.FLOAT, input_shape)
+    output = helper.make_tensor_value_info("output", TensorProto.FLOAT, input_shape)
+
+    min_val = np.array(-np.inf, dtype=np.float32)
+    max_val = np.array(6.0, dtype=np.float32)
+
+    initializer = [
+        numpy_helper.from_array(min_val, "min"),
+        numpy_helper.from_array(max_val, "max"),
+    ]
+
+    clip_node = helper.make_node(
+        "Clip",
+        inputs=["input", "min", "max"],
+        outputs=["output"],
+    )
+
+    graph = helper.make_graph(
+        nodes=[clip_node],
+        name="ClipGraph",
+        inputs=[input],
+        outputs=[output],
+        initializer=initializer,
+    )
+    onnx_model = helper.make_model(
+        graph,
+        producer_name="ClipModel",
+        opset_imports=opset_imports,
+    )
+
+    inputs = [torch.rand(input_shape) * 10.0]
+
+    onnx_module = forge.OnnxModule("clip_no_min", onnx_model)
+    compiled_model = forge.compile(onnx_model, inputs)
+
+    verify(inputs, onnx_module, compiled_model)
+
+
+@pytest.mark.push
 def test_matmul():
     input_A = helper.make_tensor_value_info("input_A", TensorProto.FLOAT, [32, 64])
     input_B = helper.make_tensor_value_info("input_B", TensorProto.FLOAT, [64, 32])
