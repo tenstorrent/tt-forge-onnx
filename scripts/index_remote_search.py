@@ -7,7 +7,8 @@
 docs search service so the in-page search modal has something to query.
 
 Configured entirely through environment variables (see main()); intended to run
-as a step in the Pages deploy workflow after `python build_docs.py`."""
+as a step in the Pages deploy workflow after the docs are built with
+`bash docs/build_docs.sh`."""
 
 from __future__ import annotations
 
