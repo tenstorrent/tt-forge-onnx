@@ -63,7 +63,6 @@ include(GoogleTest)
 
 add_subdirectory(third_party)
 add_subdirectory(forge)
-add_subdirectory(docs)
 
 set(CMAKE_INSTALL_RPATH "$ORIGIN")
 ### Install _C.so directly into the install directory (not ${CMAKE_INSTALL_PREFIX}/lib/)

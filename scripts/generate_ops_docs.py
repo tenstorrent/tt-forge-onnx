@@ -6,10 +6,10 @@ Script to generate operation documentation from Forge operation source files.
 This script:
 1. Discovers operations from forge/forge/op/*.py files
 2. Parses docstrings to extract documentation
-3. Generates a single docs/src/operations.md containing:
+3. Generates a single docs/source/operations.md containing:
    - Category summary tables (with in-page anchor links)
    - Full per-operation detail sections (signature, parameters, returns, etc.)
-4. Removes any stale individual files left over in docs/src/operations/
+4. Removes any stale individual files left over in docs/source/operations/
 
 All operation information is sourced from the actual Python source files.
 Enhanced descriptions (e.g., mathematical definitions) are loaded from
@@ -20,10 +20,10 @@ Usage:
 
 Options:
     --op-dir PATH        Source directory for operations (default: forge/forge/op/)
-    --output-dir PATH    Legacy individual-file directory to clean up (default: docs/src/operations/)
-    --index-file PATH    Output path for the combined page (default: docs/src/operations.md)
+    --output-dir PATH    Legacy individual-file directory to clean up (default: docs/source/operations/)
+    --index-file PATH    Output path for the combined page (default: docs/source/operations.md)
     --enhancements PATH  Path to enhancements JSON file (default: scripts/operation_enhancements.json)
-    --no-cleanup         Skip cleanup of the legacy docs/src/operations/ directory
+    --no-cleanup         Skip cleanup of the legacy docs/source/operations/ directory
 """
 
 import argparse
@@ -113,8 +113,8 @@ def _build_operation_section(op: Operation, enhancements: Dict) -> str:
     Build the markdown detail section for a single operation.
 
     The section heading uses only the short name (e.g. ``### Abs``) so that
-    mdBook generates a clean in-page anchor (``#abs``) that can be linked from
-    the category summary tables above.
+    MyST/Sphinx generates a clean in-page anchor (``#abs``) that can be linked
+    from the category summary tables above.
     """
     op_enhancements = enhancements.get(op.short_name, {})
     param_enhancements = op_enhancements.get("parameters", {})
@@ -370,13 +370,13 @@ def generate_operations_md(operations: List[Operation], output_file: Path, enhan
 def cleanup_operations_dir(ops_dir: Path) -> int:
     """
     Remove all individual operation markdown files from the legacy
-    ``docs/src/operations/`` directory.
+    ``docs/source/operations/`` directory.
 
     Operation documentation has been consolidated into ``operations.md``, so
     the separate per-operation files are no longer needed.
 
     Args:
-        ops_dir: Path to the legacy ``docs/src/operations/`` directory.
+        ops_dir: Path to the legacy ``docs/source/operations/`` directory.
 
     Returns:
         Number of files removed.
@@ -507,7 +507,7 @@ Examples:
   %(prog)s
       Generate documentation with default paths.
 
-  %(prog)s --op-dir forge/forge/op --output-dir docs/src/operations
+  %(prog)s --op-dir forge/forge/op --output-dir docs/source/operations
       Generate documentation with custom paths.
 
   %(prog)s --no-cleanup
@@ -522,10 +522,10 @@ Examples:
         "--output-dir",
         type=Path,
         default=None,
-        help="Output directory for operation docs (default: docs/src/operations/)",
+        help="Output directory for operation docs (default: docs/source/operations/)",
     )
     parser.add_argument(
-        "--index-file", type=Path, default=None, help="Output path for index page (default: docs/src/operations.md)"
+        "--index-file", type=Path, default=None, help="Output path for index page (default: docs/source/operations.md)"
     )
     parser.add_argument(
         "--enhancements",
@@ -547,8 +547,8 @@ def main():
 
     # Set paths from args or use defaults
     op_dir = args.op_dir or (project_root / "forge" / "forge" / "op")
-    ops_docs_dir = args.output_dir or (project_root / "docs" / "src" / "operations")
-    index_file = args.index_file or (project_root / "docs" / "src" / "operations.md")
+    ops_docs_dir = args.output_dir or (project_root / "docs" / "source" / "operations")
+    index_file = args.index_file or (project_root / "docs" / "source" / "operations.md")
     enhancements_path = args.enhancements or (script_dir / "operation_enhancements.json")
     do_cleanup = not args.no_cleanup
 

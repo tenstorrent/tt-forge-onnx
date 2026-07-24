@@ -252,21 +252,28 @@ This will build TT-Forge-ONNX C++ sources and the dependencies (TT-MLIR, TT-Meta
 
 ## Building the Docs
 
-To build documentation, mdBook is required, see the installation guide [here](./tools.md#mdbook).
+The documentation is built with [Sphinx](https://www.sphinx-doc.org/), see the setup guide [here](./tools.md#documentation).
 
-After installing mdBook, run the following commands to build and serve the documentation:
+For a first build, `docs/build_docs.sh` installs the docs requirements (into the active venv, or an isolated one) and builds the site:
 
 ```bash
 source env/activate
-cmake --build build -- docs
-
-# Serve the documentation
-mdbook serve build/docs
+bash docs/build_docs.sh
 ```
 
-> **Note:** `mdbook serve` will by default create a local server at `http://localhost:3000`.
+Once the requirements are installed, you can rebuild and serve the docs directly:
 
-> **Note:** For a custom port, specify the `-p` attribute. <br><br> E.g. `mdbook serve build/docs -p 5005`, and visit `http://localhost:5005`.
+```bash
+# Rebuild the HTML
+make -C docs html
+
+# Serve the documentation locally
+make -C docs server
+```
+
+> **Note:** `make -C docs server` creates a local server at `http://localhost:8888` by default.
+
+> **Note:** For a custom port, pass `PORT`. <br><br> E.g. `make -C docs server PORT=5005`, and visit `http://localhost:5005`.
 
 ## Build Cleanup
 

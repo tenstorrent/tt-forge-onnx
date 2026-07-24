@@ -10,7 +10,7 @@
 
 </h1>
 
-<img src="./docs/src/imgs/tt_refresh_forge-onnx_w_logo_purple.png" alt="forge onnx" height="230"/>
+<img src="./docs/source/imgs/tt_refresh_forge-onnx_w_logo_purple.png" alt="forge onnx" height="230"/>
 
 <br>
 
@@ -50,12 +50,12 @@ predicted_class = output[0].argmax(dim=-1).item()
 print(f"Predicted ImageNet class: {predicted_class}")
 ```
 
-Any `.onnx` file works — export from PyTorch, TensorFlow, PaddlePaddle, or grab one from the [ONNX Model Zoo](https://github.com/onnx/models). See the full [Getting Started Guide](docs/src/getting_started.md) for Docker and build-from-source options.
+Any `.onnx` file works — export from PyTorch, TensorFlow, PaddlePaddle, or grab one from the [ONNX Model Zoo](https://github.com/onnx/models). See the full [Getting Started Guide](docs/source/getting_started.md) for Docker and build-from-source options.
 
 -----
 # Quick Links
-- [Getting Started / How to Run a Model](docs/src/getting_started.md)
-- [Build from Source](docs/src/getting_started_build_from_source.md) — For development work
+- [Getting Started / How to Run a Model](docs/source/getting_started.md)
+- [Build from Source](docs/source/getting_started_build_from_source.md) — For development work
 - [Demos](https://github.com/tenstorrent/tt-forge/tree/main/demos/tt-forge-onnx) — Ready-to-run models
 - [Supported Operations](https://docs.tenstorrent.com/tt-forge-onnx/operations.html) — 70+ supported ops
 

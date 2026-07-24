@@ -2,7 +2,7 @@
 
 This page covers setup of various tools that can help you with development of TT-Forge-ONNX. The sections include:
 * [Pre-commit](#pre-commit)
-* [mdbook](#mdbook)
+* [Documentation](#documentation)
 * [Cross Correlate Models and Ops and Export Model Variants Unique Op Configuration](#cross-correlate-models-and-ops-and-export-model-variants-unique-op-configuration)
 * [Usage](#usage)
 
@@ -33,16 +33,27 @@ pre-commit run --all-files
 
 For more information visit [pre-commit](https://pre-commit.com/).
 
-## mdbook
+## Documentation
 
-TT-Forge-ONNX uses `mdbook` to generate the documentation. To install `mdbook` on Ubuntu, run the following commands:
+TT-Forge-ONNX uses [Sphinx](https://www.sphinx-doc.org/) to generate the documentation. The docs dependencies are pinned in `docs/requirements-docs.txt`.
+
+The easiest way to install them and build the docs in one step is:
 
 ```sh
-sudo apt install cargo
-cargo install mdbook
+source env/activate
+bash docs/build_docs.sh
 ```
 
->**NOTE:** If you do not want to install `mdbook` via cargo (Rust package manager), consult the [Official mdbook Installation Guide](https://rust-lang.github.io/mdBook/cli/index.html).
+This installs the requirements (into the active virtual environment, or an isolated one at `/tmp/tt-forge-onnx-docs-venv` if none is active) and builds the HTML into `docs/build/html`.
+
+After the one-time install, you can rebuild and serve the docs directly:
+
+```sh
+make -C docs html     # rebuild
+make -C docs server   # serve at http://localhost:8888
+```
+
+>**NOTE:** If you prefer to install the requirements yourself, run `pip install -r docs/requirements-docs.txt` inside your environment, then use the `make -C docs ...` targets above.
 
 ## Gather Unique Ops Configuration
 
