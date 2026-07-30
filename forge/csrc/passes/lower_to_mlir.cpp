@@ -558,6 +558,35 @@ class MLIRGenerator
         return op.getOperation()->getResult(0);
     }
 
+    /// Emit an MLIR operation for an in-place TTForge operation.
+    template <typename TTIROp>
+    mlir::Value emit_mlir_ttforge_inplace_op(tt::graphlib::Graph *graph, tt::graphlib::OpNode *op_node)
+    {
+        // In-place ops take their operands directly (cache first) and declare no results.
+        llvm::SmallVector<mlir::Value> operands = get_mlir_operands(graph, op_node);
+        TT_ASSERT(!operands.empty(), "In-place op " + op_node->name() + " must have at least one operand.");
+
+        // Map forge to MLIR attributes for this operation.
+        llvm::SmallVector<mlir::NamedAttribute> mlir_attributes;
+        for (const auto &[name, value] : op_node->op().attrs())
+        {
+            auto [mapped_name, target_type] = attr_mapper_.get_mapped_name_and_type(op_node->op_as_string(), name);
+
+            mlir_attributes.push_back(
+                builder_.getNamedAttr(mapped_name, convert_to_mlir_attribute(value, target_type)));
+        }
+
+        builder_.create<TTIROp>(
+            get_tt_forge_operation_location(graph, op_node),
+            mlir::TypeRange({}),
+            mlir::ValueRange(operands),
+            mlir_attributes);
+
+        // The op mutates `cache` (operands[0]) in place; forward that value so downstream
+        // reads observe the update (ordering is preserved by the op's MemWrite effect).
+        return operands[0];
+    }
+
     // Get the TT-MLIR type for a TTForge operation.
     llvm::SmallVector<mlir::Type> get_mlir_type_range(tt::graphlib::OpNode *op_node)
     {
@@ -844,8 +873,9 @@ class MLIRGenerator
         lowering_handler_map["unsqueeze"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::UnsqueezeOp>;
         lowering_handler_map["upsample2d"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::Upsample2dOp>;
         lowering_handler_map["where"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::WhereOp>;
-        lowering_handler_map["fill_cache"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::FillCacheOp>;
-        lowering_handler_map["update_cache"] = &MLIRGenerator::emit_mlir_ttforge_op<mlir::tt::ttir::UpdateCacheOp>;
+        lowering_handler_map["fill_cache"] = &MLIRGenerator::emit_mlir_ttforge_inplace_op<mlir::tt::ttir::FillCacheOp>;
+        lowering_handler_map["update_cache"] =
+            &MLIRGenerator::emit_mlir_ttforge_inplace_op<mlir::tt::ttir::UpdateCacheOp>;
     }
 };
 
