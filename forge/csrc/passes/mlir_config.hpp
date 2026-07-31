@@ -15,6 +15,21 @@ namespace tt::passes
 {
 
 // ============================================================================
+// MLIROutputKind
+//
+// Selects what the MLIR compiler pipeline emits at the end of compilation.
+//   Flatbuffer   — default; emits a tt-metal flatbuffer binary for device execution.
+//   Cpp          — emits EmitC C++ source code (for offline .so compilation).
+//   SharedObject — emits EmitC C++ and compiles it to a .so in one step.
+// ============================================================================
+enum class MLIROutputKind
+{
+    Flatbuffer,
+    Cpp,
+    SharedObject,
+};
+
+// ============================================================================
 // MemoryLayoutAnalysisPolicy
 //
 // Maps to the `memory-layout-analysis-policy` option of
@@ -550,6 +565,22 @@ struct MLIRConfig
     MLIRConfig& set_custom_config(const std::string& config)
     {
         custom_config = config;
+        return *this;
+    }
+
+    // -------------------------------------------------------------------------
+    // MLIR output kind
+    //
+    // Controls what the MLIR pipeline produces at the end of forge.compile().
+    //   Flatbuffer   — (default) flatbuffer binary for device execution.
+    //   Cpp          — EmitC C++ source string; stored on CompiledModel.compiled_cpp.
+    //   SharedObject — EmitC compiled to .so; path stored on CompiledModel.compiled_so_path.
+    // -------------------------------------------------------------------------
+    MLIROutputKind output_kind = MLIROutputKind::Flatbuffer;
+
+    MLIRConfig& set_output_kind(MLIROutputKind kind)
+    {
+        output_kind = kind;
         return *this;
     }
 };

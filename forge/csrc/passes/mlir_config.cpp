@@ -175,7 +175,8 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     if (mlir_config->compute_cfg_math_fidelity.has_value())
         options << " compute-cfg-math-fidelity=" << to_pipeline_string(*mlir_config->compute_cfg_math_fidelity);
     if (mlir_config->compute_cfg_fp32_dest_acc_en.has_value())
-        options << " compute-cfg-fp32-dest-acc-en=" << *mlir_config->compute_cfg_fp32_dest_acc_en;
+        options << " compute-cfg-fp32-dest-acc-en="
+                << (*mlir_config->compute_cfg_fp32_dest_acc_en ? "true" : "false");
 
     // -----------------------------------------------------------------------
     // Data type / quantization options

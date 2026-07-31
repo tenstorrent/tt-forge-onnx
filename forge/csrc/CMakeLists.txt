@@ -4,7 +4,43 @@ set(CMAKE_PREFIX_PATH
     ${PYTHON_SITE_PACKAGES_DIR}/torch
     ${CMAKE_PREFIX_PATH})
 
+# FindPython3 finds the right interpreter but cannot discover the uv-managed
+# Python 3.12 development files (non-standard install path under ~/.local/share).
+# Strategy: let find_package set up the imported-target scaffolding, then
+# overwrite its IMPORTED_LOCATION and INTERFACE_INCLUDE_DIRECTORIES with values
+# queried directly from the venv interpreter.
+execute_process(
+    COMMAND "${TTFORGE_VENV_DIR}/bin/python3" -c
+        "import sysconfig; print(sysconfig.get_config_var('INCLUDEPY'))"
+    OUTPUT_VARIABLE _PY312_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+execute_process(
+    COMMAND "${TTFORGE_VENV_DIR}/bin/python3" -c
+        "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))"
+    OUTPUT_VARIABLE _PY312_LIBDIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+find_library(_PY312_LIB NAMES python3.12
+    HINTS "${_PY312_LIBDIR}" NO_DEFAULT_PATH)
+
+set(Python3_EXECUTABLE "${TTFORGE_VENV_DIR}/bin/python3"
+    CACHE FILEPATH "Python 3 interpreter from toolchain venv" FORCE)
+
 find_package(Python3 COMPONENTS Development REQUIRED)
+
+# Override whatever FindPython3 resolved with the correct 3.12 paths.
+set(Python3_INCLUDE_DIRS "${_PY312_INCLUDE_DIR}")
+set(Python3_LIBRARIES    "${_PY312_LIB}")
+if(TARGET Python3::Python)
+    set_target_properties(Python3::Python PROPERTIES
+        IMPORTED_LOCATION             "${_PY312_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${_PY312_INCLUDE_DIR}"
+    )
+endif()
+message(STATUS "Python3 (venv override): include=${_PY312_INCLUDE_DIR}")
+message(STATUS "Python3 (venv override): lib=${_PY312_LIB}")
+
 find_package(Torch REQUIRED)
 
 set(TT_MLIR_ROOT_DIR ${CMAKE_SOURCE_DIR}/third_party/tt-mlir)
@@ -98,7 +134,7 @@ target_link_libraries(ttforge_csrc PRIVATE
     m
     torch_python
     c10
-    ${TTFORGE_PYTHON_VERSION}
+    Python3::Python
     ${TORCH_LIBRARIES}
 )
 

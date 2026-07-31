@@ -122,22 +122,58 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
     // Generate MLIR from the Forge graph.
     mlir::OwningOpRef<mlir::ModuleOp> mlir_module = lower_to_mlir(module, context);
 
+    std::string moduleStrTTIR;
+    llvm::raw_string_ostream rsoTTIR(moduleStrTTIR);
+    mlir_module->print(rsoTTIR);
+    rsoTTIR.flush();
+    log_info(LogMLIRCompiler, "TTIR module:\n{}", moduleStrTTIR);
+    if (std::getenv("TTMLIR_DUMP_PIPELINE_IR"))
+    {
+        std::string mod_name = mlir_module->getName() ? mlir_module->getName()->str() : "module";
+        const char* dump_dir_env = std::getenv("TTMLIR_DUMP_DIR");
+        std::string base_dir = dump_dir_env ? std::string(dump_dir_env) + "/" : "./";
+        if (dump_dir_env)
+            fs::create_directories(base_dir);
+        std::string ttir_path = base_dir + "ttir_" + mod_name + ".mlir";
+        std::ofstream ttir_file(ttir_path);
+        if (ttir_file.is_open())
+        {
+            ttir_file << moduleStrTTIR;
+            ttir_file.close();
+            tt::log_info(LogMLIRCompiler, "TTIR module dumped to: {}", ttir_path);
+        }
+    }
+
     // Run MLIR pipeline.
     run_mlir_passes<output>(mlir_module, mlir_config);
 
     tt::log_info(LogMLIRCompiler, "MLIR passes run successfully.");
 
     // Dump TTNN module only at trace log level
-    std::string moduleStr;
-    llvm::raw_string_ostream rso(moduleStr);
-    mlir_module->print(rso);
-    rso.flush();
-    log_trace(LogMLIRCompiler, "TTNN module after running mlir passes:\n{}", moduleStr);
+    std::string moduleStrTTNN;
+    llvm::raw_string_ostream rsoTTNN(moduleStrTTNN);
+    mlir_module->print(rsoTTNN);
+    rsoTTNN.flush();
+    log_info(LogMLIRCompiler, "TTNN module:\n{}", moduleStrTTNN);
 
     if constexpr (output == MLIROutputKind::Flatbuffer)
     {
-        // Save generated ttnn module to a file named "{name}.mlir".
-        reportify::dump_mlir("ttnn", mlir_module->getName()->str(), mlir_module.get());
+        if (std::getenv("TTMLIR_DUMP_PIPELINE_IR"))
+        {
+            std::string mod_name = mlir_module->getName() ? mlir_module->getName()->str() : "module";
+            const char* dump_dir_env = std::getenv("TTMLIR_DUMP_DIR");
+            std::string base_dir = dump_dir_env ? std::string(dump_dir_env) + "/" : "./";
+            if (dump_dir_env)
+                fs::create_directories(base_dir);
+            std::string ttnn_path = base_dir + "ttnn_" + mod_name + ".mlir";
+            std::ofstream ttnn_file(ttnn_path);
+            if (ttnn_file.is_open())
+            {
+                ttnn_file << moduleStrTTNN;
+                ttnn_file.close();
+                tt::log_info(LogMLIRCompiler, "TTNN module dumped to: {}", ttnn_path);
+            }
+        }
 
         // Generate binary from the MLIR module.
         auto binary = mlir::tt::ttnn::ttnnToFlatbuffer(mlir_module.get());

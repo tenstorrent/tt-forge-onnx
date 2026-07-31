@@ -209,28 +209,43 @@ class CompiledModel:
         fwd_compiled_graph_state: CompiledGraphState,
         bwd_compiled_graph_state: Optional[CompiledGraphState],
         opt_compiled_graph_state: Optional[CompiledGraphState],
-        compiled_binary: Binary,
+        compiled_binary: Optional[Binary],
         framework_module: AnyModule,
         attached_module: Optional["CompiledModel"] = None,
         df_override_dtype: Optional[Union[torch.dtype, DataFormat]] = None,
+        compiled_cpp: Optional[str] = None,
+        compiled_so_path: Optional[str] = None,
     ):
         self.forge_graph_module = forge_graph_module
 
-        self.runtime_model_state = ModelState(compiled_binary)
-        self.tensor_pool = self.runtime_model_state.tensor_pool
-
-        self.fwd_compiled_graph_state = fwd_compiled_graph_state
-        self.create_program_state(ProgramType.Forward, self.fwd_compiled_graph_state)
-
-        self.bwd_compiled_graph_state = bwd_compiled_graph_state
-        if self.bwd_compiled_graph_state is not None:
-            self.create_program_state(ProgramType.Backward, self.bwd_compiled_graph_state)
-
-        self.opt_compiled_graph_state = opt_compiled_graph_state
-        if self.opt_compiled_graph_state is not None:
-            self.create_program_state(ProgramType.Optimizer, self.opt_compiled_graph_state)
-
+        # For EmitC paths (Cpp / SharedObject output kind) compiled_binary is None
+        # because no flatbuffer is generated.  Device execution via __call__ is not
+        # available in that case — use compiled_cpp / compiled_so_path instead.
         self.compiled_binary = compiled_binary
+        self.compiled_cpp = compiled_cpp
+        self.compiled_so_path = compiled_so_path
+
+        if compiled_binary is not None:
+            self.runtime_model_state = ModelState(compiled_binary)
+            self.tensor_pool = self.runtime_model_state.tensor_pool
+
+            self.fwd_compiled_graph_state = fwd_compiled_graph_state
+            self.create_program_state(ProgramType.Forward, self.fwd_compiled_graph_state)
+
+            self.bwd_compiled_graph_state = bwd_compiled_graph_state
+            if self.bwd_compiled_graph_state is not None:
+                self.create_program_state(ProgramType.Backward, self.bwd_compiled_graph_state)
+
+            self.opt_compiled_graph_state = opt_compiled_graph_state
+            if self.opt_compiled_graph_state is not None:
+                self.create_program_state(ProgramType.Optimizer, self.opt_compiled_graph_state)
+        else:
+            self.runtime_model_state = None
+            self.tensor_pool = None
+            self.fwd_compiled_graph_state = fwd_compiled_graph_state
+            self.bwd_compiled_graph_state = bwd_compiled_graph_state
+            self.opt_compiled_graph_state = opt_compiled_graph_state
+
         self.inputs = []
         self.framework_module = framework_module
         self.intermediates = []
