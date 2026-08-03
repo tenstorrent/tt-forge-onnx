@@ -84,6 +84,7 @@ target_link_libraries(ttforge_csrc PRIVATE
     reportify
     runtime
     runtime_testutils
+    TTRuntimeTTNNTestLib
     ttforge_csrc_objs
     verif
     ops

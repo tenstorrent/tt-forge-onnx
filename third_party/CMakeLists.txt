@@ -28,7 +28,9 @@ ExternalProject_Add(
         -DCMAKE_INSTALL_PREFIX=${TTMLIR_INSTALL_PREFIX}
         -DTTMLIR_TOOLCHAIN_DIR=${TTMLIR_TOOLCHAIN_DIR}
         -DTTMLIR_ENABLE_RUNTIME=ON
-        -DTTMLIR_ENABLE_RUNTIME_TESTS=OFF
+        -DTTMLIR_ENABLE_RUNTIME_TESTS=ON
+        -DTTMLIR_ENABLE_TESTS=OFF
+        -DTTMLIR_ENABLE_ALCHEMIST=OFF
         -DTTMLIR_ENABLE_BINDINGS_PYTHON=OFF
         -DTT_RUNTIME_DEBUG=${TTMLIR_RUNTIME_DEBUG}
         -DMLIR_DIR=${TTMLIR_TOOLCHAIN_DIR}/lib/cmake/mlir
@@ -37,6 +39,11 @@ ExternalProject_Add(
         -DTT_USE_SYSTEM_SFPI=OFF
         -DTT_RUNTIME_ENABLE_PERF_TRACE=${TT_RUNTIME_ENABLE_PERF_TRACE}
         -DTT_METAL_RUNTIME_ROOT=${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal
+        -DPython3_EXECUTABLE=${TTMLIR_VENV_DIR}/bin/python3
+        -DPython3_INCLUDE_DIR=/usr/include/python3.12
+        -DPython3_LIBRARY_RELEASE=/usr/lib/x86_64-linux-gnu/libpython3.12.so
+        -DLLD_DIR=${TTMLIR_TOOLCHAIN_DIR}/lib/cmake/lld
+        -DFLATBUFFERS_COMPILER=${TTMLIR_TOOLCHAIN_DIR}/bin/flatc
 )
 
 install(DIRECTORY ${TTMLIR_INSTALL_PREFIX}/ DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS)
@@ -52,66 +59,3 @@ add_custom_target(build_tvm ALL
 )
 
 ### end build TVM ###
-
-### Build tt-npe (NOC perf estimator — adds 6 NOC UTIL / DRAM BW columns to Tracy CSV) ###
-#
-# tt-npe provides the Python binding tt_npe_pybind and the helper script
-# npe_analyze_noc_trace_dir.py.  process_ops_logs.py imports these (via
-# analyzeNoCTraces()) to populate the following ops_perf_results columns:
-#   NOC UTIL (%)  MULTICAST NOC UTIL (%)  DRAM BW UTIL (%)
-#   DRAM BW UTIL PER CTRL (%)  ETH BW UTIL (%)  NPE CONG IMPACT (%)
-#
-# Enable: cmake -DTT_NPE_ENABLE=ON ...
-# Run:    bash scripts/tracy_run.sh --noc-traces ...
-#
-# Install layout after build:
-#   third_party/tt-npe/install/lib/tt_npe_pybind.cpython-312-x86_64-linux-gnu.so
-#   third_party/tt-npe/install/bin/npe_analyze_noc_trace_dir.py
-#   third_party/tt-npe/install/bin/fabric_post_process.py
-# scripts/tracy_run.sh automatically prepends both dirs to PYTHONPATH when they exist.
-
-option(TT_NPE_ENABLE "Build tt-npe for NOC trace analysis (adds 6 NOC UTIL / DRAM BW columns to Tracy ops_perf_results CSV); use with --noc-traces in scripts/tracy_run.sh; requires TT_RUNTIME_ENABLE_PERF_TRACE=ON" OFF)
-
-if (TT_NPE_ENABLE)
-    set(TTNPE_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/tt-npe")
-    set(TTNPE_BUILD_DIR   "${TTNPE_SOURCE_DIR}/build")
-    set(TTNPE_INSTALL_DIR "${TTNPE_SOURCE_DIR}/install")
-    set(TTNPE_PYTHON      "${TTFORGE_VENV_DIR}/bin/python3")
-
-    file(MAKE_DIRECTORY ${TTNPE_BUILD_DIR})
-
-    ExternalProject_Add(
-        tt-npe
-        GIT_REPOSITORY "https://github.com/tenstorrent/tt-npe.git"
-        GIT_TAG        "main"
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        SOURCE_DIR     ${TTNPE_SOURCE_DIR}
-        BINARY_DIR     ${TTNPE_BUILD_DIR}
-        CMAKE_GENERATOR Ninja
-        CMAKE_ARGS
-            -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-            -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-            -DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}
-            -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
-            -DCMAKE_INSTALL_PREFIX=${TTNPE_INSTALL_DIR}
-            -DPython_EXECUTABLE=${TTNPE_PYTHON}
-            -DCPM_SOURCE_CACHE=${TTNPE_SOURCE_DIR}/.cpmcache
-            -DENABLE_ASAN=OFF
-            -DENABLE_MSAN=OFF
-            -DENABLE_TSAN=OFF
-            -DENABLE_UBSAN=OFF
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-            -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
-        INSTALL_COMMAND ${CMAKE_COMMAND} --install ${TTNPE_BUILD_DIR}
-    )
-
-    message(STATUS "tt-npe enabled — NOC UTIL / DRAM BW columns will be populated.")
-    message(STATUS "  Source dir  : ${TTNPE_SOURCE_DIR}")
-    message(STATUS "  Install dir : ${TTNPE_INSTALL_DIR}")
-    message(STATUS "  Python      : ${TTNPE_PYTHON}")
-    message(STATUS "  Run with    : bash scripts/tracy_run.sh --noc-traces ...")
-endif()
-
-### end build tt-npe ###

@@ -29,8 +29,7 @@
 #   --no-device              Exclude device-side kernel data from report
 #   --no-device-trace        Disable device-side trace profiling (on by default)
 #   --no-dispatch-cores      Disable dispatch-cores profiling (off by default)
-#   --sync                   Enable host-device sync (off by default; incompatible with --noc-traces)
-#   --no-noc-traces          Disable NOC event trace collection (off by default)
+#   --sync                   Enable host-device sync (off by default)
 #   --no-memory-profile      Disable device memory profiling (on by default)
 #   --no-perf-counters       Disable perf-counter capture (off by default)
 #   --check-exit-code        Abort post-processing if test fails (on by default)
@@ -81,8 +80,7 @@ REPORT=true
 NO_DEVICE=false
 DEVICE_TRACE=true        # --device-trace-profiler: safe with trace mode
 DISPATCH_CORES=false     # --profile-dispatch-cores: disables C++ post-proc; conflicts with trace mode
-SYNC_HOST_DEVICE=false   # --sync-host-device: improves host-device timestamp accuracy (incompatible with --noc-traces)
-NOC_TRACES=false         # --collect-noc-traces: can conflict with device context
+SYNC_HOST_DEVICE=false   # --sync-host-device: improves host-device timestamp accuracy
 MID_RUN_DUMP=false       # --dump-device-data-mid-run: flush DRAM profiler buffer after EACH op
                          #   Fixes DRAM circular buffer overflow for large models (>70 ops)
                          #   INCOMPATIBLE with --dispatch-cores (hard crash)
@@ -130,10 +128,6 @@ while [[ $# -gt 0 ]]; do
             SYNC_HOST_DEVICE=true; shift ;;
         --no-sync)
             SYNC_HOST_DEVICE=false; shift ;;
-        --noc-traces)
-            NOC_TRACES=true; shift ;;
-        --no-noc-traces)
-            NOC_TRACES=false; shift ;;
         --mid-run-dump)
             MID_RUN_DUMP=true; shift ;;
         --no-memory-profile)
@@ -221,16 +215,6 @@ export PYTHONPATH="${TRACY_PY_MODULE}:${PYTHONPATH:-}"
 # ttnn Python bindings — required by tracy/tracy_ttnn.py which does `import ttnn`
 TTNN_PY="${TT_MLIR_BUILD}/install/tt-metal/ttnn"
 [[ -d "${TTNN_PY}" ]] && export PYTHONPATH="${TTNN_PY}:${PYTHONPATH}"
-# tt-npe — required by analyzeNoCTraces() in process_ops_logs.py for NOC UTIL / DRAM BW columns.
-# lib/ holds tt_npe_pybind.cpython-312-*.so; bin/ holds npe_analyze_noc_trace_dir.py.
-# Built by: cmake -DTT_NPE_ENABLE=ON ...  (only added to PYTHONPATH if the install exists)
-TTNPE_INSTALL="${REPO_ROOT}/third_party/tt-npe/install"
-if [[ -d "${TTNPE_INSTALL}/lib" && -d "${TTNPE_INSTALL}/bin" ]]; then
-    export PYTHONPATH="${TTNPE_INSTALL}/lib:${TTNPE_INSTALL}/bin:${PYTHONPATH}"
-    echo "  (tt-npe: ${TTNPE_INSTALL})"
-else
-    echo "  (tt-npe not found — NOC UTIL columns will be empty; build with cmake -DTT_NPE_ENABLE=ON)"
-fi
 # Device-side kernel cycle timestamps — requires TT_RUNTIME_ENABLE_PERF_TRACE=ON build.
 # Only enabled when device tracing is active (default: on).
 [[ "${DEVICE_TRACE}" == true && "${NO_DEVICE}" == false ]] && export TT_METAL_DEVICE_PROFILER=1
@@ -250,24 +234,11 @@ fi
 export TT_METAL_PROFILER_SYNC=1
 
 # ---------------------------------------------------------------------------
-# Incompatibility guard: certain flags combined with --noc-traces crash at tt-metal level.
-# Both --dispatch-cores and --sync-host-device cause their respective kernels (ERISC
-# dispatch / sync) to emit NOC events with internal transfer types that
-# coalesceFabricEvents (profiler.cpp:600) does not recognise → TT_FATAL in
-# writeDeviceResultsToFiles(). Guard must run BEFORE TRACY_ARGS is built so that
-# the incompatible flags are not passed to python3 -m tracy.
+# Incompatibility guard
 # ---------------------------------------------------------------------------
 if [[ "${MID_RUN_DUMP}" == true && "${DISPATCH_CORES}" == true ]]; then
     echo "  ERROR: --mid-run-dump is incompatible with --dispatch-cores (tt-metal hard crash)." >&2
-    echo "         Use --mid-run-dump only with NOC traces (--noc-traces)." >&2
     exit 1
-fi
-
-if [[ "${NOC_TRACES}" == true && "${SYNC_HOST_DEVICE}" == true ]]; then
-    echo "  WARNING: --sync-host-device is incompatible with --noc-traces" >&2
-    echo "           (sync kernel emits invalid NOC transfer types → TT_FATAL in coalesceFabricEvents)." >&2
-    echo "           Disabling --sync-host-device to preserve NOC trace data." >&2
-    SYNC_HOST_DEVICE=false
 fi
 
 # ---------------------------------------------------------------------------
@@ -281,7 +252,6 @@ TRACY_ARGS=()
 [[ "${DISPATCH_CORES}"  == true  ]] && TRACY_ARGS+=(--profile-dispatch-cores)
 [[ "${SYNC_HOST_DEVICE}" == true  ]] && TRACY_ARGS+=(--sync-host-device)
 [[ "${CHECK_EXIT_CODE}" == true  ]] && TRACY_ARGS+=(--check-exit-code)
-[[ "${NOC_TRACES}"      == true  ]] && TRACY_ARGS+=(--collect-noc-traces)
 [[ "${MID_RUN_DUMP}"    == true  ]] && TRACY_ARGS+=(--dump-device-data-mid-run)
 [[ "${MEMORY_PROFILE}"  == true  ]] && TRACY_ARGS+=(--device-memory-profiler)
 [[ "${PERF_COUNTERS}"   == true  ]] && TRACY_ARGS+=(--profiler-capture-perf-counters all)
@@ -314,7 +284,6 @@ echo "  Op count      : ${OP_COUNT}"
 echo "  Device trace  : ${DEVICE_TRACE}"
 echo "  Dispatch cores: ${DISPATCH_CORES}"
 echo "  Sync host-dev : ${SYNC_HOST_DEVICE}"
-echo "  NOC traces    : ${NOC_TRACES}"
 echo "  Mid-run dump  : ${MID_RUN_DUMP}"
 echo "  Memory profile: ${MEMORY_PROFILE}"
 echo "  Perf counters : ${PERF_COUNTERS}"
