@@ -14,65 +14,6 @@
 namespace tt::passes
 {
 
-// ============================================================================
-// MemoryLayoutAnalysisPolicy
-//
-// Maps to the `memory-layout-analysis-policy` option of
-// TTIRToTTNNDevicePipelineOptions (TTNNPipelines.h).
-//
-// Selects the search strategy used by the sharding analysis sub-pass of the
-// TTNNOptimizer when it searches for the best tensor memory layout across the
-// full compute graph.  The option only takes effect when both
-//   enable_optimizer = true
-//   enable_memory_layout_analysis = true
-// are set (or optimization_level >= 2).
-//
-// Pipeline option: memory-layout-analysis-policy   default: DFSharding
-// ============================================================================
-enum class MemoryLayoutAnalysisPolicy
-{
-    /// Depth-first data-flow driven sharding (pipeline default).
-    /// Propagates sharding decisions top-to-bottom through the dataflow graph.
-    DFSharding,
-
-    /// Greedy search that first promotes tensors to L1-interleaved layouts
-    /// before attempting block/height/width sharding.
-    GreedyL1Interleaved,
-
-    /// Breadth-first interleaved strategy.  Analyses all ops at a given depth
-    /// before moving deeper, favouring interleaved layouts throughout.
-    BFInterleaved,
-};
-
-/// Returns the pipeline option string for the given MemoryLayoutAnalysisPolicy.
-/// Throws std::invalid_argument for unknown values.
-inline std::string to_pipeline_string(MemoryLayoutAnalysisPolicy p)
-{
-    switch (p)
-    {
-        case MemoryLayoutAnalysisPolicy::DFSharding: return "DFSharding";
-        case MemoryLayoutAnalysisPolicy::GreedyL1Interleaved: return "GreedyL1Interleaved";
-        case MemoryLayoutAnalysisPolicy::BFInterleaved: return "BFInterleaved";
-    }
-    throw std::invalid_argument("Unknown MemoryLayoutAnalysisPolicy value");
-}
-
-/// Parses a pipeline option string back into a MemoryLayoutAnalysisPolicy.
-/// Throws std::invalid_argument for unknown strings.
-inline MemoryLayoutAnalysisPolicy memory_layout_policy_from_string(const std::string& s)
-{
-    if (s == "DFSharding")
-        return MemoryLayoutAnalysisPolicy::DFSharding;
-    if (s == "GreedyL1Interleaved")
-        return MemoryLayoutAnalysisPolicy::GreedyL1Interleaved;
-    if (s == "BFInterleaved")
-        return MemoryLayoutAnalysisPolicy::BFInterleaved;
-    throw std::invalid_argument("Unknown MemoryLayoutAnalysisPolicy string: " + s);
-}
-
-void to_json(nlohmann::json& j, MemoryLayoutAnalysisPolicy p);
-void from_json(const nlohmann::json& j, MemoryLayoutAnalysisPolicy& p);
-
 /// Converts tt::MathFidelity to the MLIR pipeline option string.
 /// MathFidelity::Invalid maps to "undefined" (backend-selected fidelity).
 inline std::string to_pipeline_string(tt::MathFidelity f)
@@ -186,23 +127,6 @@ struct MLIRConfig
     // -------------------------------------------------------------------------
     // Memory layout options
     // -------------------------------------------------------------------------
-
-    /// Pipeline option: memory-layout-analysis-policy   default: DFSharding
-    /// Selects the sharding search strategy used by the memory layout analysis
-    /// pass.
-    std::optional<MemoryLayoutAnalysisPolicy> memory_layout_analysis_policy = std::nullopt;
-
-    /// Pipeline option: l1-interleaved-fallback-analysis-enabled   default: false
-    /// Lightweight pass that promotes DRAM-interleaved tensors to L1-interleaved
-    /// when sufficient on-chip SRAM is available.  Works independently of the
-    /// full sharding analysis (enable_memory_layout_analysis not required).
-    std::optional<bool> enable_l1_interleaved_fallback_analysis = std::nullopt;
-
-    /// Pipeline option: memreconfig-enabled   default: true
-    /// Inserts ToLayout ops between operations whose output/input memory
-    /// layouts are incompatible.  Disable only for debugging — may produce
-    /// incorrect results when off.
-    std::optional<bool> enable_memreconfig = std::nullopt;
 
     /// Pipeline option: max-legal-layouts   default: 8
     /// Maximum number of sharded layout candidates the optimizer generates and
@@ -406,22 +330,6 @@ struct MLIRConfig
     }
 
     // Memory layout options
-    MLIRConfig& set_memory_layout_analysis_policy(MemoryLayoutAnalysisPolicy p)
-    {
-        memory_layout_analysis_policy = p;
-        return *this;
-    }
-    MLIRConfig& set_enable_l1_interleaved_fallback_analysis(bool v)
-    {
-        enable_l1_interleaved_fallback_analysis = v;
-        return *this;
-    }
-    MLIRConfig& set_enable_memreconfig(bool v)
-    {
-        enable_memreconfig = v;
-        return *this;
-    }
-
     MLIRConfig& set_max_legal_layouts(int64_t max)
     {
         if (max <= 0)

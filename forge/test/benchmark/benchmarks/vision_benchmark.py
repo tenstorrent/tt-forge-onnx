@@ -48,7 +48,6 @@ def get_compiler_cfg(
         .set_enable_consteval(True)
         .set_optimization_level(optimization_level)
         .set_enable_trace(trace_enabled)
-        .set_enable_l1_interleaved_fallback_analysis(True)
         .set_compute_cfg_math_fidelity(forge._C.MathFidelity.HiFi2)
         .set_enable_remove_dead_values(True)
         .set_max_legal_layouts(8)

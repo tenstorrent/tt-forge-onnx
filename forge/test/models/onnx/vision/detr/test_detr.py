@@ -79,7 +79,6 @@ def test_detr_segmentation_onnx(variant, forge_tmp_path):
 
 
 @pytest.mark.nightly
-@pytest.mark.xfail
 @pytest.mark.parametrize("variant", ["facebook/detr-resnet-50"])
 def test_detr_onnx_torchhub(variant, forge_tmp_path):
     # Record Forge Property

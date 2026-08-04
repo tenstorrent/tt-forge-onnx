@@ -11,13 +11,6 @@
 namespace tt::passes
 {
 
-void to_json(nlohmann::json& j, MemoryLayoutAnalysisPolicy p) { j = to_pipeline_string(p); }
-
-void from_json(const nlohmann::json& j, MemoryLayoutAnalysisPolicy& p)
-{
-    p = memory_layout_policy_from_string(j.get<std::string>());
-}
-
 void to_json(::nlohmann::json& j, const MLIRConfig& p)
 {
     const auto fidelity_val = [&]() -> nlohmann::json
@@ -41,9 +34,6 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
                        {"enable_optimizer", p.enable_optimizer},
                        {"enable_memory_layout_analysis", p.enable_memory_layout_analysis},
                        // Memory layout options
-                       {"memory_layout_analysis_policy", p.memory_layout_analysis_policy},
-                       {"enable_l1_interleaved_fallback_analysis", p.enable_l1_interleaved_fallback_analysis},
-                       {"enable_memreconfig", p.enable_memreconfig},
                        {"max_legal_layouts", p.max_legal_layouts},
                        {"enable_row_major", p.enable_row_major},
                        // Compute kernel configuration
@@ -87,9 +77,6 @@ void from_json(const ::nlohmann::json& j, MLIRConfig& p)
     j.at("enable_optimizer").get_to(p.enable_optimizer);
     j.at("enable_memory_layout_analysis").get_to(p.enable_memory_layout_analysis);
     // Memory layout options
-    j.at("memory_layout_analysis_policy").get_to(p.memory_layout_analysis_policy);
-    j.at("enable_l1_interleaved_fallback_analysis").get_to(p.enable_l1_interleaved_fallback_analysis);
-    j.at("enable_memreconfig").get_to(p.enable_memreconfig);
     j.at("max_legal_layouts").get_to(p.max_legal_layouts);
     j.at("enable_row_major").get_to(p.enable_row_major);
     // Compute kernel configuration
@@ -157,13 +144,6 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     // -----------------------------------------------------------------------
     // Memory layout options
     // -----------------------------------------------------------------------
-    if (mlir_config->memory_layout_analysis_policy.has_value())
-        options << " memory-layout-analysis-policy=" << to_pipeline_string(*mlir_config->memory_layout_analysis_policy);
-    if (mlir_config->enable_l1_interleaved_fallback_analysis.has_value())
-        options << " l1-interleaved-fallback-analysis-enabled="
-                << *mlir_config->enable_l1_interleaved_fallback_analysis;
-    if (mlir_config->enable_memreconfig.has_value())
-        options << " memreconfig-enabled=" << *mlir_config->enable_memreconfig;
     if (mlir_config->max_legal_layouts.has_value())
         options << " max-legal-layouts=" << *mlir_config->max_legal_layouts;
     if (mlir_config->enable_row_major.has_value())

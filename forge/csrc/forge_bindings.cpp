@@ -170,12 +170,6 @@ PYBIND11_MODULE(_C, m)
 
     py::register_exception<UnsupportedHWOpsError>(m, "UnsupportedHWOpsError");
 
-    py::enum_<tt::passes::MemoryLayoutAnalysisPolicy>(m, "MemoryLayoutAnalysisPolicy")
-        .value("DFSharding", tt::passes::MemoryLayoutAnalysisPolicy::DFSharding)
-        .value("GreedyL1Interleaved", tt::passes::MemoryLayoutAnalysisPolicy::GreedyL1Interleaved)
-        .value("BFInterleaved", tt::passes::MemoryLayoutAnalysisPolicy::BFInterleaved)
-        .export_values();
-
     py::class_<tt::passes::MLIRConfig>(m, "MLIRConfig")
         .def(py::init<>())
         .def(
@@ -193,20 +187,6 @@ PYBIND11_MODULE(_C, m)
         .def(
             "set_enable_memory_layout_analysis",
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_memory_layout_analysis(enable); },
-            py::arg("enable"))
-        .def(
-            "set_memory_layout_analysis_policy",
-            [](tt::passes::MLIRConfig &self, tt::passes::MemoryLayoutAnalysisPolicy policy)
-            { return self.set_memory_layout_analysis_policy(policy); },
-            py::arg("policy"))
-        .def(
-            "set_enable_l1_interleaved_fallback_analysis",
-            [](tt::passes::MLIRConfig &self, bool enable)
-            { return self.set_enable_l1_interleaved_fallback_analysis(enable); },
-            py::arg("enable"))
-        .def(
-            "set_enable_memreconfig",
-            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_memreconfig(enable); },
             py::arg("enable"))
         .def(
             "set_max_legal_layouts",
