@@ -1,6 +1,12 @@
 ### Build tt-mlir ###
 include(ExternalProject)
 
+# Tracy profiling option. Set to ON to build tt-metal and tt-mlir with
+# TRACY_ENABLE instrumentation for device-side op timing and host call stacks.
+# Requires a full rebuild of tt-mlir and tt-metal (~30-60 min).
+# Usage: cmake -DTT_RUNTIME_ENABLE_PERF_TRACE=ON ...
+option(TT_RUNTIME_ENABLE_PERF_TRACE "Enable Tracy profiling in tt-metal/tt-mlir" OFF)
+
 set(METAL_LIB_DIR "${CMAKE_SOURCE_DIR}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal/build/lib")
 
 set(TTMLIR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-mlir")
@@ -22,13 +28,15 @@ ExternalProject_Add(
         -DCMAKE_INSTALL_PREFIX=${TTMLIR_INSTALL_PREFIX}
         -DTTMLIR_TOOLCHAIN_DIR=${TTMLIR_TOOLCHAIN_DIR}
         -DTTMLIR_ENABLE_RUNTIME=ON
-        -DTTMLIR_ENABLE_RUNTIME_TESTS=ON  # used for emitc testing
+        -DTTMLIR_ENABLE_RUNTIME_TESTS=OFF
         -DTTMLIR_ENABLE_BINDINGS_PYTHON=OFF
         -DTT_RUNTIME_DEBUG=${TTMLIR_RUNTIME_DEBUG}
         -DMLIR_DIR=${TTMLIR_TOOLCHAIN_DIR}/lib/cmake/mlir
         -DTTMLIR_ENABLE_OPMODEL=ON
         -DTTMLIR_ENABLE_EXPLORER=OFF
         -DTT_USE_SYSTEM_SFPI=OFF
+        -DTT_RUNTIME_ENABLE_PERF_TRACE=${TT_RUNTIME_ENABLE_PERF_TRACE}
+        -DTT_METAL_RUNTIME_ROOT=${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal
 )
 
 install(DIRECTORY ${TTMLIR_INSTALL_PREFIX}/ DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS)

@@ -37,6 +37,17 @@ std::string canonical_dirname(std::string s)
         if (chars.find(c) != std::string::npos)
             c = '_';
     }
+    // Linux fs limit is 255 bytes per component. Truncate + hash to stay safe.
+    // Leave 16 chars for suffix ("_" + 8-hex hash) and the "_graphs/" suffix (8 chars).
+    static const size_t kMaxLen = 220;
+    if (s.size() > kMaxLen) {
+        // Simple djb2 hash of full string
+        uint32_t h = 5381u;
+        for (unsigned char c : s) h = ((h << 5) + h) ^ c;
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "_%08x", h);
+        s = s.substr(0, kMaxLen) + buf;
+    }
     return s;
 }
 

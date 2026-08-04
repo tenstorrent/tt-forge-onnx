@@ -34,6 +34,13 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
         return weight_dtype_to_pipeline_string(*p.experimental_weight_dtype);
     }();
 
+    const auto conv2d_weight_dtype_val = [&]() -> nlohmann::json
+    {
+        if (!p.experimental_conv2d_weight_dtype.has_value())
+            return nullptr;
+        return weight_dtype_to_pipeline_string(*p.experimental_conv2d_weight_dtype);
+    }();
+
     j = nlohmann::json{// Optimization level shorthand
                        {"optimization_level", p.optimization_level},
                        // Optimizer control
@@ -51,6 +58,8 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
                        {"compute_cfg_fp32_dest_acc_en", p.compute_cfg_fp32_dest_acc_en},
                        // Data type / quantization options
                        {"experimental_weight_dtype", weight_dtype_val},
+                       {"experimental_conv2d_weight_dtype", conv2d_weight_dtype_val},
+                       {"enable_conv2d_search_extensions", p.enable_conv2d_search_extensions},
                        // Graph transformation passes
                        {"enable_erase_inverse_ops", p.enable_erase_inverse_ops},
                        {"enable_implicit_broadcast_folding", p.enable_implicit_broadcast_folding},
@@ -103,6 +112,16 @@ void from_json(const ::nlohmann::json& j, MLIRConfig& p)
         const auto& jd = j.at("experimental_weight_dtype");
         p.experimental_weight_dtype =
             jd.is_null() ? std::nullopt : std::make_optional(weight_dtype_from_string(jd.get<std::string>()));
+    }
+    {
+        const auto& jd = j.at("experimental_conv2d_weight_dtype");
+        p.experimental_conv2d_weight_dtype =
+            jd.is_null() ? std::nullopt : std::make_optional(weight_dtype_from_string(jd.get<std::string>()));
+    }
+    {
+        const auto& jd = j.at("enable_conv2d_search_extensions");
+        p.enable_conv2d_search_extensions =
+            jd.is_null() ? std::nullopt : std::make_optional(jd.get<bool>());
     }
     // Graph transformation passes
     j.at("enable_erase_inverse_ops").get_to(p.enable_erase_inverse_ops);
@@ -183,7 +202,12 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     if (mlir_config->experimental_weight_dtype.has_value())
         options << " experimental-weight-dtype="
                 << weight_dtype_to_pipeline_string(*mlir_config->experimental_weight_dtype);
-
+    if (mlir_config->experimental_conv2d_weight_dtype.has_value())
+        options << " experimental-conv2d-weight-dtype="
+                << weight_dtype_to_pipeline_string(*mlir_config->experimental_conv2d_weight_dtype);
+    if (mlir_config->enable_conv2d_search_extensions.has_value())
+        options << " enable-conv2d-search-extensions="
+                << *mlir_config->enable_conv2d_search_extensions;
     // -----------------------------------------------------------------------
     // Graph transformation passes
     // -----------------------------------------------------------------------
