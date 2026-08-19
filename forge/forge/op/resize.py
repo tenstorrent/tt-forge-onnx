@@ -185,6 +185,36 @@ def Upsample2d(
     return result
 
 
+def GridSample(
+    name: str,
+    operandA: Tensor,
+    operandB: Tensor,
+    mode: str = "bilinear",
+    padding_mode: str = "zeros",
+    align_corners: bool = False,
+) -> Tensor:
+    """
+    Grid Sample 2D operation.
+
+    Samples input (N, C, H_in, W_in) at grid coordinates (N, H_out, W_out, 2).
+    Returns (N, C, H_out, W_out).
+    """
+    assert mode in ["bilinear", "nearest"], f"GridSample only supports bilinear/nearest mode, got {mode}"
+    assert padding_mode in ["zeros"], f"GridSample only supports zeros padding mode, got {padding_mode}"
+
+    result: Tensor = op(
+        OpType.GridSample,
+        name,
+        operandA,
+        operandB,
+        mode=mode,
+        padding_mode=padding_mode,
+        align_corners=align_corners,
+    ).get_tensor()
+
+    return result
+
+
 def Downsample2d(
     name: str,
     operandA: Tensor,

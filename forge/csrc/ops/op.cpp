@@ -121,6 +121,7 @@ class OpTypeToString
         mapping_[OpType::Unsqueeze] = "unsqueeze";
         mapping_[OpType::UpdateCache] = "update_cache";
         mapping_[OpType::Upsample2d] = "upsample2d";
+        mapping_[OpType::GridSample] = "grid_sample";
         mapping_[OpType::Where] = "where";
     }
 
@@ -220,6 +221,7 @@ class StringToOpType
         mapping_["unsqueeze"] = OpType::Unsqueeze;
         mapping_["update_cache"] = OpType::UpdateCache;
         mapping_["upsample2d"] = OpType::Upsample2d;
+        mapping_["grid_sample"] = OpType::GridSample;
         mapping_["where"] = OpType::Where;
     }
 
@@ -231,6 +233,104 @@ class StringToOpType
 
 static OpTypeToString type_to_string;
 static StringToOpType string_to_type;
+
+static std::string op_type_debug_string(OpType op_type)
+{
+    std::string name;
+    switch (op_type)
+    {
+        case OpType::Abs: name = "OpType::Abs"; break;
+        case OpType::AdaptiveMaxPool2d: name = "OpType::AdaptiveMaxPool2d"; break;
+        case OpType::Add: name = "OpType::Add"; break;
+        case OpType::AdvIndex: name = "OpType::AdvIndex"; break;
+        case OpType::Argmax: name = "OpType::Argmax"; break;
+        case OpType::Atan: name = "OpType::Atan"; break;
+        case OpType::AvgPool1d: name = "OpType::AvgPool1d"; break;
+        case OpType::AvgPool2d: name = "OpType::AvgPool2d"; break;
+        case OpType::Batchnorm: name = "OpType::Batchnorm"; break;
+        case OpType::Broadcast: name = "OpType::Broadcast"; break;
+        case OpType::Cast: name = "OpType::Cast"; break;
+        case OpType::Clip: name = "OpType::Clip"; break;
+        case OpType::Concatenate: name = "OpType::Concatenate"; break;
+        case OpType::Constant: name = "OpType::Constant"; break;
+        case OpType::ConstantPad: name = "OpType::ConstantPad"; break;
+        case OpType::Conv2d: name = "OpType::Conv2d"; break;
+        case OpType::Conv2dPrestrideAct: name = "OpType::Conv2dPrestrideAct"; break;
+        case OpType::Conv2dPrestrideWeights: name = "OpType::Conv2dPrestrideWeights"; break;
+        case OpType::Conv2dTranspose: name = "OpType::Conv2dTranspose"; break;
+        case OpType::Cosine: name = "OpType::Cosine"; break;
+        case OpType::CumulativeSum: name = "OpType::CumulativeSum"; break;
+        case OpType::Divide: name = "OpType::Divide"; break;
+        case OpType::Downsample2d: name = "OpType::Downsample2d"; break;
+        case OpType::Dropout: name = "OpType::Dropout"; break;
+        case OpType::Embedding: name = "OpType::Embedding"; break;
+        case OpType::EmbeddingBw: name = "OpType::EmbeddingBw"; break;
+        case OpType::Equal: name = "OpType::Equal"; break;
+        case OpType::Erf: name = "OpType::Erf"; break;
+        case OpType::Exp: name = "OpType::Exp"; break;
+        case OpType::FillCache: name = "OpType::FillCache"; break;
+        case OpType::Gelu: name = "OpType::Gelu"; break;
+        case OpType::Greater: name = "OpType::Greater"; break;
+        case OpType::GreaterEqual: name = "OpType::GreaterEqual"; break;
+        case OpType::Heaviside: name = "OpType::Heaviside"; break;
+        case OpType::Index: name = "OpType::Index"; break;
+        case OpType::IndexCopy: name = "OpType::IndexCopy"; break;
+        case OpType::Layernorm: name = "OpType::Layernorm"; break;
+        case OpType::LayernormBw: name = "OpType::LayernormBw"; break;
+        case OpType::LeakyRelu: name = "OpType::LeakyRelu"; break;
+        case OpType::Less: name = "OpType::Less"; break;
+        case OpType::LessEqual: name = "OpType::LessEqual"; break;
+        case OpType::Log: name = "OpType::Log"; break;
+        case OpType::LogSoftmax: name = "OpType::LogSoftmax"; break;
+        case OpType::LogicalAnd: name = "OpType::LogicalAnd"; break;
+        case OpType::LogicalNot: name = "OpType::LogicalNot"; break;
+        case OpType::BitwiseAnd: name = "OpType::BitwiseAnd"; break;
+        case OpType::Mask: name = "OpType::Mask"; break;
+        case OpType::Matmul: name = "OpType::Matmul"; break;
+        case OpType::MaxPool1d: name = "OpType::MaxPool1d"; break;
+        case OpType::MaxPool2d: name = "OpType::MaxPool2d"; break;
+        case OpType::Maximum: name = "OpType::Maximum"; break;
+        case OpType::Minimum: name = "OpType::Minimum"; break;
+        case OpType::Multiply: name = "OpType::Multiply"; break;
+        case OpType::Nop: name = "OpType::Nop"; break;
+        case OpType::NotEqual: name = "OpType::NotEqual"; break;
+        case OpType::Pad: name = "OpType::Pad"; break;
+        case OpType::PixelShuffle: name = "OpType::PixelShuffle"; break;
+        case OpType::Pow: name = "OpType::Pow"; break;
+        case OpType::Power: name = "OpType::Power"; break;
+        case OpType::Reciprocal: name = "OpType::Reciprocal"; break;
+        case OpType::ReduceAvg: name = "OpType::ReduceAvg"; break;
+        case OpType::ReduceMax: name = "OpType::ReduceMax"; break;
+        case OpType::ReduceSum: name = "OpType::ReduceSum"; break;
+        case OpType::Relu: name = "OpType::Relu"; break;
+        case OpType::Remainder: name = "OpType::Remainder"; break;
+        case OpType::Repeat: name = "OpType::Repeat"; break;
+        case OpType::RepeatInterleave: name = "OpType::RepeatInterleave"; break;
+        case OpType::Reshape: name = "OpType::Reshape"; break;
+        case OpType::Resize1d: name = "OpType::Resize1d"; break;
+        case OpType::Resize2d: name = "OpType::Resize2d"; break;
+        case OpType::Select: name = "OpType::Select"; break;
+        case OpType::Sigmoid: name = "OpType::Sigmoid"; break;
+        case OpType::Sine: name = "OpType::Sine"; break;
+        case OpType::Softmax: name = "OpType::Softmax"; break;
+        case OpType::SoftmaxBw: name = "OpType::SoftmaxBw"; break;
+        case OpType::SparseMatmul: name = "OpType::SparseMatmul"; break;
+        case OpType::Sqrt: name = "OpType::Sqrt"; break;
+        case OpType::Stack: name = "OpType::Stack"; break;
+        case OpType::Subtract: name = "OpType::Subtract"; break;
+        case OpType::Squeeze: name = "OpType::Squeeze"; break;
+        case OpType::Tanh: name = "OpType::Tanh"; break;
+        case OpType::Transpose: name = "OpType::Transpose"; break;
+        case OpType::Unsqueeze: name = "OpType::Unsqueeze"; break;
+        case OpType::UpdateCache: name = "OpType::UpdateCache"; break;
+        case OpType::Upsample2d: name = "OpType::Upsample2d"; break;
+        case OpType::GridSample: name = "OpType::GridSample"; break;
+        case OpType::Where: name = "OpType::Where"; break;
+        default: name = "OpType::<invalid>"; break;
+    }
+
+    return name + " (" + std::to_string(static_cast<std::uint32_t>(op_type)) + ")";
+}
 
 Op::Op(const std::string &op_name, Attrs attrs) : type_(string_to_type[op_name]), attrs_(std::move(attrs)) {}
 
@@ -326,6 +426,7 @@ at::Tensor Op::eval(const std::vector<at::Tensor> &tensors) const
         case OpType::Unsqueeze: return unsqueeze::eval(*this, tensors);
         case OpType::UpdateCache: return update_cache::eval(*this, tensors);
         case OpType::Upsample2d: return upsample_2d::eval(*this, tensors);
+        case OpType::GridSample: return grid_sample::eval(*this, tensors);
         case OpType::Where: return where::eval(*this, tensors);
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -418,6 +519,7 @@ std::tuple<graphlib::Shape, std::vector<graphlib::DimBroadcast>> Op::shape(
         case OpType::Unsqueeze: return unsqueeze::shape(*this, inputs);
         case OpType::UpdateCache: return update_cache::shape(*this, inputs);
         case OpType::Upsample2d: return upsample_2d::shape(*this, inputs);
+        case OpType::GridSample: return grid_sample::shape(*this, inputs);
         case OpType::Where: return where::shape(*this, inputs);
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -515,6 +617,7 @@ tt::graphlib::NodeContext Op::backward(
         case OpType::Unsqueeze: return unsqueeze::backward(*this, context, operand, inputs, output, gradient);
         case OpType::UpdateCache: return update_cache::backward(*this, context, operand, inputs, output, gradient);
         case OpType::Upsample2d: return upsample_2d::backward(*this, context, operand, inputs, output, gradient);
+        case OpType::GridSample: return grid_sample::backward(*this, context, operand, inputs, output, gradient);
         case OpType::Where: return where::backward(*this, context, operand, inputs, output, gradient);
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -627,6 +730,7 @@ void Op::decompose_initial(
         case OpType::Unsqueeze: return;
         case OpType::UpdateCache: return;
         case OpType::Upsample2d: return;
+        case OpType::GridSample: return;
         case OpType::Where: return;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -654,6 +758,7 @@ void Op::decompose_post_optimize(
         case OpType::Constant: return;
         case OpType::ConstantPad: return;
         case OpType::Conv2d: return;
+        case OpType::Conv2dTranspose: return;
         case OpType::Cosine: return;
         case OpType::CumulativeSum: return;
         case OpType::Divide: return;
@@ -719,8 +824,9 @@ void Op::decompose_post_optimize(
         case OpType::Unsqueeze: return;
         case OpType::UpdateCache: return;
         case OpType::Upsample2d: return;
+        case OpType::GridSample: return;
         case OpType::Where: return;
-        default: TT_ASSERT(false, "Unknown OpType."); unreachable();
+        default: TT_ASSERT(false, "Unknown OpType in decompose_post_optimize: {}", op_type_debug_string(type_)); unreachable();
     }  // clang-format on
 }
 
@@ -812,6 +918,7 @@ void Op::decompose_post_autograd(
         case OpType::Unsqueeze: return;
         case OpType::UpdateCache: return;
         case OpType::Upsample2d: return;
+        case OpType::GridSample: return;
         case OpType::Where: return;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -903,6 +1010,7 @@ long Op::initial_flops_estimate(const std::vector<std::vector<std::uint32_t>> &i
         case OpType::Unsqueeze: return 0;
         case OpType::UpdateCache: return 0;
         case OpType::Upsample2d: return 0;
+        case OpType::GridSample: return 0;
         case OpType::Where: return 0;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }  // clang-format on
@@ -994,6 +1102,7 @@ bool Op::is_tm() const
         case OpType::Unsqueeze: return true;
         case OpType::UpdateCache: return false;
         case OpType::Upsample2d: return false;
+        case OpType::GridSample: return false;
         case OpType::Where: return false;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }
@@ -1085,6 +1194,7 @@ bool Op::is_eltwise() const
         case OpType::Unsqueeze: return false;
         case OpType::UpdateCache: return false;
         case OpType::Upsample2d: return false;
+        case OpType::GridSample: return false;
         case OpType::Where: return true;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }
@@ -1176,6 +1286,7 @@ bool Op::is_eltwise_unary() const
         case OpType::Unsqueeze: return false;
         case OpType::UpdateCache: return false;
         case OpType::Upsample2d: return false;
+        case OpType::GridSample: return false;
         case OpType::Where: return false;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }
@@ -1267,6 +1378,7 @@ bool Op::is_eltwise_binary() const
         case OpType::Unsqueeze: return false;
         case OpType::UpdateCache: return false;
         case OpType::Upsample2d: return false;
+        case OpType::GridSample: return false;
         case OpType::Where: return false;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }
@@ -1357,6 +1469,7 @@ bool Op::is_eltwise_nary() const
         case OpType::Unsqueeze: return false;
         case OpType::UpdateCache: return false;
         case OpType::Upsample2d: return false;
+        case OpType::GridSample: return false;
         case OpType::Where: return true;
         default: TT_ASSERT(false, "Unknown OpType."); unreachable();
     }
