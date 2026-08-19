@@ -90,6 +90,7 @@ target_link_libraries(ttforge_csrc PRIVATE
 
     TTMLIRCompiler
     TTMLIRRuntime
+    TTRuntimeTTNNTestLib
     TTNNCompileSo
 
     xml2
