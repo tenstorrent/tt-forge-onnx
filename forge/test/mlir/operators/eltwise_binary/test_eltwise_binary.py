@@ -481,9 +481,7 @@ def test_multiply(shape):
     "shape",
     [
         ((1, 32, 32), (1, 32, 32)),  # Same shapes
-        pytest.param(
-            ((32, 32, 1), (1,)), marks=pytest.mark.xfail(reason="Bad accuracy for backward")
-        ),  # Broadcasting scalar
+        ((32, 32, 1), (1,)),  # Broadcasting scalar
         ((32, 32), (1, 32, 32)),  # Broadcasting different ranks
         ((1, 1, 32), (1, 32, 1)),  # Broadcasting different dimensions
     ],

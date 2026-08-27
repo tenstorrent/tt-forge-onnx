@@ -14,27 +14,10 @@ from forge.verify.verify import verify
     "input_shape, dim, keepdim",
     [
         # 1D
-        pytest.param(
-            (64,), 0, True, marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs")
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (64,),
-            0,
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (64,),
-            -1,
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((64,), 0, True),
+        ((64,), -1, True),
+        ((64,), 0, False),
+        ((64,), -1, False),
         # 2D - single dim
         ((32, 64), 0, True),
         ((32, 64), 0, False),
@@ -45,18 +28,8 @@ from forge.verify.verify import verify
         ((32, 64), -2, True),
         ((32, 64), -2, False),
         # 2D - multi dim
-        pytest.param(
-            (32, 64),
-            [0, 1],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (32, 64),
-            [0, 1],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((32, 64), [0, 1], True),
+        ((32, 64), [0, 1], False),
         # 3D - single dim
         ((4, 32, 64), 0, True),
         ((4, 32, 64), 0, False),
@@ -77,18 +50,8 @@ from forge.verify.verify import verify
         ((4, 32, 64), [0, 2], False),
         ((4, 32, 64), [1, 2], True),
         ((4, 32, 64), [1, 2], False),
-        pytest.param(
-            (4, 32, 64),
-            [0, 1, 2],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (4, 32, 64),
-            [0, 1, 2],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((4, 32, 64), [0, 1, 2], True),
+        ((4, 32, 64), [0, 1, 2], False),
         # 4D - single dim
         ((1, 4, 32, 64), 0, True),
         ((1, 4, 32, 64), 0, False),
@@ -126,31 +89,11 @@ from forge.verify.verify import verify
         ((1, 4, 32, 64), [0, 1, 3], False),
         ((1, 4, 32, 64), [0, 2, 3], True),
         ((1, 4, 32, 64), [0, 2, 3], False),
-        pytest.param(
-            (1, 4, 32, 64),
-            [1, 2, 3],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (1, 4, 32, 64),
-            [1, 2, 3],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((1, 4, 32, 64), [1, 2, 3], True),
+        ((1, 4, 32, 64), [1, 2, 3], False),
         # 4D - all dims
-        pytest.param(
-            (1, 4, 32, 64),
-            [0, 1, 2, 3],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (1, 4, 32, 64),
-            [0, 1, 2, 3],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((1, 4, 32, 64), [0, 1, 2, 3], True),
+        ((1, 4, 32, 64), [0, 1, 2, 3], False),
     ],
 )
 @pytest.mark.push
@@ -208,18 +151,8 @@ def test_reduce_sum(input_shape, dim, keepdim):
         ((4, 32, 64), [0, 2], False),
         ((4, 32, 64), [1, 2], True),
         ((4, 32, 64), [1, 2], False),
-        pytest.param(
-            (4, 32, 64),
-            [0, 1, 2],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (4, 32, 64),
-            [0, 1, 2],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((4, 32, 64), [0, 1, 2], True),
+        ((4, 32, 64), [0, 1, 2], False),
         # 4D - single dim
         ((1, 4, 32, 64), 0, True),
         ((1, 4, 32, 64), 0, False),
@@ -257,31 +190,11 @@ def test_reduce_sum(input_shape, dim, keepdim):
         ((1, 4, 32, 64), [0, 1, 3], False),
         ((1, 4, 32, 64), [0, 2, 3], True),
         ((1, 4, 32, 64), [0, 2, 3], False),
-        pytest.param(
-            (1, 4, 32, 64),
-            [1, 2, 3],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (1, 4, 32, 64),
-            [1, 2, 3],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((1, 4, 32, 64), [1, 2, 3], True),
+        ((1, 4, 32, 64), [1, 2, 3], False),
         # 4D - all dims
-        pytest.param(
-            (1, 4, 32, 64),
-            [0, 1, 2, 3],
-            True,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
-        pytest.param(
-            (1, 4, 32, 64),
-            [0, 1, 2, 3],
-            False,
-            marks=pytest.mark.xfail(reason="Data mismatch between framework and compiled model outputs"),
-        ),
+        ((1, 4, 32, 64), [0, 1, 2, 3], True),
+        ((1, 4, 32, 64), [0, 1, 2, 3], False),
     ],
 )
 @pytest.mark.push
