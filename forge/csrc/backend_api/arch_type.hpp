@@ -13,6 +13,10 @@ enum class ARCH
     WORMHOLE = 2,
     WORMHOLE_B0 = 3,
     BLACKHOLE = 4,
+    // NOTE: this enum is forge-local and its values intentionally do NOT match
+    // UMD's tt::ARCH (WORMHOLE_B0=2, BLACKHOLE=3, QUASAR=4). QUASAR is 5 here
+    // only to avoid colliding with forge's BLACKHOLE=4.
+    QUASAR = 5,
     Invalid = 0xFF,
 };
 

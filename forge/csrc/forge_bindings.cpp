@@ -57,6 +57,7 @@ PYBIND11_MODULE(_C, m)
         .value("WORMHOLE", tt::ARCH::WORMHOLE)
         .value("WORMHOLE_B0", tt::ARCH::WORMHOLE_B0)
         .value("BLACKHOLE", tt::ARCH::BLACKHOLE)
+        .value("QUASAR", tt::ARCH::QUASAR)
         .value("Invalid", tt::ARCH::Invalid)
         .export_values();
 
