@@ -121,18 +121,62 @@ at collection time via a module-level `pytestmark`, not a fixture, because the r
 conftest's autouse property-recorder fixture already probes the device and there is no
 ordering guarantee that would let a fixture here run first.
 
+### It is slow, and there are levers
+
+Expect a cycle-accurate simulator to be slow: execution, not compilation, dominates.
+A stack sample of a run that looks stuck usually shows
+
+```
+libttsim_clock_all_devices (libttsim.so)
+tt::umd::TTSimTTDevice::after_read (libtt-umd.so)
+```
+
+which is the host polling a completion flag, with each poll clocking simulated time
+forward. That is forward progress, not a deadlock — `py-spy dump --pid <pid> --native`
+is the quickest way to tell the two apart, and it also distinguishes "still compiling"
+from "executing on device".
+
+Keep the Quasar test file small for this reason. The accelerator knobs below are the
+lever if runtime becomes the blocker. Check what your `libttsim.so` actually reads
+before setting any of them — craq-sim's README documents `*_DRAM_TELEPORT` and
+`*_L1_TELEPORT` too, but neither is present in the QSR build here:
+
+```bash
+strings "$TT_METAL_SIMULATOR" | grep '^TT_METAL_SIMULATOR'
+```
+
+| Variable | Effect |
+|---|---|
+| `TT_METAL_SIMULATOR_PARALLEL_TENSIX_TILE_CLOCK=1` | clock whole Tensix tiles in parallel |
+| `TT_METAL_SIMULATOR_PARALLEL_CLOCK_THREADS=N` | cap on parallel clock lanes (`0`/unset = auto, `1` = serial) |
+| `TT_METAL_SIMULATOR_PARALLEL_CHIP_CLOCK=1` | clock multiple simulated chips in parallel |
+| `TT_METAL_SIMULATOR_CQ_WAIT_CLOCKS=N` | clock pumping while waiting on command-queue progress |
+
+`quasar_sim_env.sh` deliberately sets **none** of them. They are marked experimental
+opt-in upstream and were documented against a fast-dispatch Blackhole run rather than
+slow-dispatch Quasar, so turning them on by default would change results on a guess.
+Set them explicitly after sourcing the environment, and re-check numerics when you do.
+
 ### Debugging a hang
 
 An unresponsive simulated core spins at 100% CPU indefinitely with no output at all —
 indistinguishable from "still simulating", which on a cycle-accurate simulator is
-genuinely slow. `TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS` turns that into
-`Device 0: Timeout (180000 ms) waiting for physical cores to finish: 2-2.`
+genuinely slow. `quasar_sim_env.sh` sets two variables that make the difference visible.
+Both are read by `libttsim.so` itself, so they work with any tt-metal:
 
-**The pinned tt-metal does not have it.** It lives on the unpinned
-`quasar-sim-core-wait-diagnostic` branch, so the variable the script exports is inert
-until that lands — the script says so on the way out. Until then, wrap long runs in
-`timeout` so a hang ends rather than occupying a core forever. Folding the diagnostic
-into the pinned tt-metal branch is the obvious fix and costs a tt-metal rebuild.
+| Variable | Effect |
+|---|---|
+| `TTSIM_HANG_WATCHDOG_CLOCKS=N` | fails the run after `N` simulated clocks with pending work but no RISC-V progress and no Tensix retirement |
+| `TTSIM_PROGRESS_HEARTBEAT_CLOCKS=N` | prints chip-cycle progress, active RISC-V PCs, pending Tensix FIFOs and outstanding NoC counts every `N` clocks |
+
+The watchdog classifies **true deadlocks** only. A firmware loop that keeps retiring
+instructions is not "hung" by that definition, so still wrap long runs in a wall-clock
+`timeout`.
+
+Note that tt-metal's own `TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS` is *not* an alternative
+here: it lives on the unpinned `quasar-sim-core-wait-diagnostic` branch and is inert
+against the pinned tt-metal. The two TTSIM variables above supersede it and need no
+tt-metal patch at all.
 
 ## Op status
 

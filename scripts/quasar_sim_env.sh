@@ -89,30 +89,32 @@ export CHIP_ARCH=quasar
 # qualification harness, some of whose tooling reads TT_METAL_HOME directly.
 export TT_METAL_HOME="${_qsr_repo_root}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal"
 
-# An unresponsive simulated core otherwise spins at 100% CPU forever with no
-# output at all. Only honoured by tt-metal builds carrying the
-# quasar-sim-core-wait-diagnostic change, which the pinned tt-metal does NOT have
-# -- exporting it is harmless either way, but say so rather than implying a
-# guard that is not there.
-export TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS="${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS:-180000}"
-_qsr_wait_guard="INERT (tt-metal lacks the quasar-sim-core-wait-diagnostic change)"
-if grep -qs 'TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS' "${TT_METAL_HOME}/tt_metal/llrt/llrt.cpp"; then
-    _qsr_wait_guard="${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS} ms"
-fi
+# Without these a run is completely opaque: a deadlocked core and a simulator
+# legitimately grinding through a kernel both sit at 100% CPU printing nothing.
+# Both are read by libttsim.so itself, so they need no tt-metal patch -- unlike
+# TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS, which only exists on an unpinned tt-metal
+# branch and is therefore inert here.
+#
+# The watchdog fires only on genuine no-progress: pending work, and no RISC-V
+# instruction progress and no Tensix retirement for N simulated clocks. It does
+# not catch a firmware loop that keeps retiring instructions -- use a wall-clock
+# `timeout` for that.
+export TTSIM_HANG_WATCHDOG_CLOCKS="${TTSIM_HANG_WATCHDOG_CLOCKS:-1000000}"
+export TTSIM_PROGRESS_HEARTBEAT_CLOCKS="${TTSIM_PROGRESS_HEARTBEAT_CLOCKS:-2000000}"
 
 echo "Quasar simulator environment ready:"
 echo "  TT_METAL_SIMULATOR             = ${TT_METAL_SIMULATOR}"
 echo "  TT_METAL_SIMULATOR_HOME        = ${TT_METAL_SIMULATOR_HOME}"
 echo "  TT_METAL_SLOW_DISPATCH_MODE    = ${TT_METAL_SLOW_DISPATCH_MODE}"
 echo "  ARCH_NAME / CHIP_ARCH          = ${ARCH_NAME} / ${CHIP_ARCH}"
-echo "  core-wait guard                = ${_qsr_wait_guard}"
+echo "  TTSIM_HANG_WATCHDOG_CLOCKS     = ${TTSIM_HANG_WATCHDOG_CLOCKS}"
+echo "  TTSIM_PROGRESS_HEARTBEAT_CLOCKS= ${TTSIM_PROGRESS_HEARTBEAT_CLOCKS}"
 echo
 echo "Run Quasar tests in their own pytest process:"
 echo "  pytest -svv forge/test/mlir/test_quasar_sim.py"
-if [ "${_qsr_wait_guard}" != "${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS} ms" ]; then
-    echo
-    echo "NOTE: a stuck simulated core will spin at 100% CPU indefinitely rather than"
-    echo "      time out. Wrap long runs in \`timeout\` until the diagnostic is pinned."
-fi
+echo
+echo "Execution is slow -- minutes to tens of minutes per op. Wrap long runs in"
+echo "\`timeout\`, and use \`py-spy dump --pid <pid> --native\` to tell compiling"
+echo "from executing from stuck."
 
-unset _qsr_repo_root _qsr_sim_dir _qsr_so _qsr_soc_src _qsr_soc_dst _qsr_wait_guard
+unset _qsr_repo_root _qsr_sim_dir _qsr_so _qsr_soc_src _qsr_soc_dst
