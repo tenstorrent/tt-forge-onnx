@@ -123,10 +123,16 @@ ordering guarantee that would let a fixture here run first.
 
 ### Debugging a hang
 
-An unresponsive simulated core otherwise hangs with no output at all. The script sets
-`TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS` (default 180000), which turns that into
-`Device 0: Timeout (180000 ms) waiting for physical cores to finish: 2-2.` It is only
-honoured by tt-metal builds carrying the `quasar-sim-core-wait-diagnostic` change.
+An unresponsive simulated core spins at 100% CPU indefinitely with no output at all —
+indistinguishable from "still simulating", which on a cycle-accurate simulator is
+genuinely slow. `TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS` turns that into
+`Device 0: Timeout (180000 ms) waiting for physical cores to finish: 2-2.`
+
+**The pinned tt-metal does not have it.** It lives on the unpinned
+`quasar-sim-core-wait-diagnostic` branch, so the variable the script exports is inert
+until that lands — the script says so on the way out. Until then, wrap long runs in
+`timeout` so a hang ends rather than occupying a core forever. Folding the diagnostic
+into the pinned tt-metal branch is the obvious fix and costs a tt-metal rebuild.
 
 ## Op status
 

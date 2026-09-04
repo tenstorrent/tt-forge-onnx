@@ -89,19 +89,30 @@ export CHIP_ARCH=quasar
 # qualification harness, some of whose tooling reads TT_METAL_HOME directly.
 export TT_METAL_HOME="${_qsr_repo_root}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal"
 
-# An unresponsive simulated core otherwise hangs the run with no output. Only
-# honoured by tt-metal builds carrying the quasar-sim-core-wait-diagnostic change;
-# harmless everywhere else.
+# An unresponsive simulated core otherwise spins at 100% CPU forever with no
+# output at all. Only honoured by tt-metal builds carrying the
+# quasar-sim-core-wait-diagnostic change, which the pinned tt-metal does NOT have
+# -- exporting it is harmless either way, but say so rather than implying a
+# guard that is not there.
 export TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS="${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS:-180000}"
+_qsr_wait_guard="INERT (tt-metal lacks the quasar-sim-core-wait-diagnostic change)"
+if grep -qs 'TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS' "${TT_METAL_HOME}/tt_metal/llrt/llrt.cpp"; then
+    _qsr_wait_guard="${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS} ms"
+fi
 
 echo "Quasar simulator environment ready:"
 echo "  TT_METAL_SIMULATOR             = ${TT_METAL_SIMULATOR}"
 echo "  TT_METAL_SIMULATOR_HOME        = ${TT_METAL_SIMULATOR_HOME}"
 echo "  TT_METAL_SLOW_DISPATCH_MODE    = ${TT_METAL_SLOW_DISPATCH_MODE}"
 echo "  ARCH_NAME / CHIP_ARCH          = ${ARCH_NAME} / ${CHIP_ARCH}"
-echo "  TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS = ${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS}"
+echo "  core-wait guard                = ${_qsr_wait_guard}"
 echo
 echo "Run Quasar tests in their own pytest process:"
 echo "  pytest -svv forge/test/mlir/test_quasar_sim.py"
+if [ "${_qsr_wait_guard}" != "${TT_METAL_SIM_CORE_WAIT_TIMEOUT_MS} ms" ]; then
+    echo
+    echo "NOTE: a stuck simulated core will spin at 100% CPU indefinitely rather than"
+    echo "      time out. Wrap long runs in \`timeout\` until the diagnostic is pinned."
+fi
 
-unset _qsr_repo_root _qsr_sim_dir _qsr_so _qsr_soc_src _qsr_soc_dst
+unset _qsr_repo_root _qsr_sim_dir _qsr_so _qsr_soc_src _qsr_soc_dst _qsr_wait_guard
