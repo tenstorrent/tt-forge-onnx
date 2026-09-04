@@ -29,6 +29,7 @@
 #include "mlir/IR/ValueRange.h"
 #include "ops/op.hpp"
 #include "passes/extract_unique_op_configuration.hpp"
+#include "passes/mlir_config.hpp"
 #include "runtime/tt_device.hpp"
 #include "utils/logger.hpp"
 
@@ -179,14 +180,26 @@ class MLIRGenerator
 {
    public:
     /// Construct a new MLIRGenerator object.
-    MLIRGenerator(mlir::MLIRContext &context) : builder_(&context) { init_lowering_handler_map(); }
+    MLIRGenerator(mlir::MLIRContext &context, const std::optional<tt::passes::MLIRConfig> &mlir_config = std::nullopt) :
+        builder_(&context), mlir_config_(mlir_config)
+    {
+        init_lowering_handler_map();
+    }
 
     /// Public API: Convert the ForgeGraphModule into an MLIR module operation for TTIR.
     mlir::ModuleOp emit_mlir(tt::ForgeGraphModule &module)
     {
         graphModule_ = mlir::ModuleOp::create(get_module_location(module), module.name());
 
-        graphModule_->setAttr(mlir::tt::ttcore::SystemDescAttr::name, get_system_desc_attr(graphModule_));
+        // Only read the descriptor off the attached device when the caller has not
+        // supplied a target. Stamping it here would shadow the pipeline's
+        // system-desc-path / mock-system-desc-arch options, which TTCoreRegisterDevice
+        // consults only when the module carries no descriptor -- and it would also
+        // require a device, which is the whole point of not doing it.
+        if (!has_explicit_target())
+        {
+            graphModule_->setAttr(mlir::tt::ttcore::SystemDescAttr::name, get_system_desc_attr(graphModule_));
+        }
         builder_.setInsertionPointToStart(&graphModule_.getBodyRegion().front());
 
         // Collect all the supported TTIR operations
@@ -267,6 +280,10 @@ class MLIRGenerator
     /// is stateful, in particular it keeps an "insertion point": this is where
     /// the next operations will be introduced.
     mlir::OpBuilder builder_;
+
+    /// Compile-time configuration, when supplied. Consulted only to decide where the
+    /// system descriptor comes from; every other field is handled by the MLIR pipeline.
+    std::optional<tt::passes::MLIRConfig> mlir_config_;
 
     /// The symbol table maintains a mapping between the names of ttforge nodes and their corresponding values in the
     /// current scope. Initially, the function arguments (model activations) are added to the symbol table. After
@@ -664,6 +681,16 @@ class MLIRGenerator
         builder_.create<mlir::func::ReturnOp>(builder_.getUnknownLoc(), mlir::ValueRange(returnValues));
     }
 
+    /// True when the caller named the compile target explicitly, so the system
+    /// descriptor must come from the MLIR pipeline rather than from hardware.
+    bool has_explicit_target() const
+    {
+        if (!mlir_config_.has_value())
+            return false;
+        return mlir_config_->target_arch.has_value() ||
+               (mlir_config_->system_desc_path.has_value() && !mlir_config_->system_desc_path->empty());
+    }
+
     /// Get SystemDescAttr from TTSystem
     mlir::tt::ttcore::SystemDescAttr get_system_desc_attr(mlir::ModuleOp module)
     {
@@ -884,8 +911,9 @@ AttributeMapper MLIRGenerator::attr_mapper_;
 namespace tt::passes
 {
 /// Public API for generating MLIR from the Forge module (set of graphs).
-mlir::OwningOpRef<mlir::ModuleOp> lower_to_mlir(tt::ForgeGraphModule &module, mlir::MLIRContext &context)
+mlir::OwningOpRef<mlir::ModuleOp> lower_to_mlir(
+    tt::ForgeGraphModule &module, mlir::MLIRContext &context, const std::optional<MLIRConfig> &mlir_config)
 {
-    return MLIRGenerator(context).emit_mlir(module);
+    return MLIRGenerator(context, mlir_config).emit_mlir(module);
 }
 }  // namespace tt::passes

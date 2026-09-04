@@ -174,6 +174,14 @@ PYBIND11_MODULE(_C, m)
     py::class_<tt::passes::MLIRConfig>(m, "MLIRConfig")
         .def(py::init<>())
         .def(
+            "set_target_arch",
+            [](tt::passes::MLIRConfig &self, tt::ARCH arch) { return self.set_target_arch(arch); },
+            py::arg("arch"))
+        .def(
+            "set_system_desc_path",
+            [](tt::passes::MLIRConfig &self, const std::string &path) { return self.set_system_desc_path(path); },
+            py::arg("path"))
+        .def(
             "set_optimization_level",
             [](tt::passes::MLIRConfig &self, int level) { return self.set_optimization_level(level); },
             py::arg("level"))
