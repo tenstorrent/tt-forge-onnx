@@ -1,0 +1,100 @@
+name: Compile-for-arch (no hardware)
+
+# Compiles for every supported target architecture on a plain runner, with no
+# accelerator attached.
+#
+# This is possible because MLIRConfig.set_target_arch tells the MLIR pipeline to
+# build the system descriptor itself instead of reading it off the attached
+# device (see forge/test/mlir/test_target_arch.py). That makes it the only
+# arch-coverage job that can gate a PR: it needs no Tenstorrent hardware, so it
+# does not compete for the n150/n300/p150 pool, and it covers architectures we
+# have no runner for at all -- Quasar today.
+#
+# Deliberately NOT modelled on test-sub.yml: that workflow binds
+# `--device /dev/tenstorrent/0` into the container, which is exactly what this
+# job must avoid. Execution coverage for a simulated arch is a separate,
+# much slower nightly concern.
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        description: "Docker image for the test"
+        required: true
+        type: string
+      run_id:
+        description: "Run ID to fetch the forge wheel from"
+        required: false
+        type: string
+      timeout:
+        description: "Timeout in minutes"
+        required: false
+        type: number
+        default: 20
+
+permissions:
+  checks: write
+  packages: write
+
+jobs:
+  compile-for-arch:
+    name: "compile-for-arch (no hardware)"
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+
+    # Image only -- no --device, no hugepages, no udev/modules mounts.
+    container:
+      image: ${{ inputs.docker-image }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # No submodules: this job installs a prebuilt wheel and runs one pytest
+      # file. Cloning tt-mlir and tt-metal here would cost minutes and buy nothing.
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          submodules: false
+          fetch-depth: 1
+
+      - name: Download wheel
+        if: ${{ inputs.run_id }}
+        uses: tenstorrent/tt-forge/.github/actions/download-artifact@main
+        with:
+          name: forge-wheel
+          run_id: ${{ inputs.run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find and download forge wheel
+        if: ${{ !inputs.run_id }}
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow_conclusion: success
+          workflow_search: true
+          workflow: on-pr.yml
+          name: forge-wheel
+          repo: tenstorrent/tt-forge-onnx
+          check_artifacts: true
+          search_artifacts: true
+
+      - name: Install wheel
+        run: |
+          source env/activate
+          uv pip install tt_tvm*.whl --upgrade
+          uv pip install tt_forge_onnx*.whl --upgrade
+
+      - name: Compile for each target arch
+        run: |
+          source env/activate
+          pytest -svv forge/test/mlir/test_target_arch.py \
+            --junitxml=compile-for-arch-report.xml
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: test-reports-compile-for-arch
+          path: compile-for-arch-report.xml
