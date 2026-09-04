@@ -121,6 +121,45 @@ at collection time via a module-level `pytestmark`, not a fixture, because the r
 conftest's autouse property-recorder fixture already probes the device and there is no
 ordering guarantee that would let a fixture here run first.
 
+### Open blocker: execution deadlocks on a Tensix semaphore
+
+`test_add` does not complete. Measured 2026-09-04 with the simulator's own telemetry:
+
+```
+[ttsim-progress] pending_tensix=4 noc=0        unchanged over 360M clocks
+[ttsim-progress-detail] chip=(0,0) tensix: T0.X0.P1
+    rd=6 wr=20 inst=0xa6a12010 wait=0x2 sync=0x45 fifo=14
+    stream={active=0 pending=0 wr=17}
+    srcA={valid=0x1 unpack=1 matrix=0}
+    srcB={valid=0x1 unpack=1 matrix=0}
+```
+
+Read that as: **opcode `0xA6` is `SEMWAIT`** (craq-sim `src/_out/qsr/tensix_decode.h:2344`,
+pipe class `TTSIM_PE_SEM`). One Tensix pipe is parked on a semaphore wait with 14
+instructions backed up behind it. Both source registers are already `valid=1` and
+`unpack=1`, so the unpacker delivered the data; `matrix=0` says the math unit never
+consumed it. The semaphore is simply never posted.
+
+This is a **deadlock, not slowness**, and it is invisible to the usual guards:
+
+* `TTSIM_HANG_WATCHDOG_CLOCKS` does not fire, correctly — the RISC-V cores keep
+  retiring instructions in their poll loop, which its documentation explicitly excludes.
+* `no_progress_chip_cycles` stays pinned at 129 from the first heartbeat, so the
+  aggregate progress counter looks healthy.
+
+Ruled out so far: it is not the experimental parallel-clocking knobs (identical signature
+with and without), and it is not an unimplemented opcode — Quasar `SEMWAIT` has a real
+executor (`craq-sim/src/tensix.cpp:14208`), not a stub.
+
+This contradicts an earlier recorded measurement of Add/Mul/Sub/Div passing on craq-sim,
+which predates the current tt-mlir and tt-metal pins.
+
+**Next step:** trace the semaphore rather than bisecting blind. `TTSIM_SEM_TRACE` (with
+`TTSIM_SEM_TRACE_TILE` / `_STALLS`) and `TTSIM_QSR_CLUSTER_SEM_TRACE` will name which
+semaphore is being waited on and who was supposed to post it. Only if that comes back
+clean is a pin bisect (tt-metal `5804b6a0049 -> ab5ff6b56bb`, tt-mlir 3 -> 9 commits)
+worth the wall clock.
+
 ### It is slow, and there are levers
 
 Expect a cycle-accurate simulator to be slow, and budget **hours, not minutes** —
