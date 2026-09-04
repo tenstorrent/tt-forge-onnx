@@ -14,10 +14,22 @@ Running these
     source ./scripts/quasar_sim_env.sh
     pytest -svv forge/test/mlir/test_quasar_sim.py
 
-Budget hours, not minutes. Compilation for Quasar takes seconds; execution on a
-cycle-accurate simulator is what costs, and craq-sim's own Quasar op CI allows 240
-minutes per run. A sub-hour timeout will kill a healthy run, and a killed run is
-indistinguishable from a hang.
+Budget hours, not minutes, and always use a wall-clock `timeout`. Compilation for
+Quasar takes seconds; execution on a cycle-accurate simulator is the entire cost, and
+craq-sim's own Quasar op CI allows 240 minutes per run.
+
+KNOWN ISSUE 2026-09-04: test_add does not currently complete. Over 360M simulated
+clocks (~35 min) the simulator heartbeat showed pending_tensix stuck at 4, noc=0, one
+Tensix PC frozen at 0xecd0, and the RISC-V PC cycling between just three values 8 bytes
+apart -- a tight spin loop. TTSIM_HANG_WATCHDOG_CLOCKS does not fire on this, by design:
+the loop keeps retiring instructions, so it is a livelock rather than a deadlock. The
+same signature appeared with and without experimental parallel clocking, so that is not
+the cause.
+
+This contradicts an earlier recorded measurement of Add/Mul/Sub/Div passing on craq-sim,
+which predates the current tt-mlir and tt-metal pins. Until it is resolved, treat every
+test here as unverified on this stack. Compilation for Quasar is unaffected and is
+covered separately by test_target_arch.py, which needs no simulator.
 
 In their OWN pytest process. tt-metal's RunTimeOptions and forge's TTSystem are both
 construct-once-per-process singletons, so the first test to touch a device fixes
@@ -123,8 +135,15 @@ def _run_unary_op(op_type: str, name: str, pcc: float = 0.99):
 
 
 # ---------------------------------------------------------------------------
-# Known green: eltwise binary is dispatched to the Quasar op library
-# (ttnn::operations::experimental::quasar) and both compiles and verifies.
+# Eltwise binary is dispatched to the Quasar op library
+# (ttnn::operations::experimental::quasar).
+#
+# STATUS 2026-09-04: these are recorded as passing compile + numerical verify on
+# craq-sim, but that measurement predates the current tt-mlir/tt-metal pins and
+# could NOT be reproduced here -- see the module docstring. They are left
+# unmarked rather than xfailed because the failure is a livelock, not a failure:
+# an xfail on a run that never returns stalls the suite instead of reporting.
+# Always run this file under a wall-clock `timeout`.
 # ---------------------------------------------------------------------------
 
 
