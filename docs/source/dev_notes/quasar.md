@@ -121,44 +121,60 @@ at collection time via a module-level `pytestmark`, not a fixture, because the r
 conftest's autouse property-recorder fixture already probes the device and there is no
 ordering guarantee that would let a fixture here run first.
 
-### Open blocker: execution deadlocks on a Tensix semaphore
+### Open blocker: the math unit never consumes its operands
 
-`test_add` does not complete. Measured 2026-09-04 with the simulator's own telemetry:
+`test_add` does not complete. Compilation is fine (~9 s); execution wedges. The
+simulator's Tensix detail telemetry, read in full:
 
 ```
-[ttsim-progress] pending_tensix=4 noc=0        unchanged over 360M clocks
-[ttsim-progress-detail] chip=(0,0) tensix: T0.X0.P1
-    rd=6 wr=20 inst=0xa6a12010 wait=0x2 sync=0x45 fifo=14
-    stream={active=0 pending=0 wr=17}
-    srcA={valid=0x1 unpack=1 matrix=0}
-    srcB={valid=0x1 unpack=1 matrix=0}
+T0.X0.P1 rd=6 wr=20 inst=0xa6a12010 wait=0x2 sync=0x45 fifo=14
+  srcA={valid=0x1 unpack=1 matrix=0}  srcB={valid=0x1 unpack=1 matrix=0}
+  stallwait={active=0 was=0 lag=0 wait=0x0 stall=0x0}
+  semwait={active=0 was=0 waiting=0 lag=0 sel=0x0 cond=0x0 stall=0x0}
+  sem=[0,0,0,0,0,0,0,0]   semmax=[0,2,0,0,2,0,0,0]
 ```
 
-Read that as: **opcode `0xA6` is `SEMWAIT`** (craq-sim `src/_out/qsr/tensix_decode.h:2344`,
-pipe class `TTSIM_PE_SEM`). One Tensix pipe is parked on a semaphore wait with 14
-instructions backed up behind it. Both source registers are already `valid=1` and
-`unpack=1`, so the unpacker delivered the data; `matrix=0` says the math unit never
-consumed it. The semaphore is simply never posted.
+Four pipes are stuck, symmetrically: `T0.X0.P1`, `T0.X0.P2`, `T8.X0.P1`, `T8.X0.P2`
+— which is the `pending_tensix=4` seen in the heartbeat.
 
-This is a **deadlock, not slowness**, and it is invisible to the usual guards:
+**It is not a semaphore stall**, despite the head instruction being one. Opcode `0xA6`
+is `SEMWAIT`, but `semwait.active=0` means it was never latched, `sel` and `cond` are
+both `0`, and every semaphore reads `0` against maxima of `2` — nothing is at max, so
+no semaphore wait *could* be blocking. `stallwait.active=0` rules that out too. The
+whole run also records zero `sempost` and zero `semget` events, only four `seminit`s,
+so the kernel never reaches the producer/consumer handshake at all.
 
-* `TTSIM_HANG_WATCHDOG_CLOCKS` does not fire, correctly — the RISC-V cores keep
+What is actually true: `srcA` and `srcB` are both `valid=1, unpack=1, matrix=0`. The
+unpacker delivered both operands into the unpack bank, and **the matrix/math unit never
+took them**. The pipes are held by a wait gate — `wait=0x2` is `wait_gate_mask` and
+`sync=0x45` is `ttsync_resources` (`craq-sim/src/libttsim.cpp:1621`, argument list at
+`:1629`) — i.e. an unmet TTSync resource dependency, not a semaphore.
+
+Guards that stay silent, and why:
+
+* `TTSIM_HANG_WATCHDOG_CLOCKS` does not fire — correctly. The RISC-V cores keep
   retiring instructions in their poll loop, which its documentation explicitly excludes.
 * `no_progress_chip_cycles` stays pinned at 129 from the first heartbeat, so the
-  aggregate progress counter looks healthy.
+  aggregate counter reads healthy for the whole run.
 
-Ruled out so far: it is not the experimental parallel-clocking knobs (identical signature
-with and without), and it is not an unimplemented opcode — Quasar `SEMWAIT` has a real
-executor (`craq-sim/src/tensix.cpp:14208`), not a stub.
+Ruled out by measurement, not assumption:
+
+| Hypothesis | Result |
+|---|---|
+| Just slow — needs a longer budget | No. 360M clocks / 35 min, every counter frozen |
+| Experimental parallel-clocking knobs | No. Identical signature with and without |
+| Unimplemented opcode in the simulator | No. `SEMPOST`/`SEMGET`/`SEMINIT`/`SEMWAIT` all have real Quasar executors |
+| A semaphore never posted | No. `semwait.active=0`, all semaphores below max |
+| cwd not `$TT_METAL_HOME` (relative kernel include path) | No. Same stall from `$TT_METAL_HOME` |
+
+**Next step:** `TTSIM_STALLWAIT_TRACE` and `TTSIM_TENSIX_STALL_TRACE` (with their
+`_TILE` / `_CHIP` filters) to identify which wait-gate resource in `ttsync_resources`
+never clears, plus `TTSIM_TRACE_SRC_VALID` for the unpack-to-math handoff. This sits
+below forge and below tt-mlir — it is Tensix execution — so a pin bisect is the fallback
+if the traces come back clean, not the first move.
 
 This contradicts an earlier recorded measurement of Add/Mul/Sub/Div passing on craq-sim,
 which predates the current tt-mlir and tt-metal pins.
-
-**Next step:** trace the semaphore rather than bisecting blind. `TTSIM_SEM_TRACE` (with
-`TTSIM_SEM_TRACE_TILE` / `_STALLS`) and `TTSIM_QSR_CLUSTER_SEM_TRACE` will name which
-semaphore is being waited on and who was supposed to post it. Only if that comes back
-clean is a pin bisect (tt-metal `5804b6a0049 -> ab5ff6b56bb`, tt-mlir 3 -> 9 commits)
-worth the wall clock.
 
 ### It is slow, and there are levers
 
