@@ -38,7 +38,7 @@ Two caveats:
 
 * The mock descriptor is **nominal**. It carries the arch's grid, L1 size and DRAM
   geometry, not a specific board's harvesting. Use `set_system_desc_path` when the
-  real topology matters.
+  real topology matters — see below.
 * Quasar rejects `experimental_weight_dtype`. Its format set has no `bf8_b`/`bf4_b`,
   and without the guard in `mlir_config.cpp` the failure surfaces much later as a
   tt-metal host format-validator throw.
@@ -46,6 +46,28 @@ Two caveats:
 Covered by `forge/test/mlir/test_target_arch.py`, which the
 `test-compile-arch-sub.yml` CI job runs on a plain runner with no accelerator. That
 job is the only PR coverage for Quasar, since no Quasar runner exists.
+
+### Capturing a real descriptor
+
+`set_system_desc_path` needs a `.ttsys` flatbuffer. Capture one on the machine that
+has the device — including a simulated one, so this is how you get a *real* Quasar
+descriptor rather than the nominal mock:
+
+```python
+import forge
+
+forge._C.runtime.experimental.save_system_desc("quasar_system_desc.ttsys")
+```
+
+This opens the attached device, which is the point. It is the equivalent of
+`ttrt query --save-artifacts` without needing ttrt installed. Then, from anywhere:
+
+```python
+cfg = CompilerConfig(mlir_config=MLIRConfig().set_system_desc_path("quasar_system_desc.ttsys"))
+```
+
+`system_desc_path` wins over `target_arch` when both are set, mirroring the tt-mlir
+pipeline where a non-empty `system-desc-path` beats `mock-system-desc-arch`.
 
 ## Running on the craq-sim simulator
 
