@@ -123,7 +123,15 @@ ordering guarantee that would let a fixture here run first.
 
 ### It is slow, and there are levers
 
-Expect a cycle-accurate simulator to be slow: execution, not compilation, dominates.
+Expect a cycle-accurate simulator to be slow, and budget **hours, not minutes** —
+craq-sim's own Quasar op CI allows 240 minutes per run. Execution, not compilation,
+dominates completely: a single-op ONNX graph compiles for Quasar in about 9 seconds and
+then spends the rest of the run executing, at roughly 10^5 simulated clocks/sec.
+
+The practical consequence is that a wall-clock timeout under an hour will kill a healthy
+run, and a killed run looks exactly like a hang. Set the budget from the CI figure, not
+from how long you are willing to wait.
+
 A stack sample of a run that looks stuck usually shows
 
 ```

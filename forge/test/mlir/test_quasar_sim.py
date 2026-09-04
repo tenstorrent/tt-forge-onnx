@@ -14,6 +14,11 @@ Running these
     source ./scripts/quasar_sim_env.sh
     pytest -svv forge/test/mlir/test_quasar_sim.py
 
+Budget hours, not minutes. Compilation for Quasar takes seconds; execution on a
+cycle-accurate simulator is what costs, and craq-sim's own Quasar op CI allows 240
+minutes per run. A sub-hour timeout will kill a healthy run, and a killed run is
+indistinguishable from a hang.
+
 In their OWN pytest process. tt-metal's RunTimeOptions and forge's TTSystem are both
 construct-once-per-process singletons, so the first test to touch a device fixes
 hardware-vs-simulator for the whole session -- mixing these with ordinary tests would

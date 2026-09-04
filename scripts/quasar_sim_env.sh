@@ -113,8 +113,9 @@ echo
 echo "Run Quasar tests in their own pytest process:"
 echo "  pytest -svv forge/test/mlir/test_quasar_sim.py"
 echo
-echo "Execution is slow -- minutes to tens of minutes per op. Wrap long runs in"
-echo "\`timeout\`, and use \`py-spy dump --pid <pid> --native\` to tell compiling"
+echo "Execution is slow -- budget HOURS per op, not minutes; the craq-sim Quasar op"
+echo "CI allows 240 min. A sub-hour timeout will kill a healthy run, and that looks"
+echo "exactly like a hang. Use \`py-spy dump --pid <pid> --native\` to tell compiling"
 echo "from executing from stuck."
 
 unset _qsr_repo_root _qsr_sim_dir _qsr_so _qsr_soc_src _qsr_soc_dst
