@@ -40,5 +40,6 @@ operations
 
 dev_notes/standalone_ttir_run
 dev_notes/verification
+dev_notes/quasar
 docstring_standard
 ```
