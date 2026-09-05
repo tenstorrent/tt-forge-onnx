@@ -4,6 +4,8 @@
 
 #include "runtime/python_bindings.hpp"
 
+#include <stdexcept>
+
 #include "runtime/runtime.hpp"
 #include "runtime/state.hpp"
 #include "runtime/testutils/testutils.hpp"
@@ -101,6 +103,28 @@ void RuntimeModule(py::module &m_runtime)
         [](DeviceSettings settings) -> void { tt::TTSystem::get_system().configure_devices(settings); },
         py::arg("device_settings") = DeviceSettings(),
         "Configure all devices with the given settings.");
+
+    m_experimental.def(
+        "save_system_desc",
+        [](const std::string &path) -> void
+        {
+            if (path.empty())
+            {
+                throw std::invalid_argument("save_system_desc: path must not be empty");
+            }
+            // Opens a device if one is not already open, which is the point: the
+            // descriptor being captured is the attached device's.
+            tt::TTSystem &system = tt::TTSystem::get_system();
+            TT_ASSERT(system.system_desc.handle, "System descriptor handle is null");
+            system.system_desc.store(path.c_str());
+        },
+        py::arg("path"),
+        "Write the attached device's system descriptor to a .ttsys flatbuffer.\n"
+        "\n"
+        "The counterpart to MLIRConfig.set_system_desc_path: capture once on the\n"
+        "machine that has the device (including a simulated one), then compile\n"
+        "against that exact descriptor anywhere. Equivalent to `ttrt query\n"
+        "--save-artifacts` without needing ttrt installed.");
 
     // TestUtils APIs
     py::module m_testutils = m_runtime.def_submodule("testutils");

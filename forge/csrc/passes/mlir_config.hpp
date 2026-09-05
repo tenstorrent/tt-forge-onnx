@@ -8,11 +8,39 @@
 #include <stdexcept>
 #include <string>
 
+#include "backend_api/arch_type.hpp"
 #include "lower_to_forge/common.hpp"
 #include "nlohmann/json_fwd.hpp"
 
 namespace tt::passes
 {
+
+/// Converts a tt::ARCH to the MLIR `mock-system-desc-arch` pipeline option string.
+/// Only the three architectures the TTIR-to-TTNN pipeline accepts are valid; every
+/// other enumerator (including ARCH::Invalid) throws.
+inline std::string arch_to_pipeline_string(tt::ARCH arch)
+{
+    switch (arch)
+    {
+        case tt::ARCH::WORMHOLE_B0:
+        case tt::ARCH::BLACKHOLE:
+        case tt::ARCH::QUASAR: return tt::to_string_arch_lower(arch);
+        default:
+            throw std::invalid_argument(
+                "target_arch only accepts ARCH::WORMHOLE_B0, ARCH::BLACKHOLE or "
+                "ARCH::QUASAR");
+    }
+}
+
+/// Parses a `mock-system-desc-arch` pipeline string back into a tt::ARCH.
+inline tt::ARCH arch_from_pipeline_string(const std::string& s)
+{
+    tt::ARCH arch = tt::to_arch_type(s);
+    // Round-trip through the validating converter so an out-of-range value cannot
+    // be smuggled in via deserialisation.
+    (void)arch_to_pipeline_string(arch);
+    return arch;
+}
 
 /// Converts tt::MathFidelity to the MLIR pipeline option string.
 /// MathFidelity::Invalid maps to "undefined" (backend-selected fidelity).
@@ -85,6 +113,36 @@ inline tt::DataFormat weight_dtype_from_string(const std::string& s)
 // ============================================================================
 struct MLIRConfig
 {
+    // -------------------------------------------------------------------------
+    // Target architecture
+    //
+    // By default forge compiles against the system descriptor of the device that
+    // is actually attached, read in lower_to_mlir.cpp. Setting either field below
+    // instead compiles against a descriptor supplied here, which is what makes a
+    // device-free ("offline") compile possible -- e.g. targeting Quasar from a
+    // machine with a Wormhole card, or compiling in CI with no hardware at all.
+    //
+    // system_desc_path takes precedence over target_arch when both are set,
+    // mirroring the tt-mlir pipeline, where a non-empty system-desc-path wins
+    // over mock-system-desc-arch.
+    // -------------------------------------------------------------------------
+
+    /// Pipeline option: mock-system-desc-arch   default: none (use the live device)
+    /// Compile against a mock system descriptor for this architecture instead of
+    /// the attached device's. Accepts ARCH::WORMHOLE_B0, ARCH::BLACKHOLE and
+    /// ARCH::QUASAR.
+    ///
+    /// Note the mock descriptor is a nominal one: it carries that arch's grid,
+    /// L1 size and DRAM geometry, not a specific board's harvesting. Use
+    /// system_desc_path when the real topology matters.
+    std::optional<tt::ARCH> target_arch = std::nullopt;
+
+    /// Pipeline option: system-desc-path   default: none (use the live device)
+    /// Compile against a system descriptor flatbuffer on disk, as produced by
+    /// `ttrt query --save-artifacts` (ttrt-artifacts/system_desc.ttsys).
+    /// Takes precedence over target_arch.
+    std::optional<std::string> system_desc_path = std::nullopt;
+
     // -------------------------------------------------------------------------
     // Optimization level shorthand
     // Pipeline option : optimization-level   default: 0
@@ -303,6 +361,23 @@ struct MLIRConfig
     // conflicting structured field.
     // -------------------------------------------------------------------------
     std::string custom_config = "";
+
+    MLIRConfig& set_target_arch(tt::ARCH arch)
+    {
+        // Validate eagerly so a bad arch is reported at the call site rather than
+        // when the pipeline option string is built.
+        (void)arch_to_pipeline_string(arch);
+        target_arch = arch;
+        return *this;
+    }
+
+    MLIRConfig& set_system_desc_path(const std::string& path)
+    {
+        if (path.empty())
+            throw std::invalid_argument("system_desc_path must not be empty");
+        system_desc_path = path;
+        return *this;
+    }
 
     MLIRConfig& set_optimization_level(int level)
     {

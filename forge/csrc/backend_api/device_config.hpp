@@ -216,10 +216,13 @@ struct DeviceConfig
     // Get if the device is a blackhole
     inline bool is_blackhole() const { return arch == ARCH::BLACKHOLE; }
 
+    // Get if the device is a quasar
+    inline bool is_quasar() const { return arch == ARCH::QUASAR; }
+
     // Get if the device is a wormhole_b0
-    // During the onboarding process of the blackhole architecture,
-    // we temporarily treat it as equivalent to the Wormhole_b0 architecture.
-    inline bool is_wormhole_b0() const { return arch == ARCH::WORMHOLE_B0 || is_blackhole(); }
+    // During the onboarding process of the blackhole and quasar architectures,
+    // we temporarily treat them as equivalent to the Wormhole_b0 architecture.
+    inline bool is_wormhole_b0() const { return arch == ARCH::WORMHOLE_B0 || is_blackhole() || is_quasar(); }
 
     template <typename T>
     T get(std::string const& param, const bool system_level_command) const;

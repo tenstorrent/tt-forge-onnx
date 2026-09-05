@@ -4,6 +4,7 @@
 #include "mlir_config.hpp"
 
 #include <sstream>
+#include <stdexcept>
 
 #include "nlohmann/json.hpp"
 #include "shared_utils/json_extension.hpp"
@@ -18,6 +19,13 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
         if (!p.compute_cfg_math_fidelity.has_value())
             return nullptr;
         return to_pipeline_string(*p.compute_cfg_math_fidelity);
+    }();
+
+    const auto target_arch_val = [&]() -> nlohmann::json
+    {
+        if (!p.target_arch.has_value())
+            return nullptr;
+        return arch_to_pipeline_string(*p.target_arch);
     }();
 
     const auto weight_dtype_val = [&]() -> nlohmann::json
@@ -37,6 +45,8 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
                        {"max_legal_layouts", p.max_legal_layouts},
                        {"enable_row_major", p.enable_row_major},
                        // Compute kernel configuration
+                       {"target_arch", target_arch_val},
+                       {"system_desc_path", p.system_desc_path},
                        {"compute_cfg_math_fidelity", fidelity_val},
                        {"compute_cfg_fp32_dest_acc_en", p.compute_cfg_fp32_dest_acc_en},
                        // Data type / quantization options
@@ -71,6 +81,16 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
 void from_json(const ::nlohmann::json& j, MLIRConfig& p)
 {
     // Optimization level shorthand
+    // Target architecture. Read tolerantly: these fields postdate configs that are
+    // already serialised in the wild, and j.at() would throw on their absence.
+    if (j.contains("target_arch") && !j.at("target_arch").is_null())
+        p.target_arch = arch_from_pipeline_string(j.at("target_arch").get<std::string>());
+    else
+        p.target_arch = std::nullopt;
+    if (j.contains("system_desc_path"))
+        j.at("system_desc_path").get_to(p.system_desc_path);
+    else
+        p.system_desc_path = std::nullopt;
     j.at("optimization_level").get_to(p.optimization_level);
     // Optimizer control
     j.at("enable_consteval").get_to(p.enable_consteval);
@@ -124,6 +144,30 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
 
     if (!mlir_config.has_value())
         return options.str();
+
+    // -----------------------------------------------------------------------
+    // Target architecture
+    //
+    // Both are no-ops unless lower_to_mlir skipped stamping the module with the
+    // live device's descriptor -- tt-mlir's TTCoreRegisterDevice pass only
+    // consults these when the module carries no ttcore.system_desc attribute.
+    // -----------------------------------------------------------------------
+    // Quasar's format set has no block-float types: bf8_b / bf4_b (and uint16 /
+    // uint32) are rejected by tt-metal's host format validator, so a weight-dtype
+    // override would fail deep in the runtime with a much less obvious message.
+    // Only catchable when the target is named -- on a live device the arch is not
+    // known here.
+    if (mlir_config->target_arch == tt::ARCH::QUASAR && mlir_config->experimental_weight_dtype.has_value())
+    {
+        throw std::invalid_argument(
+            "experimental_weight_dtype is not supported on Quasar: block-float "
+            "formats (Bfp8_b / Bfp4_b) are not in Quasar's format set");
+    }
+
+    if (mlir_config->system_desc_path.has_value() && !mlir_config->system_desc_path->empty())
+        options << " system-desc-path=" << *mlir_config->system_desc_path;
+    else if (mlir_config->target_arch.has_value())
+        options << " mock-system-desc-arch=" << arch_to_pipeline_string(*mlir_config->target_arch);
 
     // -----------------------------------------------------------------------
     // Optimization level shorthand
