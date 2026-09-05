@@ -80,6 +80,51 @@ Confirm the output says:
 ARCH_NAME / CHIP_ARCH          = quasar / quasar
 ```
 
+### Verify forge actually sees a Quasar device
+
+The env being set is not proof the device came up as Quasar. Ask forge directly —
+the same one-liner gives a different answer depending on whether the simulator env
+is sourced:
+
+```bash
+python -c "from forge._C.runtime.experimental import TTSystem; print(TTSystem.get_system().devices[0].arch)"
+```
+
+| Environment | Output |
+|---|---|
+| plain shell, real card attached | `Arch.WORMHOLE_B0` |
+| after `source ./scripts/quasar_sim_env.sh` | `Arch.QUASAR` |
+
+Note there is **no `ttnn` Python module** in this venv — forge links tt-metal's C++
+runtime, not the ttnn package, so `import ttnn` fails. `TTSystem` is the forge-level
+equivalent and reads the same system descriptor.
+
+A fuller probe:
+
+```bash
+python -c "
+from forge._C.runtime.experimental import TTSystem
+s = TTSystem.get_system()
+d = s.devices[0]
+print('arch  :', d.arch)
+print('chips :', s.chip_ids)
+print('mmio  :', d.mmio)
+"
+```
+
+Or the normalized string form forge uses in reports, which returns `wormhole` or
+`quasar`:
+
+```bash
+python -c "from forge.forge_property_utils import get_device_arch; print(get_device_arch())"
+```
+
+Two caveats. The probe **opens the device**, so on the simulator it takes noticeably
+longer than on a card. And `TTSystem.get_system()` is a process-wide lazy singleton,
+so whichever environment is set at the first call fixes the answer for the rest of
+that process — run the two checks in separate shells, not sequentially in one Python
+session.
+
 ## 3. Run one op
 
 In its own pytest process, under a wall-clock timeout:
