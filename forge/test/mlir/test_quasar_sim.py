@@ -18,18 +18,29 @@ Budget hours, not minutes, and always use a wall-clock `timeout`. Compilation fo
 Quasar takes seconds; execution on a cycle-accurate simulator is the entire cost, and
 craq-sim's own Quasar op CI allows 240 minutes per run.
 
-KNOWN ISSUE 2026-09-04: test_add does not currently complete. Over 360M simulated
-clocks (~35 min) the simulator heartbeat showed pending_tensix stuck at 4, noc=0, one
-Tensix PC frozen at 0xecd0, and the RISC-V PC cycling between just three values 8 bytes
-apart -- a tight spin loop. TTSIM_HANG_WATCHDOG_CLOCKS does not fire on this, by design:
-the loop keeps retiring instructions, so it is a livelock rather than a deadlock. The
-same signature appeared with and without experimental parallel clocking, so that is not
-the cause.
+RESOLVED 2026-09-07: add runs and verifies on craq-sim in bf16 (PCC 0.999985,
+~1.4 s of execution). Two things were needed, and neither was the op dispatch -- that
+was already wired and already being reached:
 
-This contradicts an earlier recorded measurement of Add/Mul/Sub/Div passing on craq-sim,
-which predates the current tt-mlir and tt-metal pins. Until it is resolved, treat every
-test here as unverified on this stack. Compilation for Quasar is unaffected and is
-covered separately by test_target_arch.py, which needs no simulator.
+  1. bf16, not f32. CompilerConfig.default_df_override = DataFormat.Float16_b makes
+     the emitted TTNN tensors bf16, which routes Quasar's binary_ng FPU kernel. In f32
+     the same graph livelocks: pending_tensix stuck at 4, srcA/srcB at
+     valid=1 unpack=1 matrix=0 -- operands delivered, math unit never consuming them.
+     TTSIM_HANG_WATCHDOG_CLOCKS does not fire, by design: the loop keeps retiring
+     instructions, so it is a livelock rather than a deadlock.
+
+  2. cwd == $TT_METAL_HOME. Quasar's binary_ng factory passes kernel include paths
+     RELATIVE to the tt-metal root (binary_ng_utils.cpp:83), and
+     resolve_compiler_include_dir resolves them against fs::current_path(), not
+     TT_METAL_HOME (tt_metal/impl/kernels/kernel.cpp:100-112). tt-metal's own suite
+     always runs from its repo root so this never bites there; forge is a different
+     repo, so the _tt_metal_cwd fixture below chdirs for the duration of the test.
+     Without it the run fails fast with "Compiler include directory ... not found
+     relative to current working directory".
+
+The f32 livelock is still open and is tracked by the f32 tests below. Note that
+`quasar.md` once listed the cwd hypothesis as ruled out -- correctly, for the f32
+livelock, which it does not explain; it is nonetheless a hard blocker on the bf16 path.
 
 In their OWN pytest process. tt-metal's RunTimeOptions and forge's TTSystem are both
 construct-once-per-process singletons, so the first test to touch a device fixes
@@ -74,6 +85,73 @@ pytestmark = [
         reason="Quasar simulator not configured; run `source ./scripts/quasar_sim_env.sh` first",
     ),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _tt_metal_cwd():
+    """Run inside $TT_METAL_HOME, which the JIT kernel include paths require.
+
+    Quasar's binary_ng factory hands tt-metal include paths that are relative to the
+    tt-metal root, and they are resolved against the process cwd rather than
+    TT_METAL_HOME. Restores the original cwd afterwards so nothing else is disturbed.
+    """
+    home = os.environ.get("TT_METAL_HOME")
+    if not home or not os.path.isdir(home):
+        pytest.skip("TT_METAL_HOME is not set; source ./scripts/quasar_sim_env.sh")
+    prev = os.getcwd()
+    os.chdir(home)
+    try:
+        yield
+    finally:
+        os.chdir(prev)
+
+
+def _binary_onnx(op_type: str):
+    """A one-node binary ONNX graph, float32 in and out."""
+    node = helper.make_node(op_type, inputs=["input_A", "input_B"], outputs=["output"])
+    graph = helper.make_graph(
+        nodes=[node],
+        name=f"{op_type}Graph",
+        inputs=[
+            helper.make_tensor_value_info("input_A", TensorProto.FLOAT, SHAPE),
+            helper.make_tensor_value_info("input_B", TensorProto.FLOAT, SHAPE),
+        ],
+        outputs=[helper.make_tensor_value_info("output", TensorProto.FLOAT, SHAPE)],
+    )
+    return helper.make_model(
+        graph, producer_name=f"{op_type}Model", opset_imports=opset_imports
+    )
+
+
+def _run_binary_op_bf16(op_type: str, name: str, min_pcc: float = 0.99):
+    """Run one binary op on the simulator in bf16 and check PCC against torch.
+
+    bf16 is what actually executes on Quasar today; see the module docstring. Uses an
+    explicit PCC check rather than verify() so the measured correlation lands in the
+    test output, which is what you want when triaging a numerics change.
+    """
+    from forge.config import CompilerConfig
+
+    torch.manual_seed(0)
+    inputs = [torch.rand(SHAPE), torch.rand(SHAPE) + 1.0]
+    reference = {
+        "Add": lambda a, b: a + b,
+        "Mul": lambda a, b: a * b,
+        "Sub": lambda a, b: a - b,
+        "Div": lambda a, b: a / b,
+    }[op_type](*inputs)
+
+    cfg = CompilerConfig()
+    cfg.default_df_override = forge._C.DataFormat.Float16_b
+    compiled = forge.compile(
+        _binary_onnx(op_type), inputs, module_name=name, compiler_cfg=cfg
+    )
+
+    out = compiled(*inputs)
+    got = (out[0] if isinstance(out, (list, tuple)) else out).to(torch.float32).cpu()
+    expected, actual = reference.flatten().float(), got.flatten()
+    pcc = torch.corrcoef(torch.stack([expected, actual]))[0, 1].item()
+    assert pcc > min_pcc, f"{op_type} bf16 on Quasar: pcc={pcc}"
 
 
 def _run_binary_op(op_type: str, name: str):
@@ -135,31 +213,62 @@ def _run_unary_op(op_type: str, name: str, pcc: float = 0.99):
 
 
 # ---------------------------------------------------------------------------
-# Eltwise binary is dispatched to the Quasar op library
-# (ttnn::operations::experimental::quasar).
+# GREEN: eltwise binary in bf16, dispatched to the Quasar op library
+# (ttnn::operations::experimental::quasar::binary).
 #
-# STATUS 2026-09-04: these are recorded as passing compile + numerical verify on
-# craq-sim, but that measurement predates the current tt-mlir/tt-metal pins and
-# could NOT be reproduced here -- see the module docstring. They are left
-# unmarked rather than xfailed because the failure is a livelock, not a failure:
-# an xfail on a run that never returns stalls the suite instead of reporting.
+# Measured 2026-09-07: Add gives PCC 0.999985 in ~1.4 s of execution. These are the
+# tests that establish the op path works end to end; keep them first so a run that
+# is cut short still tells you whether Quasar is alive.
 # Always run this file under a wall-clock `timeout`.
 # ---------------------------------------------------------------------------
 
 
-def test_add():
+def test_add_bf16():
+    _run_binary_op_bf16("Add", "quasar_add_bf16")
+
+
+def test_mul_bf16():
+    _run_binary_op_bf16("Mul", "quasar_mul_bf16")
+
+
+def test_sub_bf16():
+    _run_binary_op_bf16("Sub", "quasar_sub_bf16")
+
+
+def test_div_bf16():
+    _run_binary_op_bf16("Div", "quasar_div_bf16")
+
+
+# ---------------------------------------------------------------------------
+# OPEN: the same ops in f32 livelock. NOT xfail -- an xfail on a run that never
+# returns stalls the suite instead of reporting it, which is worse than a red test.
+# Deselect them with `-k "not f32"` when you only want the green path.
+#
+# f32 routes the SFPU kernel for every op (is_binary_sfpu_op is true for any f32 op,
+# including add), where bf16 takes the FPU kernel -- so this is a different compute
+# path, not merely a wider dtype. Metal's own QUASAR_PARITY_GAPS.md section 3 claims
+# f32 add/sub/mul/div work at PCC 1.0, which is not what we measure, so reconcile
+# against their test before filing anything.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.f32
+def test_add_f32():
     _run_binary_op("Add", "quasar_add")
 
 
-def test_mul():
+@pytest.mark.f32
+def test_mul_f32():
     _run_binary_op("Mul", "quasar_mul")
 
 
-def test_sub():
+@pytest.mark.f32
+def test_sub_f32():
     _run_binary_op("Sub", "quasar_sub")
 
 
-def test_div():
+@pytest.mark.f32
+def test_div_f32():
     _run_binary_op("Div", "quasar_div")
 
 

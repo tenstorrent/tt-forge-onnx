@@ -121,7 +121,50 @@ at collection time via a module-level `pytestmark`, not a fixture, because the r
 conftest's autouse property-recorder fixture already probes the device and there is no
 ordering guarantee that would let a fixture here run first.
 
-### Open blocker: the math unit never consumes its operands
+### Add runs on Quasar — in bf16, from `$TT_METAL_HOME`
+
+Measured 2026-09-07: a single ONNX `Add` compiles in ~13 s and executes in **1.4 s** on
+craq-sim at **PCC 0.999985**. Two things were needed, and neither was the op dispatch —
+that was already wired and already being reached, which is why "add is unmapped" was
+always the wrong diagnosis.
+
+**1. bf16, not f32.**
+
+```python
+cfg = CompilerConfig()
+cfg.default_df_override = forge._C.DataFormat.Float16_b
+compiled = forge.compile(onnx_model, inputs, compiler_cfg=cfg)
+```
+
+That makes the emitted TTNN tensors `bf16` (check with `"ttnn.add"(%0, %1) : (tensor<...xbf16`),
+which routes Quasar's `binary_ng` **FPU** kernel. f32 is not merely a wider dtype: it
+routes the **SFPU** kernel for every op — `is_binary_sfpu_op` is true for any f32 op,
+add included — so it is a different compute path, and it still livelocks. See below.
+
+**2. cwd must be `$TT_METAL_HOME`.** Quasar's `binary_ng` factory passes kernel include
+paths *relative* to the tt-metal root
+(`ttnn/.../quasar/binary_ng/device/binary_ng_utils.cpp:83`), and
+`resolve_compiler_include_dir` resolves them against `fs::current_path()` — **not**
+`TT_METAL_HOME` (`tt_metal/impl/kernels/kernel.cpp:100-112`). tt-metal's own suite
+always runs from its repo root, so this never bites there; forge is a different repo, so
+it does. Without it you get a fast, clear failure rather than a hang:
+
+```
+TT_THROW: Compiler include directory
+  'ttnn/cpp/ttnn/operations/experimental/quasar/binary_ng/device/kernels/compute'
+  not found relative to current working directory '/…/tt-forge-onnx'
+```
+
+`forge/test/mlir/test_quasar_sim.py` handles this itself with an autouse
+`_tt_metal_cwd` fixture, so the tests can be run from the forge repo root as usual.
+Outside pytest, `cd "$TT_METAL_HOME"` first.
+
+Note the interaction that made this hard to see: the cwd problem is invisible in f32
+(the f32 SFPU path uses a different include set and gets far enough to livelock), and
+the f32 livelock is invisible in bf16. Each masked the other, and the ruled-out table
+below — correctly — eliminated cwd as an explanation for the f32 stall specifically.
+
+### The f32 blocker: the math unit never consumes its operands
 
 `test_add` does not complete. Compilation is fine (~9 s); execution wedges. The
 simulator's Tensix detail telemetry, read in full:
@@ -165,7 +208,7 @@ Ruled out by measurement, not assumption:
 | Experimental parallel-clocking knobs | No. Identical signature with and without |
 | Unimplemented opcode in the simulator | No. `SEMPOST`/`SEMGET`/`SEMINIT`/`SEMWAIT` all have real Quasar executors |
 | A semaphore never posted | No. `semwait.active=0`, all semaphores below max |
-| cwd not `$TT_METAL_HOME` (relative kernel include path) | No. Same stall from `$TT_METAL_HOME` |
+| cwd not `$TT_METAL_HOME` (relative kernel include path) | No — for *this* stall. But do not read that as "cwd does not matter": it is a hard blocker on the bf16 path, see below |
 
 **Next step:** `TTSIM_STALLWAIT_TRACE` and `TTSIM_TENSIX_STALL_TRACE` (with their
 `_TILE` / `_CHIP` filters) to identify which wait-gate resource in `ttsync_resources`
@@ -424,7 +467,7 @@ QuasarDataMovementKernel instead". Attribute from the stack, not the test name.
 
 | Op | Status |
 |---|---|
-| Add, Mul, Sub, Div | run and verify |
+| Add, Mul, Sub, Div | **bf16: run and verify** (Add PCC 0.999985). f32 livelocks — different kernel path, see above |
 | relu | runs and verifies (PCC 0.95), but *rewritten*, not dispatched — see below |
 | to_layout, reshape, transpose/permute, reductions, pools, linear, matmul | dispatched to the Quasar op library |
 | Greater / Less / Equal / GE | **blocked, Metal ask** — but be precise: Quasar *does* have compare SFPU (`hw/ckernels/quasar/.../llk_math_eltwise_binary_sfpu_binary_comp.h`), Int32 only by `static_assert`. It is the **float** compares that are unported, listed as such in Metal's own `QUASAR_PARITY_GAPS.md:93`. Forge's ONNX comparisons are float, so they hit the unported path. |

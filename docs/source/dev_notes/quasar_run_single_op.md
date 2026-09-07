@@ -7,10 +7,10 @@ rather than merely compile.
 For what Quasar is, how the architecture reaches the compiler, and the current op
 status, see [Quasar](quasar.md). This page is only the mechanics.
 
-> **Expect the run to wedge.** As of 2026-09-04 compilation succeeds in about 9
-> seconds and execution then stalls. That is a known open blocker below forge, not a
-> mistake in your setup — see step 4. Follow this runbook to reproduce it, to test a
-> fix, or as the basis for a bisect.
+> **Two paths through this runbook.** Add/Mul/Sub/Div **run and verify in bf16** as of
+> 2026-09-07 (Add: PCC 0.999985, ~1.4 s of execution). The same ops in **f32 livelock** —
+> a known open blocker below forge, not a mistake in your setup. Steps 1-3 are common;
+> step 3 tells you which to run. See [Quasar](quasar.md) for why the two differ.
 
 ## 0. Check the stack is on the Quasar branches
 
@@ -129,7 +129,35 @@ session.
 
 ## 3. Run one op
 
-In its own pytest process, under a wall-clock timeout:
+### The green path — bf16
+
+```bash
+timeout 3600 python -u -m pytest -q \
+  forge/test/mlir/test_quasar_sim.py -k "bf16" 2>&1 | tee /tmp/qsr_bf16.log
+```
+
+Expect `4 passed` in a few minutes. Run it from the forge repo root as shown — the
+file's autouse `_tt_metal_cwd` fixture chdirs to `$TT_METAL_HOME` for you, which the
+Quasar `binary_ng` kernel include paths require.
+
+To do it outside pytest, set the dtype yourself and change directory first:
+
+```python
+cfg = CompilerConfig()
+cfg.default_df_override = forge._C.DataFormat.Float16_b
+compiled = forge.compile(onnx_model, inputs, compiler_cfg=cfg)
+```
+
+```bash
+cd "$TT_METAL_HOME"     # required: include paths resolve against the cwd
+python -u /path/to/your_script.py
+```
+
+Omit the `cd` and it fails fast and clearly with *"Compiler include directory
+'ttnn/cpp/.../binary_ng/device/kernels/compute' not found relative to current working
+directory"* — that is this mistake, not a Quasar problem.
+
+### The open path — f32
 
 ```bash
 export TTSIM_PROGRESS_HEARTBEAT_CLOCKS=10000000
@@ -137,13 +165,13 @@ export TTSIM_PROGRESS_DETAIL=1
 export TTSIM_PROGRESS_TENSIX_DETAIL_STUCK_ONLY=1
 
 timeout 3600 python -u -m pytest -svv \
-  forge/test/mlir/test_quasar_sim.py::test_add 2>&1 | tee /tmp/qsr_add.log
+  forge/test/mlir/test_quasar_sim.py::test_add_f32 2>&1 | tee /tmp/qsr_add.log
 ```
 
-Swap the op by changing the test id: `::test_mul`, `::test_sub`, `::test_div`,
-`::test_relu`. All take the same path.
+This one wedges; follow step 4. It is deliberately not `xfail`ed, because an xfail on a
+run that never returns stalls the suite instead of reporting.
 
-Two things that are not optional:
+Two things that are not optional for either path:
 
 * **Its own process.** tt-metal's `RunTimeOptions` and forge's `TTSystem` are both
   construct-once-per-process, so the first test to touch a device fixes
@@ -154,7 +182,7 @@ Two things that are not optional:
   A sub-hour timeout will kill a healthy run, and a killed run is indistinguishable
   from a hang.
 
-## 4. What you will see
+## 4. What you will see on the f32 path
 
 Compilation succeeds quickly:
 
@@ -164,7 +192,8 @@ INFO | forge.compiled_graph_state:__call__:334 - Running model ModelProto forwar
 ```
 
 Then execution wedges, with `pending_tensix=4` in every heartbeat and never
-returning. Four Tensix pipes stall symmetrically with both operands unpacked and the
+returning. (On the bf16 path it instead executes in about a second and the test
+passes — if bf16 wedges for you, something in steps 0-2 is wrong.) Four Tensix pipes stall symmetrically with both operands unpacked and the
 math unit never consuming them. Full evidence and the ruled-out hypotheses are in
 [Quasar](quasar.md).
 
