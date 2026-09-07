@@ -3,21 +3,21 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Generate the Quasar bringup phase diagram.
+"""Generate the stage-wise Quasar support flow.
 
   docs/source/imgs/compiler_arch/quasar-bringup-phases.drawio.svg
 
-An SVG that is also a diagrams.net document: the mxfile XML rides in the `content`
-attribute of the <svg> root, so the same file renders in the docs and opens editable
-at app.diagrams.net.
+An SVG that is also a diagrams.net document, so it renders in the docs and opens
+editable at app.diagrams.net.
 
-This draws the *dependency structure*, not a list of eight phases -- the list is in
-docs/source/dev_notes/quasar.md and needs no picture. What needs a picture is that the
-critical path runs through execution rather than op dispatch: dispatch work cannot be
-validated while nothing runs, so the intuitive descriptor -> ops -> execute ordering
-wastes effort.
+One left-to-right chain of stages, each carrying its status, what it delivers and the
+files it touches. Drawn as a flow rather than a dependency graph because the ordering
+is the lesson: the critical path runs through stage 2, execution, not stage 3, op
+dispatch -- dispatch work cannot be validated while nothing runs, so the intuitive
+descriptor-then-ops-then-execute ordering wastes effort.
 
-Styles are imported from gen_pipeline_diagram.py so both diagrams read as one family.
+Status is per stage and current as of the header date. Regenerate after any stage
+moves; the generator checks that every source anchor it quotes still resolves.
 
     python scripts/gen_quasar_phase_diagram.py
     python scripts/gen_quasar_phase_diagram.py --check
@@ -45,173 +45,182 @@ OUT = os.path.join(
     "quasar-bringup-phases.drawio.svg",
 )
 
-W, H = 1880, 830
-BW, BH = 322, 156
+W, H = 2200, 700
+BW, BH = 240, 258
+GAP = 28
+X0 = 40
+ROW_Y = 190
 
-# tone -> (fill, stroke, font) reused from the pipeline diagram's badge palette.
-# SYSDESC = the unblocking spine, PATCHED = ours, BLOCKED = external/Metal,
-# NEUTRAL = deferred.
-OWNER = {
-    SYSDESC: "ours · blocking",
-    PATCHED: "ours",
-    BLOCKED: "Metal owns",
-    NEUTRAL: "deferred",
-}
+TITLE = "Quasar support, stage by stage"
+SUB = ("Status as of 2026-09-07. The ordering is the lesson: the critical path runs "
+       "through stage 2, not stage 3 — op dispatch cannot be validated while nothing "
+       "executes.")
 
-NODES = [
+DONE, NOW, NEXT, EXT, LATER = "done", "now", "next", "external", "later"
+STATUS_TONE = {DONE: SYSDESC, NOW: PATCHED, NEXT: PATCHED,
+               EXT: BLOCKED, LATER: NEUTRAL}
+STATUS_LABEL = {DONE: "DONE", NOW: "GREEN — as of today", NEXT: "NEXT — the bulk",
+                EXT: "METAL OWNS", LATER: "AFTER CORRECTNESS"}
+
+STAGES = [
     dict(
-        id="p00", x=40, y=150, num="00", tone=SYSDESC,
-        title="Stop the work evaporating",
+        id="s0", n="0", title="Make the work survive",
+        status=DONE, owner="ours",
         lines=[
+            "Quasar support lives on branches that",
+            "the build force-checks-out back to its",
+            "pins. It had already silently reverted",
+            "once.",
+            "",
+            "DONE: tt-mlir branch pushed, forge pin",
+            "bumped to it, so a force-checkout now",
+            "lands ON the fix.",
+            "",
             "third_party/tt-mlir gitlink",
-            "tt-mlir/third_party/CMakeLists.txt:3",
+            "third_party/CMakeLists.txt:3",
+        ],
+    ),
+    dict(
+        id="s1", n="1", title="Descriptor truth",
+        status=DONE, owner="ours",
+        lines=[
+            "The compiler is arch-neutral, so the",
+            "descriptor's numbers are the ONLY route",
+            "an arch reaches compilation.",
             "",
-            "no source edits — pins only",
-        ],
-    ),
-    dict(
-        id="p01", x=400, y=150, num="01", tone=SYSDESC,
-        title="Descriptor truth",
-        lines=[
-            "TTCoreOpsTypes.cpp:85-99",
-            "runtime/lib/common/system_desc.cpp",
-            "  :181-198 formats  :238 num_cbs",
-            "+ 6 Arch::WormholeB0 defaults",
-        ],
-    ),
-    dict(
-        id="p02", x=760, y=150, num="02", tone=SYSDESC,
-        title="Get anything to execute",
-        lines=[
-            "craq-sim unpack→math stall",
-            "srcA/srcB valid=1 unpack=1 matrix=0",
-            "scripts/quasar_sim_env.sh",
+            "DONE: data formats now come from",
+            "tt::is_data_format_supported, not a",
+            "hardcoded Wormhole list. num_cbs from",
+            "the HAL. Quasar 5 formats, WH 13.",
             "",
+            "TTCoreOpsTypes.cpp:85",
+            "system_desc.cpp:181, :238",
         ],
     ),
     dict(
-        id="p03", x=1180, y=150, num="03", tone=PATCHED,
-        title="Finish runtime op dispatch",
+        id="s2", n="2", title="Get anything to execute",
+        status=NOW, owner="ours",
         lines=[
-            "tt-mlir/runtime/lib/ttnn/operations/**",
-            "9 of 121 files routed today",
-            "forge/test/mlir/test_quasar_sim.py",
-            "demand-driven, not all 131 OpTypes",
-        ],
-    ),
-    dict(
-        id="p04", x=760, y=390, num="04", tone=BLOCKED, dashed=True,
-        title="The genuine Metal asks",
-        lines=[
-            "quasar/conv2d/** + program_spec.cpp",
-            "float compares (tt_llk_quasar)",
-            "int32 DFB · max/min reroute",
-            "QUASAR_PARITY_GAPS.md §Priorities",
-        ],
-    ),
-    dict(
-        id="p05", x=1180, y=600, num="05", tone=PATCHED,
-        title="Perf modelling",
-        lines=[
-            "TTNNCollectPerfMetrics.cpp",
-            "  :809-827 BW/AICLK  :1063-1077 skip",
-            "profiler kernel_profiler.hpp:115",
+            "THE CRITICAL PATH. Until a graph runs,",
+            "every dispatch change in stage 3 is",
+            "unverifiable — you can compile it, but",
+            "not tell correct from wrong.",
             "",
+            "GREEN: Add/Mul/Sub/Div run and verify",
+            "in bf16. Add PCC 0.999985, ~1.4 s.",
+            "Needed bf16 + cwd=$TT_METAL_HOME.",
+            "",
+            "OPEN: f32 livelocks — SFPU vs FPU",
+            "kernel, a different compute path.",
         ],
     ),
     dict(
-        id="p06", x=760, y=600, num="06", tone=PATCHED,
-        title="Turn the optimizer on",
+        id="s3", n="3", title="Finish op dispatch",
+        status=NEXT, owner="ours",
         lines=[
-            "tt-mlir/CMakeLists.txt:40  (OFF)",
-            "SingletonDeviceContext.cpp:266, :83-112",
+            "Where the arches actually diverge, and",
+            "the bulk of our work. Mechanical: an",
+            "isQuasar() branch and a namespace swap.",
             "",
-            "where arch-neutrality ENDS",
+            "9 of 121 runtime op files wired today.",
+            "28 Quasar op families exist in tt-metal,",
+            "10 reached — so 18 are available and",
+            "unwired: pad, slice, transpose, typecast,",
+            "to_memory_config, tilize/untilize, ...",
+            "",
+            "Scope from the target model, not the",
+            "131 OpTypes.",
         ],
     ),
     dict(
-        id="p07", x=400, y=600, num="07", tone=NEUTRAL, dashed=True,
-        title="Scale-out & the D2M path",
+        id="s4", n="4", title="The genuine Metal asks",
+        status=EXT, owner="Metal",
         lines=[
-            "tt_metal impl/dispatch/topology.cpp:494",
-            "D2M/Utils/DMAUtils.cpp:51-60",
+            "Not ours. Cite rather than rediscover —",
+            "QUASAR_PARITY_GAPS.md §Priorities is",
+            "Metal's own owned list.",
             "",
-            "hard-rejected upstream today",
+            "conv2d: Gen1/Gen2 compute-config",
+            "  mismatch, tt-metal #48552",
+            "float compares: unported (Quasar HAS",
+            "  compare SFPU, Int32 only)",
+            "int32 DFB bug · max/min reroute",
+            "a unary family, if relu-as-add is not",
+            "  acceptable long term",
+        ],
+    ),
+    dict(
+        id="s5", n="5", title="Perf modelling",
+        status=LATER, owner="ours",
+        lines=[
+            "The pass self-disables on Quasar rather",
+            "than producing wrong numbers, which is",
+            "the right default — but it means no",
+            "perf estimate exists at all.",
+            "",
+            "No calibrated DRAM BW or AICLK.",
+            "cyclesPerTileMatmul hardcoded.",
+            "Device profiling blocked upstream.",
+            "",
+            "TTNNCollectPerfMetrics.cpp:809, :1063",
+        ],
+    ),
+    dict(
+        id="s6", n="6", title="Turn the optimizer on",
+        status=LATER, owner="ours",
+        lines=[
+            "Where arch-neutrality ENDS — and where",
+            "the performance story lives.",
+            "",
+            "Every pass is arch-neutral today only",
+            "because TTMLIR_ENABLE_OPMODEL is OFF, so",
+            "nothing shards or picks L1 layouts and",
+            "everything lands DRAM-interleaved at",
+            "opt level 0.",
+            "",
+            "Quasar's 4 MiB L1 — 2.8x Wormhole's —",
+            "is currently unexploited.",
+            "",
+            "CMakeLists.txt:40",
+        ],
+    ),
+    dict(
+        id="s7", n="7", title="Scale-out & D2M",
+        status=LATER, owner="deferred",
+        lines=[
+            "Hard-rejected upstream today. Listed so",
+            "nobody plans around them, not because",
+            "they need doing now.",
+            "",
+            "Multi-chip dispatch TT_THROWs.",
+            "D2M -> TTMetal/TTKernel hard-errors, so",
+            "only the TTNN path is viable — which is",
+            "the path forge takes anyway.",
+            "",
+            "topology.cpp:494",
+            "DMAUtils.cpp:51-60",
         ],
     ),
 ]
 
-BY_ID = {n["id"]: n for n in NODES}
-
-# (src, dst, label, waypoint route for the SVG, dashed)
-EDGES = [
-    ("p00", "p01", "", [(362, 228), (400, 228)], False),
-    ("p01", "p02", "", [(722, 228), (760, 228)], False),
-    (
-        "p02", "p03", "gates validation of",
-        [(1082, 228), (1180, 228)], False,
-    ),
-    (
-        "p04", "p03", "unblocks specific ops",
-        [(1082, 468), (1130, 468), (1130, 280), (1180, 280)], True,
-    ),
-    (
-        "p03", "p05", "only after correctness holds",
-        [(1341, 306), (1341, 600)], False,
-    ),
-    ("p05", "p06", "", [(1180, 678), (1082, 678)], False),
-    ("p06", "p07", "", [(760, 678), (722, 678)], True),
+FOOT = [
+    "Stages 0-2 are green as of today, which is what unblocked everything downstream — stage 3 was always the bigger pile of work, but it was unmeasurable until stage 2 landed.",
+    "What needs NO stage: every pass in ttir-to-ttnn-backend-pipeline (all 57, measured — the two arch dumps differ on three descriptor lines), the forge frontend and TVM path, and the flatbuffer schema.",
 ]
 
-# Anchors quoted in the drawing, checked before anything is written. check_anchors()
-# reads the anchor at index 1 of each row, so the label comes first.
-ANCHOR_ROWS = [
-    ("phase diagram", [
-        ("pin", "third_party/tt-mlir/third_party/CMakeLists.txt:3"),
-        ("mock descriptor formats",
-         "third_party/tt-mlir/lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp:99"),
-        ("live descriptor num_cbs",
-         "third_party/tt-mlir/runtime/lib/common/system_desc.cpp:238"),
-        ("perf metrics skip",
-         "third_party/tt-mlir/lib/Dialect/TTNN/Transforms/TTNNCollectPerfMetrics.cpp:1077"),
-        ("opmodel arch default",
-         "third_party/tt-mlir/lib/OpModel/TTNN/SingletonDeviceContext.cpp:266"),
-        ("d2m quasar reject",
-         "third_party/tt-mlir/lib/Dialect/D2M/Utils/DMAUtils.cpp:60"),
-        ("opmodel switch", "third_party/tt-mlir/CMakeLists.txt:40"),
-        ("sim test", "forge/test/mlir/test_quasar_sim.py"),
-        ("sim env", "scripts/quasar_sim_env.sh"),
-    ]),
-]
-
-NO_CHANGE = [
-    "every pass in ttir-to-ttnn-backend-pipeline",
-    "  all 57 — measured, 3-line arch diff",
-    "the forge frontend and TVM path",
-    "the flatbuffer schema (carries system_desc)",
-    "forge/forge/tools/*.py  (netlist-era dead code)",
-    "device_config.hpp is_wormhole_b0()  (inert)",
-]
-
-TITLE = "Adding Quasar device support to tt-forge-onnx — the eight phases and what gates what"
-SUB = (
-    "The critical path runs through 02, not 03: op dispatch cannot be validated while "
-    "nothing executes. Solid arrows are hard dependencies. "
-    "generated by scripts/gen_quasar_phase_diagram.py"
-)
+ANCHOR_ROWS = [("stages", [
+    ("pin", "third_party/tt-mlir/third_party/CMakeLists.txt:3"),
+    ("mock desc", "third_party/tt-mlir/lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp:99"),
+    ("live desc", "third_party/tt-mlir/runtime/lib/common/system_desc.cpp:238"),
+    ("sim test", "forge/test/mlir/test_quasar_sim.py"),
+    ("perf", "third_party/tt-mlir/lib/Dialect/TTNN/Transforms/TTNNCollectPerfMetrics.cpp:1063"),
+    ("opmodel", "third_party/tt-mlir/CMakeLists.txt:40"),
+    ("d2m", "third_party/tt-mlir/lib/Dialect/D2M/Utils/DMAUtils.cpp:60"),
+])]
 
 
-def node_html(n):
-    parts = [
-        f'<b>{n["num"]}  {escape(n["title"])}</b>',
-        f'<font style="font-size:9.5px;color:#5b6472">{escape(OWNER[n["tone"]])}</font>',
-        "",
-    ]
-    for l in n["lines"]:
-        parts.append(
-            f'<font style="font-size:9px">{escape(l)}</font>' if l else "&nbsp;"
-        )
-    return "<br>".join(parts)
+def sx(i):
+    return X0 + i * (BW + GAP)
 
 
 def emit_mxfile():
@@ -222,152 +231,118 @@ def emit_mxfile():
             f'<mxCell id={quoteattr(cid)} value={quoteattr(value)} '
             f'style={quoteattr(style)} vertex="1" parent="1">'
             f'<mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />'
-            "</mxCell>"
-        )
+            "</mxCell>")
 
-    cell(
-        "title",
-        f'<b>{escape(TITLE)}</b><br>'
-        f'<font style="font-size:10px">{escape(SUB)}</font>',
-        "text;html=1;align=left;verticalAlign=middle;fontSize=15;fontColor=#0f172a;",
-        40, 40, W - 80, 60,
-    )
+    cell("title",
+         f'<b>{escape(TITLE)}</b><br><font style="font-size:11px">{escape(SUB)}</font>',
+         "text;html=1;align=left;verticalAlign=middle;fontSize=17;fontColor=#0f172a;",
+         40, 30, W - 80, 60)
 
-    for n in NODES:
-        fill, stroke, font = BADGE_STYLE[n["tone"]]
-        style = (
-            f"rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor={fill};"
-            f"strokeColor={stroke};fontColor={font};align=left;verticalAlign=top;"
-            "spacingLeft=10;spacingTop=4;fontSize=11;"
-            + ("dashed=1;" if n.get("dashed") else "")
-        )
-        cell(n["id"], node_html(n), style, n["x"], n["y"], BW, BH)
+    for i, s in enumerate(STAGES):
+        fill, stroke, font = BADGE_STYLE[STATUS_TONE[s["status"]]]
+        style = (f"rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor={fill};"
+                 f"strokeColor={stroke};fontColor={font};align=left;verticalAlign=top;"
+                 "spacingLeft=10;spacingTop=6;fontSize=12;strokeWidth=1.6;")
+        body = [
+            f'<b>{s["n"]} · {escape(s["title"])}</b>',
+            f'<font style="font-size:9px"><b>{escape(STATUS_LABEL[s["status"]])}</b>'
+            f'&nbsp;&nbsp;<font style="color:#5b6472">{escape(s["owner"])}</font></font>',
+            "",
+        ]
+        body += [f'<font style="font-size:9px">{escape(l)}</font>' if l else "&nbsp;"
+                 for l in s["lines"]]
+        cell(s["id"], "<br>".join(body), style, sx(i), ROW_Y, BW, BH)
 
-    for i, (src, dst, label, _route, dashed) in enumerate(EDGES):
-        style = (
-            "edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;"
-            "strokeColor=#4b5563;strokeWidth=1.8;fontSize=9;labelBackgroundColor=none;"
-            + ("dashed=1;" if dashed else "")
-        )
+    for i in range(len(STAGES) - 1):
+        gate = i == 2
+        style = ("edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;"
+                 "endFill=1;fontSize=9;labelBackgroundColor=none;"
+                 + ("strokeColor=#b8791f;strokeWidth=3;" if gate
+                    else "strokeColor=#3f4854;strokeWidth=2.2;"))
         cells.append(
-            f'<mxCell id="e{i}" value={quoteattr(label)} style={quoteattr(style)} '
-            f'edge="1" parent="1" source={quoteattr(src)} target={quoteattr(dst)}>'
-            '<mxGeometry relative="1" as="geometry" /></mxCell>'
-        )
+            f'<mxCell id="e{i}" value={quoteattr("gates" if gate else "")} '
+            f'style={quoteattr(style)} edge="1" parent="1" '
+            f'source={quoteattr(STAGES[i]["id"])} '
+            f'target={quoteattr(STAGES[i + 1]["id"])}>'
+            '<mxGeometry relative="1" as="geometry" /></mxCell>')
 
-    cell(
-        "nochange",
-        "<b>Needs no change at all</b><br>"
-        + "<br>".join(
-            f'<font style="font-size:9px">{escape(l)}</font>' for l in NO_CHANGE
-        ),
-        "rounded=0;whiteSpace=wrap;html=1;fillColor=#f4f5f9;strokeColor=#94a3b8;"
-        "fontColor=#0f172a;align=left;verticalAlign=top;spacingLeft=10;spacingTop=4;"
-        "fontSize=11;dashed=1;",
-        40, 390, BW, 156,
-    )
-
+    cell("foot", "<br>".join(f'<font style="font-size:10px">{escape(l)}</font>'
+                             for l in FOOT),
+         "text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#3f4854;",
+         40, 480, W - 80, 46)
     body = "".join(cells)
-    return (
-        '<mxfile host="app.diagrams.net" agent="gen_quasar_phase_diagram.py" '
-        'type="device"><diagram id="quasar-bringup-phases" name="quasar phases">'
-        f'<mxGraphModel dx="{W}" dy="{H}" grid="0" gridSize="10" guides="1" '
-        'tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" '
-        f'pageWidth="{W}" pageHeight="{H}" math="0" shadow="0">'
-        f"<root>{body}</root></mxGraphModel></diagram></mxfile>"
-    )
+    return ('<mxfile host="app.diagrams.net" agent="gen_quasar_phase_diagram.py" '
+            'type="device"><diagram id="quasar-stages" name="quasar stages">'
+            f'<mxGraphModel dx="{W}" dy="{H}" grid="0" gridSize="10" guides="1" '
+            'tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" '
+            f'pageWidth="{W}" pageHeight="{H}" math="0" shadow="0">'
+            f"<root>{body}</root></mxGraphModel></diagram></mxfile>")
 
 
 def emit_svg(mxfile):
     p = [f'<rect x="0" y="0" width="{W}" height="{H}" fill="#ffffff"/>']
-    p.append(svg_text(40, 62, TITLE, 16, "bold"))
-    for i, chunk in enumerate(
-        [SUB[:104], SUB[104:]] if len(SUB) > 104 else [SUB]
-    ):
-        p.append(svg_text(40, 82 + i * 14, chunk.strip(), 10.5, "normal", "#5b6472"))
+    p.append(svg_text(40, 44, TITLE, 18, "bold"))
+    words, lines, cur = SUB.split(), [], ""
+    for w in words:
+        if len(f"{cur} {w}".strip()) <= 150:
+            cur = f"{cur} {w}".strip()
+        else:
+            lines.append(cur); cur = w
+    if cur:
+        lines.append(cur)
+    for i, l in enumerate(lines):
+        p.append(svg_text(40, 64 + i * 14, l, 11, "normal", "#5b6472"))
 
-    def box(x, y, w, h, tone, dashed, heading, sub, lines):
-        fill, stroke, font = BADGE_STYLE[tone]
-        dash = ' stroke-dasharray="6,4"' if dashed else ""
-        out = [
-            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="5" fill="{fill}" '
-            f'stroke="{stroke}" stroke-width="1.3"{dash}/>'
-        ]
-        out.append(svg_text(x + 11, y + 22, heading, 12, "bold", font))
-        if sub:
-            out.append(svg_text(x + 11, y + 37, sub, 9.5, "normal", "#5b6472"))
-        ty = y + 58
-        for l in lines:
+    for i, s in enumerate(STAGES):
+        fill, stroke, font = BADGE_STYLE[STATUS_TONE[s["status"]]]
+        x = sx(i)
+        p.append(f'<rect x="{x}" y="{ROW_Y}" width="{BW}" height="{BH}" rx="11" '
+                 f'fill="{fill}" stroke="{stroke}" stroke-width="1.6"/>')
+        p.append(svg_text(x + 11, ROW_Y + 22, f'{s["n"]} · {s["title"]}', 12, "bold",
+                          font))
+        p.append(svg_text(x + 11, ROW_Y + 37, STATUS_LABEL[s["status"]], 9, "bold",
+                          stroke))
+        p.append(svg_text(x + 11 + int(len(STATUS_LABEL[s["status"]]) * 5.2) + 10,
+                          ROW_Y + 37, s["owner"], 9, "normal", "#5b6472"))
+        ty = ROW_Y + 54
+        for l in s["lines"]:
             if l:
-                out.append(svg_text(x + 11, ty, l, 9, "normal", "#3f4854"))
-            ty += 13
-        return out
+                p.append(svg_text(x + 11, ty, l, 9, "normal", "#3f4854"))
+            ty += 11.5
 
-    for n in NODES:
-        p += box(
-            n["x"], n["y"], BW, BH, n["tone"], n.get("dashed"),
-            f'{n["num"]}  {n["title"]}', OWNER[n["tone"]], n["lines"],
-        )
+    y = ROW_Y + BH / 2
+    for i in range(len(STAGES) - 1):
+        gate = i == 2
+        col = "#b8791f" if gate else "#3f4854"
+        wid = "3" if gate else "2.2"
+        mk = "url(#sg)" if gate else "url(#sa)"
+        p.append(f'<path d="M {sx(i) + BW} {y} L {sx(i + 1) - 5} {y}" '
+                 f'stroke="{col}" stroke-width="{wid}" fill="none" marker-end="{mk}"/>')
+        if gate:
+            p.append(f'<rect x="{sx(i) + BW + 1}" y="{y - 18}" width="30" height="13" '
+                     'fill="#ffffff" stroke="none"/>')
+            p.append(f'<text x="{sx(i) + BW + 3}" y="{y - 8}" '
+                     'font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
+                     f'font-size="9.5" font-weight="bold" fill="{col}">gates</text>')
 
-    p += box(40, 390, BW, 156, NEUTRAL, True, "Needs no change at all", "", NO_CHANGE)
+    for i, l in enumerate(FOOT):
+        p.append(svg_text(40, 494 + i * 15, l, 10, "normal", "#3f4854"))
 
-    for src, dst, label, route, dashed in EDGES:
-        d = " ".join(
-            ("M" if i == 0 else "L") + f" {x} {y}" for i, (x, y) in enumerate(route)
-        )
-        dash = ' stroke-dasharray="6,4"' if dashed else ""
-        p.append(
-            f'<path d="{d}" stroke="#4b5563" stroke-width="1.8" fill="none"'
-            f'{dash} marker-end="url(#pa)"/>'
-        )
-        if label:
-            mx = sum(x for x, _ in route) / len(route)
-            my = min(y for _, y in route)
-            p.append(
-                f'<rect x="{mx - len(label) * 2.6 - 5}" y="{my - 18}" '
-                f'width="{len(label) * 5.2 + 10}" height="14" fill="#ffffff" '
-                'stroke="none"/>'
-            )
-            p.append(
-                f'<text x="{mx}" y="{my - 7}" text-anchor="middle" '
-                'font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
-                f'font-size="9.5" fill="#4b5563">{escape(label)}</text>'
-            )
-
-    lx, ly = 40, H - 22
-    p.append(svg_text(lx, ly, "legend:", 10, "bold", "#3f4854"))
-    lx += 62
-    for tone, text in (
-        (SYSDESC, "the unblocking spine"),
-        (PATCHED, "ours"),
-        (BLOCKED, "Metal owns"),
-        (NEUTRAL, "deferred / no change"),
-    ):
-        fill, stroke, _ = BADGE_STYLE[tone]
-        p.append(
-            f'<rect x="{lx}" y="{ly - 9}" width="12" height="11" rx="2" '
-            f'fill="{fill}" stroke="{stroke}"/>'
-        )
-        p.append(svg_text(lx + 17, ly, text, 9.5, "normal", "#3f4854"))
-        lx += 32 + int(len(text) * 5.9)
-
-    defs = (
-        "<defs>"
-        '<marker id="pa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
-        'markerHeight="7" orient="auto-start-reverse">'
-        '<path d="M 0 1 L 9 5 L 0 9 z" fill="#4b5563"/></marker>'
-        "</defs>"
-    )
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="{W}" '
-        f'height="{H}" viewBox="0 0 {W} {H}" content={quoteattr(mxfile)}>'
-        f"{defs}{''.join(p)}</svg>\n"
-    )
+    defs = ("<defs>"
+            + "".join(
+                f'<marker id="{n}" viewBox="0 0 10 10" refX="9" refY="5" '
+                'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+                f'<path d="M 0 1 L 9 5 L 0 9 z" fill="{c}"/></marker>'
+                for n, c in (("sa", "#3f4854"), ("sg", "#b8791f")))
+            + "</defs>")
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="{W}" '
+            f'height="{H}" viewBox="0 0 {W} {H}" content={quoteattr(mxfile)}>'
+            f"{defs}{''.join(p)}</svg>\n")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--check", action="store_true", help="verify only, write nothing")
+    ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
 
     bad, seen = check_anchors(ANCHOR_ROWS)
@@ -377,21 +352,22 @@ def main():
         raise SystemExit(f"{len(bad)} of {seen} anchors do not resolve")
     print(f"anchors: {seen} checked, all resolve")
 
-    ids = {n["id"] for n in NODES}
-    dangling = [(s, d) for s, d, _, _, _ in EDGES if s not in ids or d not in ids]
-    if dangling:
-        raise SystemExit(f"edges reference unknown nodes: {dangling}")
-    for n in NODES:
-        if n["x"] + BW > W or n["y"] + BH > H:
-            raise SystemExit(f"node {n['id']} falls outside the {W}x{H} canvas")
-    print(f"graph: {len(NODES)} phases, {len(EDGES)} dependencies, no dangling edges")
+    right = sx(len(STAGES) - 1) + BW
+    if right > W - 20:
+        raise SystemExit(f"chain ends at {right}, past the {W}px canvas")
+    if ROW_Y + BH > H - 20:
+        raise SystemExit("stages overflow the canvas height")
+    longest = max(len(l) for s in STAGES for l in s["lines"])
+    if longest * 5.2 + 22 > BW:
+        raise SystemExit(f"a body line needs {longest * 5.2 + 22:.0f}px, box is {BW}")
+    print(f"layout: {len(STAGES)} stages, chain ends at x={right}, "
+          f"longest line {longest} chars, fits")
 
     mxfile = emit_mxfile()
     svg = emit_svg(mxfile)
     if args.check:
         print("--check: nothing written")
         return
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w") as fh:
         fh.write(svg)
     print(f"wrote {os.path.relpath(OUT, REPO)} ({len(svg) // 1024} KiB, {W}x{H})")

@@ -424,25 +424,35 @@ One structural consequence worth recording: `D2M → TTMetal/TTKernel` lowering 
 on Quasar (`lib/Dialect/D2M/Utils/DMAUtils.cpp:51-60`), so **only the TTNN path is
 viable** — which is the path forge takes anyway.
 
-### Phases, and what gates what
+### Support, stage by stage
 
-![Quasar bringup phases](../imgs/compiler_arch/quasar-bringup-phases.drawio.svg "Quasar bringup phases")
+![Quasar support, stage by stage](../imgs/compiler_arch/quasar-bringup-phases.drawio.svg "Quasar stages")
+
+Eight stages left to right, each with its current status. Stages 0-2 are green as of
+2026-09-07, which is what unblocked everything downstream.
 
 The ordering is the part worth internalising, because the intuitive one wastes effort.
-**The critical path runs through phase 02 (execution), not phase 03 (op dispatch).** You
-can compile a Quasar binary for any op today; you cannot tell a correct one from a wrong
-one until a graph actually runs, so dispatch work done before that is unverifiable.
+**The critical path runs through stage 2 (execution), not stage 3 (op dispatch)** — that
+is the only arrow marked *gates*. Stage 3 is by far the bigger pile of work, but it was
+unmeasurable until stage 2 landed: you can compile a Quasar binary for any op, and
+without execution you cannot tell a correct one from a wrong one.
 
-Phase 06 is the one that contradicts the section above: every pass is arch-neutral
-*today* only because `TTMLIR_ENABLE_OPMODEL` defaults OFF
-(`third_party/tt-mlir/CMakeLists.txt:40`), so nothing performs sharding or L1 layout
-selection and everything lands DRAM-interleaved at optimization level 0. Quasar's 4 MiB
-L1 — 2.8x Wormhole's — is not exploited at all. Turning the optimizer on is where
-genuine arch-aware compiler work begins.
+Two calibrations on the table:
 
-Regenerate with `python scripts/gen_quasar_phase_diagram.py`. Like the pipeline diagram
-it is a diagrams.net document as well as an image, and it checks every source anchor it
-quotes before writing.
+* **Stage 3 is smaller than it looks.** Not 131 op types, not 121 files. tt-metal
+  implements 28 Quasar op families, ten of which are reached today — so eighteen
+  already exist and are simply unwired (`pad`, `slice`, `transpose`, `typecast`,
+  `to_memory_config`, `tilize`/`untilize`, …), each an `isQuasar()` branch and a
+  namespace swap. Then subtract the ops that need no Quasar path at all because they
+  build no kernel: `deallocate` and `get_device` run straight through mainline.
+* **Stage 6 contradicts the arch-neutrality claim above, deliberately.** Every pass is
+  arch-neutral *today* only because `TTMLIR_ENABLE_OPMODEL` defaults OFF
+  (`third_party/tt-mlir/CMakeLists.txt:40`), so nothing shards or picks an L1 layout and
+  everything lands DRAM-interleaved at optimization level 0. Quasar's 4 MiB L1 — 2.8x
+  Wormhole's — is unexploited. Turning the optimizer on is where genuine arch-aware
+  compiler work begins, and where the performance story lives.
+
+Regenerate with `python scripts/gen_quasar_phase_diagram.py` after any stage moves.
 
 ### The picture
 

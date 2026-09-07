@@ -281,6 +281,55 @@ time.
 
 ---
 
+## 6b · Where this sits in the whole bring-up  (2 min)
+
+Show `imgs/compiler_arch/quasar-bringup-phases.drawio.svg` — eight stages, left to
+right, each with its status.
+
+**Lead with the ordering, because it is the counterintuitive part:**
+
+> **The critical path runs through stage 2, execution — not stage 3, op dispatch. Stage
+> 3 is by far the bigger pile of work, but it was unmeasurable until stage 2 landed:
+> you can compile a Quasar binary for any op, and without execution you cannot tell a
+> correct one from a wrong one.**
+
+That is why the arrow from 2 to 3 is the only one marked *gates*.
+
+| Stage | | Status |
+|---|---|---|
+| 0 | Make the work survive | **done** — branch pushed, pin bumped, so a force-checkout lands on the fix |
+| 1 | Descriptor truth | **done** — formats from the tt-metal API, `num_cbs` from the HAL |
+| 2 | Get anything to execute | **green today** — bf16 runs; f32 open |
+| 3 | Finish op dispatch | **next, the bulk** — 9 of 121 files wired; 18 more Quasar families already exist unwired |
+| 4 | The genuine Metal asks | **Metal owns** — conv2d, float compares, int32 DFB, max/min reroute |
+| 5 | Perf modelling | after correctness — no calibrated DRAM BW or AICLK exists |
+| 6 | Turn the optimizer on | after correctness — **this is where the performance story lives** |
+| 7 | Scale-out & D2M | deferred — hard-rejected upstream |
+
+Two things worth saying out loud about this table.
+
+**Stage 3 is smaller than it looks.** Not 131 op types and not 121 files. tt-metal
+implements 28 Quasar op families; ten are reached today, so **eighteen already exist and
+are simply unwired** — `pad`, `slice`, `transpose`, `typecast`, `to_memory_config`,
+`tilize`/`untilize` and so on. Each is an `isQuasar()` branch and a namespace swap. Then
+subtract the ops that need no Quasar path at all, because they build no kernel —
+`deallocate` and `get_device` run straight through mainline. Scope it from the model you
+care about, not the op list.
+
+**Stage 6 is the one that contradicts everything else we have said:**
+
+> **Every pass is arch-neutral *today* only because `TTMLIR_ENABLE_OPMODEL` defaults
+> OFF. Nothing shards, nothing picks an L1 layout, and everything lands DRAM-interleaved
+> at optimization level 0. Quasar's 4 MiB of L1 — 2.8 times Wormhole's — is not
+> exploited at all. Turning the optimizer on is where genuine arch-aware compiler work
+> begins, and where the performance story lives.**
+
+If someone asks what needs *no* stage: every pass in `ttir-to-ttnn-backend-pipeline`,
+the forge frontend and TVM path, and the flatbuffer schema. That is the measurement from
+§1 — the two arch dumps differ on three descriptor lines.
+
+---
+
 ## 7 · Questions you should expect
 
 **"Why not just bump the tt-metal pin?"**
@@ -315,7 +364,7 @@ in tt-metal waiting to be wired. Genuine Metal asks are conv2d and the float com
 | This script's diagram | `imgs/compiler_arch/quasar-changes.drawio.svg` |
 | The full single-op path, pass by pass | `imgs/compiler_arch/forge-onnx_overview.drawio.svg` |
 | How an op is mapped onto Quasar | `imgs/compiler_arch/quasar-add-mapping.drawio.svg` |
-| The bring-up phases and what gates what | `imgs/compiler_arch/quasar-bringup-phases.drawio.svg` |
+| The stage-wise support flow, with status | `imgs/compiler_arch/quasar-bringup-phases.drawio.svg` |
 | Background and op status | [Quasar](quasar.md) |
 | Step-by-step run instructions | [Running a single op on Quasar](quasar_run_single_op.md) |
 | Interactive walkthrough of the compile | `python scripts/add_op_walkthrough.py --arch quasar` |
