@@ -1,0 +1,700 @@
+{
+  "chip_desc": {
+    "differing": [
+      "arch",
+      "grid",
+      "coord_translation_offsets",
+      "l1_size",
+      "num_dram_channels",
+      "dram_grid",
+      "num_cbs",
+      "num_compute_threads",
+      "num_datamovement_threads",
+      "pcie_address_align_bytes",
+      "noc_dram_address_align_bytes",
+      "l1_unreserved_base",
+      "erisc_l1_unreserved_base",
+      "dram_unreserved_base",
+      "dram_unreserved_end",
+      "supported_data_types",
+      "dram_bank_to_logical_worker_noc0"
+    ],
+    "quasar": {
+      "arch": "quasar",
+      "coord_translation_offsets": "2x2",
+      "dram_bank_to_logical_worker_noc0": "empty",
+      "dram_channel_size": "1073741824",
+      "dram_grid": "1x2",
+      "dram_unreserved_base": "1048704",
+      "dram_unreserved_end": "1068732416",
+      "dst_physical_size_tiles": "16",
+      "erisc_l1_unreserved_base": "88576",
+      "grid": "4x8",
+      "l1_size": "4194304",
+      "l1_unreserved_base": "313088",
+      "noc_dram_address_align_bytes": "64",
+      "noc_l1_address_align_bytes": "16",
+      "num_cbs": "64",
+      "num_compute_threads": "4",
+      "num_datamovement_threads": "6",
+      "num_dram_channels": "2",
+      "pcie_address_align_bytes": "64",
+      "supported_data_types": "f32, f16, bf16, u8, si32",
+      "supported_tile_sizes": "4x16, 16x16, 32x16, 4x32, 16x32, 32x32"
+    },
+    "wormhole_b0": {
+      "arch": "wormhole_b0",
+      "coord_translation_offsets": "18x18",
+      "dram_bank_to_logical_worker_noc0": "12 entries",
+      "dram_channel_size": "1073741824",
+      "dram_grid": "1x12",
+      "dram_unreserved_base": "1024",
+      "dram_unreserved_end": "1073741824",
+      "dst_physical_size_tiles": "16",
+      "erisc_l1_unreserved_base": "1024",
+      "grid": "8x8",
+      "l1_size": "1499136",
+      "l1_unreserved_base": "1024",
+      "noc_dram_address_align_bytes": "32",
+      "noc_l1_address_align_bytes": "16",
+      "num_cbs": "32",
+      "num_compute_threads": "1",
+      "num_datamovement_threads": "2",
+      "num_dram_channels": "12",
+      "pcie_address_align_bytes": "32",
+      "supported_data_types": "f32, f16, bf16, bfp_f8, bfp_bf8, bfp_f4, bfp_bf4, bfp_f2, bfp_bf2, u32, u16, u8, si32",
+      "supported_tile_sizes": "4x16, 16x16, 32x16, 4x32, 16x32, 32x32"
+    }
+  },
+  "counts": {
+    "cpu": 46,
+    "source": "ttmlir-opt",
+    "top": 7,
+    "ttir": 25,
+    "ttnn": 25
+  },
+  "lanes": [
+    {
+      "name": "host \u00b7 python",
+      "nodes": [
+        {
+          "badge": "neutral",
+          "label": "onnx.ModelProto",
+          "note": "one Add node, float32 [2,32,32]"
+        },
+        {
+          "anchor": "forge/forge/compile.py:182",
+          "badge": "neutral",
+          "label": "compile_main",
+          "note": "forge.compile entry"
+        },
+        {
+          "anchor": "forge/forge/module.py:1011",
+          "badge": "neutral",
+          "label": "wrap_module -> OnnxModule"
+        },
+        {
+          "anchor": "forge/forge/tvm_calls/forge_compile.py:822",
+          "badge": "neutral",
+          "label": "relay.frontend.from_onnx",
+          "note": "ONNX -> TVM Relay. There is no ONNX fast path."
+        },
+        {
+          "anchor": "forge/forge/tvm_calls/relay/op/forge.py:1993",
+          "badge": "neutral",
+          "label": "partition_for_forge",
+          "note": "MergeComposite / AnnotateTarget / PartitionGraph"
+        },
+        {
+          "anchor": "third_party/tvm/src/relay/backend/contrib/forge/codegen.cc:94",
+          "badge": "neutral",
+          "label": "ForgeCompiler -> JSON graph",
+          "note": "relay.build of the 'forge' external target"
+        },
+        {
+          "anchor": "forge/forge/tvm_to_python.py:2444",
+          "badge": "neutral",
+          "label": "ForgeWriter -> generated_modules/<name>.py",
+          "note": "a real Python file, imported back in and traced"
+        },
+        {
+          "anchor": "forge/forge/compile.py:1043",
+          "badge": "neutral",
+          "label": "generate_graph -> graphlib::Graph",
+          "note": "traced under start_tracing()"
+        }
+      ],
+      "subtitle": "a one-node ONNX graph still round-trips through TVM Relay and a generated Python file"
+    },
+    {
+      "name": "forge \u00b7 compile stages",
+      "nodes": [
+        {
+          "anchor": "forge/forge/compile.py:603",
+          "badge": "neutral",
+          "label": "INIT_COMPILE"
+        },
+        {
+          "anchor": "forge/forge/compile.py:623",
+          "badge": "neutral",
+          "label": "GENERATE_INITIAL_GRAPH"
+        },
+        {
+          "anchor": "forge/forge/compile.py:687",
+          "badge": "neutral",
+          "label": "POST_INITIAL_GRAPH_PASS"
+        },
+        {
+          "anchor": "forge/forge/compile.py:883",
+          "badge": "neutral",
+          "label": "POST_AUTOGRAD_PASS"
+        },
+        {
+          "anchor": "forge/forge/compile.py:728",
+          "badge": "neutral",
+          "label": "CONSTEVAL_GRAPH"
+        },
+        {
+          "anchor": "forge/forge/compile.py:920",
+          "badge": "neutral",
+          "label": "PRE_LOWERING_PASS"
+        },
+        {
+          "anchor": "forge/forge/compile.py:946",
+          "badge": "neutral",
+          "label": "SPLIT_GRAPH"
+        },
+        {
+          "anchor": "forge/forge/compile.py:968",
+          "badge": "neutral",
+          "label": "RUN_MLIR_COMPILER"
+        },
+        {
+          "anchor": "forge/forge/compile.py:985",
+          "badge": "neutral",
+          "label": "FINISH_COMPILE"
+        },
+        {
+          "anchor": "forge/forge/compile.py:752",
+          "badge": "neutral",
+          "dashed": true,
+          "label": "POST_PATTERN_MATCHER",
+          "note": "needs match_subgraph_patterns"
+        },
+        {
+          "anchor": "forge/forge/compile.py:783",
+          "badge": "neutral",
+          "dashed": true,
+          "label": "OPTIMIZED_GRAPH",
+          "note": "needs enable_optimization_passes"
+        },
+        {
+          "anchor": "forge/forge/compile.py:835",
+          "badge": "neutral",
+          "dashed": true,
+          "label": "AUTOGRAD",
+          "note": "training only"
+        }
+      ],
+      "subtitle": "the 9 CompileDepth stages that actually run, in traversal order \u2014 dashed ones are skipped by default config"
+    },
+    {
+      "name": "forge \u00b7 c++",
+      "nodes": [
+        {
+          "anchor": "forge/csrc/forge_passes.cpp:54",
+          "badge": "neutral",
+          "label": "run_post_initial_graph_passes",
+          "note": "decompose, fuse_pad_conv2d, fuse_conv2d_bias"
+        },
+        {
+          "anchor": "forge/csrc/forge_passes.cpp:154",
+          "badge": "neutral",
+          "label": "run_post_autograd_graph_passes"
+        },
+        {
+          "anchor": "forge/csrc/passes/consteval.cpp:128",
+          "badge": "neutral",
+          "label": "run_consteval_graph_pass",
+          "note": "nothing to fold for a bare Add; 53 chains on ResNet-50"
+        },
+        {
+          "anchor": "forge/csrc/forge_passes.cpp:167",
+          "badge": "neutral",
+          "label": "run_pre_lowering_passes",
+          "note": "convert_broadcast_ops_to_tms, remove_nops"
+        },
+        {
+          "anchor": "forge/csrc/passes/split_graph.cpp:460",
+          "badge": "neutral",
+          "label": "split_graph -> ForgeGraphModule",
+          "note": "Forward graph only"
+        },
+        {
+          "anchor": "forge/csrc/passes/lower_to_mlir.cpp:190",
+          "badge": "sysdesc",
+          "label": "MLIRGenerator::emit_mlir",
+          "note": "stamps ttcore.system_desc UNLESS a target was named (:194-202)"
+        },
+        {
+          "anchor": "forge/csrc/passes/lower_to_mlir.cpp:843",
+          "badge": "neutral",
+          "label": "\"add\" -> ttir::AddOp",
+          "note": "handler map at :297"
+        },
+        {
+          "badge": "neutral",
+          "label": "TTIR module",
+          "note": "arch-neutral: ops and shapes, no layouts or memory spaces"
+        }
+      ],
+      "subtitle": "graphlib::Graph passes, then the only lowering step: forge graph \u2192 TTIR. There is no forge MLIR dialect."
+    },
+    {
+      "name": "the hardware spec",
+      "nodes": [
+        {
+          "anchor": "forge/csrc/passes/lower_to_mlir.cpp:694",
+          "badge": "sysdesc",
+          "label": "live device",
+          "note": "TTSystem::get_system() -> UMD -> IDevice/hal/Allocator. Opens hardware. tt-mlir never reads the arch YAML itself."
+        },
+        {
+          "anchor": "forge/csrc/runtime/python_bindings.cpp:107",
+          "badge": "sysdesc",
+          "label": "captured .ttsys",
+          "note": "save_system_desc(), or ttrt query --save-artifacts"
+        },
+        {
+          "anchor": "third_party/tt-mlir/lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp:409",
+          "badge": "sysdesc",
+          "label": "mock-system-desc-arch",
+          "note": "createDefault{Wormhole,Blackhole,Quasar}SystemDesc. No device needed."
+        },
+        {
+          "anchor": "third_party/tt-mlir/include/ttmlir/Dialect/TTCore/IR/TTCoreOpsTypes.td:216",
+          "badge": "sysdesc",
+          "label": "#ttcore.system_desc",
+          "note": "chipDescs: grid, l1Size, numDramChannels, numCBs, thread counts, supportedDataTypes, supportedTileSizes"
+        },
+        {
+          "anchor": "third_party/tt-mlir/lib/Dialect/TTCore/Transforms/TTCoreRegisterDevice.cpp:45",
+          "badge": "sysdesc",
+          "label": "registerDevice()",
+          "note": "stamps the mock ONLY if the module carries none (guard at :51) -- the exact contract forge's skipped stamp relies on"
+        },
+        {
+          "anchor": "third_party/tt-mlir/lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp:1735",
+          "badge": "sysdesc",
+          "label": "ttcore.device @default_device",
+          "note": "workerGrid 8x8 | 4x8   dramGrid 1x12 | 1x2"
+        },
+        {
+          "badge": "neutral",
+          "label": "consumed by layout / memory passes",
+          "note": "no pass asks 'which chip is this' -- they read grid and l1Size"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "serialised into the .ttnn binary",
+          "note": "TTNNBinary.system_desc"
+        },
+        {
+          "anchor": "third_party/tt-mlir/tools/ttrt/common/util.py:868",
+          "badge": "sysdesc",
+          "label": "ttrt re-validates vs the live device",
+          "note": "full JSON diff; forge's own runtime does not check arch"
+        }
+      ],
+      "subtitle": "three sources, one attribute. Precedence: system_desc_path > target_arch > live device."
+    },
+    {
+      "name": "tt-mlir \u00b7 top level",
+      "nodes": [
+        {
+          "badge": "neutral",
+          "label": "ttcore-mark-functions-as-forward"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttcore-wrap-device-module"
+        },
+        {
+          "badge": "neutral",
+          "label": "cpu-hoist-manually-tagged"
+        },
+        {
+          "badge": "neutral",
+          "label": "cpu-hoist-const-eval"
+        }
+      ],
+      "subtitle": "ttir-to-ttnn-backend-pipeline \u2014 7 top-level passes (a deprecated alias for ttir-to-ttnn-runtime-pipeline)"
+    },
+    {
+      "name": "tt-mlir \u00b7 TTIR phase",
+      "nodes": [
+        {
+          "badge": "neutral",
+          "label": "ttir-element-type-normalization"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "ttcore-register-device  [arch=wormhole_b0]",
+          "note": "PRODUCES it, then derives ttcore.device"
+        },
+        {
+          "badge": "neutral",
+          "label": "tt-populate-argument-types"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-fusing"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-quant-dequant-conversion"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-to-ttir-decomposition"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-implicit-broadcast-fold"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-fusing"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "inline"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-infer-kv-cache-argument-types"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-propagate-weight-dtype"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-flatten-sliding-window"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-explicate-tms"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-erase-inverse-ops"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-implicit-broadcast-fold"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-fusing"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-fold-full-to-scalar"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-consolidate-static-cache-updates"
+        },
+        {
+          "badge": "neutral",
+          "label": "cse"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttir-quant-data-type-conversion"
+        },
+        {
+          "badge": "neutral",
+          "label": "cse"
+        },
+        {
+          "badge": "neutral",
+          "label": "const-eval-hoist-transform"
+        }
+      ],
+      "subtitle": "25 passes, nested in ttcore.device_module \u2192 builtin.module"
+    },
+    {
+      "name": "tt-mlir \u00b7 TTNN phase",
+      "nodes": [
+        {
+          "badge": "sysdesc",
+          "label": "ttnn-layout",
+          "note": "grid + L1 drive every layout choice"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "convert-ttir-to-ttnn",
+          "note": "getNocL1AddressAlignBytes()"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "ttnn-resolve-composites",
+          "note": "reads chipDesc arch"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "symbol-dce"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-fusing"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-decomposition"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "ttnn-memory-management",
+          "note": "L1 budget"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "ttnn-workaround  [opt=0]",
+          "note": "decomposition patterns read chip descs"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-allocate-distributed-op-buffers"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "cse"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-weight-dtype-conversion"
+        },
+        {
+          "badge": "sysdesc",
+          "label": "ttnn-set-compute-kernel-config",
+          "note": "per-arch compute config"
+        },
+        {
+          "badge": "neutral",
+          "label": "const-eval-hoist-transform"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-configure-ccl-ops"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-prepare-conv3d-weights"
+        },
+        {
+          "badge": "neutral",
+          "label": "const-eval-hoist-transform"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-force-const-eval-to-system-memory"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-allocate-distributed-op-semaphores"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-decompose-layouts"
+        },
+        {
+          "badge": "neutral",
+          "label": "canonicalize"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttcore-optimization-barrier-fold"
+        },
+        {
+          "badge": "neutral",
+          "label": "ttnn-deallocate"
+        },
+        {
+          "badge": "neutral",
+          "dashed": true,
+          "label": "ttcore.cpu_module  (46 passes)",
+          "note": "TOSA \u2192 linalg \u2192 LLVM host fallback. A single ONNX Add never enters it."
+        }
+      ],
+      "subtitle": "25 passes \u2014 where tensors get layouts, memory spaces and grids"
+    },
+    {
+      "name": "flatbuffer",
+      "nodes": [
+        {
+          "anchor": "forge/csrc/passes/mlir_compiler.cpp:143",
+          "badge": "neutral",
+          "label": "ttnnToFlatbuffer",
+          "note": "compilation ends here"
+        },
+        {
+          "anchor": "third_party/tt-mlir/include/ttmlir/Target/TTNN/binary.fbs",
+          "badge": "sysdesc",
+          "label": "TTNNBinary",
+          "note": "version, schema_hash, ttmlir_git_hash, system_desc, mlir, programs"
+        },
+        {
+          "badge": "neutral",
+          "label": "file_identifier \"TTNN\" / .ttnn",
+          "note": "the system descriptor is serialised INTO the binary"
+        },
+        {
+          "anchor": "third_party/tt-mlir/include/ttmlir/Target/TTNN/program.fbs:178",
+          "badge": "neutral",
+          "label": "Program.operations",
+          "note": "the op stream the runtime replays; each carries debug_info"
+        }
+      ],
+      "subtitle": "compilation ends here; the binary is self-describing"
+    },
+    {
+      "name": "tt-metal \u00b7 runtime",
+      "nodes": [
+        {
+          "anchor": "forge/forge/compiled_graph_state.py:280",
+          "badge": "neutral",
+          "label": "CompiledModel.__call__"
+        },
+        {
+          "anchor": "forge/csrc/runtime/state.cpp:39",
+          "badge": "neutral",
+          "label": "ModelState::run_program"
+        },
+        {
+          "anchor": "forge/csrc/runtime/tensor.hpp:147",
+          "badge": "patched",
+          "label": "Tensor::to_layout  HOST -> DEVICE",
+          "note": "Quasar routes to experimental::quasar::to_layout (runtime.cpp:196-203)"
+        },
+        {
+          "anchor": "forge/csrc/runtime/runtime.cpp:117",
+          "badge": "neutral",
+          "label": "runtime::submit"
+        },
+        {
+          "anchor": "third_party/tt-mlir/runtime/lib/binary.cpp:525",
+          "badge": "sysdesc",
+          "label": "schema_hash check",
+          "note": "there is NO arch equality check in the C++ runtime"
+        },
+        {
+          "anchor": "third_party/tt-mlir/runtime/lib/ttnn/program_executor.cpp:222",
+          "badge": "neutral",
+          "label": "ProgramExecutor::execute",
+          "note": "walks program->operations()"
+        },
+        {
+          "anchor": "third_party/tt-mlir/runtime/lib/ttnn/program_executor.cpp:285",
+          "badge": "patched",
+          "label": "switch (op->type_type())",
+          "note": "WHERE THE ARCHES DIVERGE. 13 of 15 files the Quasar branch touches are under runtime/lib/ttnn/."
+        },
+        {
+          "badge": "blocked",
+          "label": "program factory",
+          "note": "mainline factories are REFUSED on Quasar: DataMovementKernel's constructor TT_FATALs (kernel.hpp:418)"
+        }
+      ],
+      "subtitle": "the binary is consumed rather than produced \u2014 and this is where the arches actually diverge"
+    },
+    {
+      "name": "silicon",
+      "nodes": [
+        {
+          "badge": "neutral",
+          "label": "JIT kernel compile",
+          "note": "one source file per RISC-V role"
+        },
+        {
+          "badge": "neutral",
+          "label": "BRISC  DRAM -> L1 CB"
+        },
+        {
+          "badge": "blocked",
+          "label": "TRISC0  L1 -> srcA/srcB",
+          "note": "craq-sim wedges HERE: srcA/srcB reach valid=1 unpack=1, matrix=0"
+        },
+        {
+          "badge": "blocked",
+          "label": "TRISC1  add_tiles on the FPU",
+          "note": "the math unit never takes the operands"
+        },
+        {
+          "badge": "neutral",
+          "label": "TRISC2  dest -> output CB"
+        },
+        {
+          "badge": "neutral",
+          "label": "NCRISC  L1 -> DRAM"
+        },
+        {
+          "badge": "neutral",
+          "label": "readback -> torch.Tensor",
+          "note": "then verify() compares by PCC"
+        }
+      ],
+      "subtitle": "three kernels, five RISC-V processors, one add_tiles"
+    }
+  ],
+  "meta": {
+    "subtitle": "ONNX Add \u2192 TTIR \u2192 TTNN \u2192 .ttnn \u2192 Tensix.   7 top-level tt-mlir passes, 25 TTIR + 25 TTNN.   The wormhole_b0 and quasar pipelines are identical apart from the system descriptor.   generated by scripts/gen_pipeline_diagram.py",
+    "title": "Running one op on Wormhole via forge-onnx \u2014 and where Quasar diverges"
+  },
+  "pipeline_diff_lines": [
+    {
+      "kind": "the #ttcore.system_desc attribute",
+      "line": 1,
+      "quasar": "#system_desc = #ttcore.system_desc<[{role = host, target_triple = \"x86_64-pc-linux-gnu\"}], [{arch = <quasar>, grid = 4x8, coord_translation_offsets = 2x2, l1_size = 4194304, num_dram_channels = 2, dram_channel_size = 1073741824, noc_l1_address_align_bytes = 16, pcie_address_align_bytes = 64, noc_dram_address_align_bytes = 64, l1_unreserved_base = 313088, erisc_l1_unreserved_base = 88576, dram_unreserved_base = 1048704, dram_unreserved_end = 1068732416, supported_data_types = [<f32>, <f16>, <bf16>, <u8>, <si32>], supported_tile_sizes = [ 4x16,  16x16,  32x16,  4x32,  16x32,  32x32], dst_physical_size_tiles = 16, num_cbs = 64, num_compute_threads = 4, num_datamovement_threads = 6, dram_grid = 1x2, dram_bank_to_logical_worker_noc0 = [], dram_bank_to_logical_worker_noc1 = []}], [0], [1 : i32], [ 0x0x0x0]>",
+      "wormhole_b0": "#system_desc = #ttcore.system_desc<[{role = host, target_triple = \"x86_64-pc-linux-gnu\"}], [{arch = <wormhole_b0>, grid = 8x8, coord_translation_offsets = 18x18, l1_size = 1499136, num_dram_channels = 12, dram_channel_size = 1073741824, noc_l1_address_align_bytes = 16, pcie_address_align_bytes = 32, noc_dram_address_align_bytes = 32, l1_unreserved_base = 1024, erisc_l1_unreserved_base = 1024, dram_unreserved_base = 1024, dram_unreserved_end = 1073741824, supported_data_types = [<f32>, <f16>, <bf16>, <bfp_f8>, <bfp_bf8>, <bfp_f4>, <bfp_bf4>, <bfp_f2>, <bfp_bf2>, <u32>, <u16>, <u8>, <si32>], supported_tile_sizes = [ 4x16,  16x16,  32x16,  4x32,  16x32,  32x32], dst_physical_size_tiles = 16, num_cbs = 32, num_compute_threads = 1, num_datamovement_threads = 2, dram_grid = 1x12, dram_bank_to_logical_worker_noc0 = [(7, 3), (0, 0), (3, 0), (4, 0), (0, 4), (7, 7), (1, 4), (6, 4), (5, 4), (2, 6), (3, 4), (4, 4)], dram_bank_to_logical_worker_noc1 = [(7, 3), (0, 0), (3, 0), (4, 0), (0, 4), (7, 7), (1, 4), (6, 4), (5, 4), (2, 6), (3, 4), (4, 4)]}], [0], [1 : i32], [ 0x0x0x0]>"
+    },
+    {
+      "kind": "the derived ttcore.device",
+      "line": 5,
+      "quasar": "      ttcore.device @default_device = <workerGrid = #ttcore.grid<4x8, virt_to_physical_map = (d0, d1) -> (0, d0, d1), physical_to_virt_map = (d0, d1, d2) -> (d1, d2)>, dramGrid = #ttcore.grid<1x2>, l1Map = (d0, d1, d2)[s0] -> (0, d0, d1, d2 + s0), dramMap = (d0, d1, d2)[s0, s1, s2, s3, s4, s5, s6] -> (0, 0, (((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) mod 2, ((((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) floordiv 2) * s4 + ((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) mod s4 + s5), meshShape = , chipIds = [0]>",
+      "wormhole_b0": "      ttcore.device @default_device = <workerGrid = #ttcore.grid<8x8, virt_to_physical_map = (d0, d1) -> (0, d0, d1), physical_to_virt_map = (d0, d1, d2) -> (d1, d2)>, dramGrid = #ttcore.grid<1x12>, l1Map = (d0, d1, d2)[s0] -> (0, d0, d1, d2 + s0), dramMap = (d0, d1, d2)[s0, s1, s2, s3, s4, s5, s6] -> (0, 0, (((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) mod 12, ((((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) floordiv 12) * s4 + ((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) mod s4 + s5), meshShape = , chipIds = [0]>"
+    },
+    {
+      "kind": "the mock-system-desc-arch pass option",
+      "line": 18,
+      "quasar": "      ttcore-register-device{  mock-system-desc-arch=quasar system-desc-path=},",
+      "wormhole_b0": "      ttcore-register-device{  mock-system-desc-arch=wormhole_b0 system-desc-path=},"
+    }
+  ]
+}

@@ -283,7 +283,7 @@ def build_stages(cap, chain, arch):
             title="forge.compile dispatches the stages",
             file="forge/forge/compile.py",
             anchor="CompileDepth.RUN_MLIR_COMPILER: run_mlir_compiler",
-            note="Twelve stages in a table. RUN_MLIR_COMPILER is the hop into C++.",
+            note="Twelve stages in the table, nine actually run, and not in enum order: each returns its successor, so POST_AUTOGRAD_PASS precedes CONSTEVAL_GRAPH. RUN_MLIR_COMPILER is the hop into C++.",
             ir_key=None,
             ir_label="no IR yet",
             ir=lambda w: ["The graph is still forge's own IR.", "", "Nothing MLIR exists until the next file."],

@@ -241,6 +241,174 @@ here: it lives on the unpinned `quasar-sim-core-wait-diagnostic` branch and is i
 against the pinned tt-metal. The two TTSIM variables above supersede it and need no
 tt-metal patch at all.
 
+## Where the arches actually differ
+
+Measured, not assumed. `ttmlir-opt --dump-pass-pipeline` expands the pipeline without a
+device, so the two targets can be compared directly:
+
+```bash
+cd third_party/tt-mlir
+for a in wormhole_b0 quasar; do
+  ./build/bin/ttmlir-opt --ttir-to-ttnn-backend-pipeline="mock-system-desc-arch=$a" \
+    --dump-pass-pipeline /tmp/empty.mlir > /tmp/pipe_$a.txt 2>&1
+done
+diff /tmp/pipe_wormhole_b0.txt /tmp/pipe_quasar.txt
+```
+
+**The two pipelines are structurally identical** — 147 lines each, the same 7 top-level
+passes, the same 25 TTIR and 25 TTNN passes in the same order with the same options. The
+diff is exactly three lines: the `mock-system-desc-arch` value, the resulting
+`#ttcore.system_desc`, and the `ttcore.device` derived from it.
+
+So **no compiler pass needs a Quasar change.** Arch-dependence enters only as numbers in
+the system descriptor and then propagates by arithmetic; it becomes behavioural only at
+runtime op dispatch. The branch contents say the same thing independently — of the 15
+files the tt-mlir bringup branch touches, 13 are under `runtime/lib/ttnn/`, and the two
+that are not are the mock descriptor and a *skip* in `TTNNCollectPerfMetrics`.
+
+Note `ttmlir-opt --help` segfaults on this build. Enumerate passes with
+`--dump-pass-pipeline`.
+
+### The descriptor, side by side
+
+From `createDefaultWormholeSystemDesc` and `createDefaultQuasarSystemDesc`
+(`lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp:282` and `:43`). 16 of 21 chip-descriptor
+fields differ:
+
+| Field | Wormhole B0 | Quasar |
+|---|---|---|
+| `grid` | 8x8 (64 workers) | **4x8 (32 workers)** |
+| `l1_size` | 1 499 136 | **4 194 304** |
+| `num_dram_channels` / `dram_grid` | 12 / 1x12 | **2 / 1x2** |
+| `num_cbs` | 32 | **64** |
+| `num_compute_threads` | 1 | **4** |
+| `num_datamovement_threads` | 2 | **6** |
+| `coord_translation_offsets` | 18x18 | **2x2** |
+| `pcie` / `noc_dram` align bytes | 32 / 32 | **64 / 64** |
+| `l1_unreserved_base` | 1 024 | **313 088** |
+| `erisc_l1_unreserved_base` | 1 024 | **88 576** |
+| `dram_unreserved_base` / `_end` | 1 024 / 1 073 741 824 | **1 048 704 / 1 068 732 416** |
+| `dram_bank_to_logical_worker_noc0/1` | 12 entries | **empty** |
+| `dram_channel_size` | 1 GiB | 1 GiB |
+| `noc_l1_address_align_bytes` | 16 | 16 |
+| `dst_physical_size_tiles` | 16 | 16 |
+| `supported_data_types` | 13 types | **5** (f32, f16, bf16, u8, si32) — *fixed, see below* |
+| `supported_tile_sizes` | 6 sizes | identical |
+
+Cross-checked against `tt-metal/tt_metal/soc_descriptors/quasar_32_arch.yaml` (10x8 NOC
+grid, 32 workers at `2-2 … 9-5`, `worker_l1_size: 4194304`, 2 DRAM banks of 1 GiB): the
+mock matches the real SoC descriptor.
+
+### Three things in that table worth knowing
+
+**The empty DRAM-bank vectors are deliberate.** Not a gap in the mock. The live builder
+skips `get_optimal_dram_bank_to_logical_worker_assignment()` for Quasar
+(`runtime/lib/common/system_desc.cpp:205-221`) because Quasar has a single NoC —
+`getDmCoreDefaultNoc()` returns NoC0 for every DM core (`lib/Dialect/TTCore/IR/Utils.cpp:54-63`).
+
+**`supported_data_types` used to claim Quasar supported block-float. Fixed 2026-09-07.**
+
+Both descriptor paths advertised Wormhole's exact 13-format list for Quasar, including
+`bfp_bf8`, `bfp_bf4`, `u16` and `u32`. The live builder was no better than the mock: its
+own comment read *"The following is temporary place-holder value to be replaced by API
+value."* So the two agreed with each other while neither was authoritative, and anything
+consulting `supportedDataTypes` for legality believed bfp8 was available on Quasar — the
+failure only surfacing much later as a tt-metal host format-validator throw.
+
+tt-metal already had the authoritative answer:
+`tt::is_data_format_supported(format, arch)`
+(`tt_metal/common/tt_backend_api_types.cpp:126`, dispatching to `is_supported_quasar` at
+`:97`, declared in the public header `tt-metalium/tt_backend_api_types.hpp:72`). Quasar
+excludes `Bfp2/Bfp4/Bfp8` and their `_b` variants — its narrow formats are MX
+(microscaling) — and has no unsigned 16/32-bit device format; its 32-bit formats are
+`Float32` and `Int32`.
+
+The fix, on `lelanchelian/quasar-forge-onnx-bringup`:
+
+* `runtime/lib/common/system_desc.cpp` — the live builder now enumerates all 13
+  `target::DataType` values, maps each to its `tt::DataFormat`, and keeps the ones
+  `is_data_format_supported` admits for `device->arch()`. It is no longer a hardcoded
+  list, and it is arch-correct for every arch rather than just for Wormhole.
+  (`common.h`'s `toDataFormat` is deliberately not reused: it covers only a subset and
+  `LOG_FATAL`s on the rest.)
+* `lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp` — `createDefaultQuasarSystemDesc` now
+  carries the matching 5-entry set, so device-free compiles agree with the device.
+
+Verified on all four combinations — Quasar mock, Quasar live on craq-sim, Wormhole mock,
+Wormhole live on silicon:
+
+| Descriptor | formats | block-float |
+|---|---|---|
+| wormhole mock | 13 | yes |
+| wormhole live (silicon) | 13 | yes |
+| quasar mock | 5 | no |
+| quasar live (craq-sim) | 5 | no |
+
+Mock and live now agree exactly for both arches, on all 22 chip-descriptor fields.
+
+Two things this does **not** change. `supported_tile_sizes` is still a hardcoded
+placeholder in both paths — tt-metal exposes no per-arch tile-size query, and guessing
+would be worse than reporting the common set. And forge's guard at
+`mlir_config.cpp:155-165` is left in place: it still gives a better error, earlier, than
+a descriptor-driven legality failure would.
+
+**`num_cbs` is wrong for Wormhole, and right for Quasar by accident.** The mock says 32 for
+Wormhole and 64 for Quasar, but the live builder passes the compile-time
+`NUM_CIRCULAR_BUFFERS` (`runtime/lib/common/system_desc.cpp:238`), which is 64 on a host
+build regardless of arch — `circular_buffer_constants.h:27-39` only special-cases the
+device-side `ARCH_WORMHOLE` define, and its own comment says to call
+`hal::get_arch_num_circular_buffers()` instead. A live Wormhole run therefore reports 64
+CBs where `mock-system-desc-arch=wormhole_b0` reports 32.
+
+None of the three is fixed here — each is a tt-mlir change on a pinned branch.
+
+### Every arch default is Wormhole
+
+Omitting `mock-system-desc-arch` does not fail, it silently compiles for Wormhole:
+`TTNNPipelines.h:212`, `D2MPipelines.h:55`, `Passes.td:62`, `Transforms.h:15`,
+`TTCoreOpsTypes.td:231` and `TTCoreRegisterDevice.cpp:46` all default to
+`Arch::WormholeB0`.
+
+`DeviceConfig::is_wormhole_b0()` also returns **true** for Quasar
+(`device_config.hpp:225`, "temporarily treat them as equivalent"), but check the blast
+radius before treating that as a bug: it has exactly two call sites, both inside
+`device_config.hpp` — the legacy constructor's backend queries at `:105`, themselves
+gated on `backend_type == "silicon"`, and `supports_stochastic_rounding()` at `:403`,
+which has **no callers at all**. Nothing on the MLIR compile path reads it. It is an
+onboarding shim with no live consumers, not a live hazard.
+
+One structural consequence worth recording: `D2M → TTMetal/TTKernel` lowering hard-errors
+on Quasar (`lib/Dialect/D2M/Utils/DMAUtils.cpp:51-60`), so **only the TTNN path is
+viable** — which is the path forge takes anyway.
+
+### Phases, and what gates what
+
+![Quasar bringup phases](../imgs/compiler_arch/quasar-bringup-phases.drawio.svg "Quasar bringup phases")
+
+The ordering is the part worth internalising, because the intuitive one wastes effort.
+**The critical path runs through phase 02 (execution), not phase 03 (op dispatch).** You
+can compile a Quasar binary for any op today; you cannot tell a correct one from a wrong
+one until a graph actually runs, so dispatch work done before that is unverifiable.
+
+Phase 06 is the one that contradicts the section above: every pass is arch-neutral
+*today* only because `TTMLIR_ENABLE_OPMODEL` defaults OFF
+(`third_party/tt-mlir/CMakeLists.txt:40`), so nothing performs sharding or L1 layout
+selection and everything lands DRAM-interleaved at optimization level 0. Quasar's 4 MiB
+L1 — 2.8x Wormhole's — is not exploited at all. Turning the optimizer on is where
+genuine arch-aware compiler work begins.
+
+Regenerate with `python scripts/gen_quasar_phase_diagram.py`. Like the pipeline diagram
+it is a diagrams.net document as well as an image, and it checks every source anchor it
+quotes before writing.
+
+### The picture
+
+`docs/source/imgs/compiler_arch/forge-onnx_overview.drawio.svg` draws all of the above:
+the single-op path pass by pass, the hardware-spec lane, and a Quasar badge on every
+stage. Regenerate it with `python scripts/gen_pipeline_diagram.py` after a pin bump — the
+pass list is read from the real pipeline, and the generator warns if the wormhole/quasar
+diff stops being those three lines.
+
 ## Op status
 
 Score each op three ways; only the third counts:
@@ -259,7 +427,7 @@ QuasarDataMovementKernel instead". Attribute from the stack, not the test name.
 | Add, Mul, Sub, Div | run and verify |
 | relu | runs and verifies (PCC 0.95), but *rewritten*, not dispatched — see below |
 | to_layout, reshape, transpose/permute, reductions, pools, linear, matmul | dispatched to the Quasar op library |
-| Greater / Less / Equal / GE | **blocked, Metal ask** — comparison SFPU kernels are `#ifndef ARCH_QUASAR` |
+| Greater / Less / Equal / GE | **blocked, Metal ask** — but be precise: Quasar *does* have compare SFPU (`hw/ckernels/quasar/.../llk_math_eltwise_binary_sfpu_binary_comp.h`), Int32 only by `static_assert`. It is the **float** compares that are unported, listed as such in Metal's own `QUASAR_PARITY_GAPS.md:93`. Forge's ONNX comparisons are float, so they hit the unported path. |
 | conv2d | **blocked, Metal ask** — `conv_bmm_tilize_metal2` deadlock, tt-metal #48552 |
 
 The two genuine asks for Metal are conv2d and a unary path; everything else that fails

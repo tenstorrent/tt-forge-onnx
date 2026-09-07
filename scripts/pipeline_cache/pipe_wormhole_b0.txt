@@ -1,0 +1,147 @@
+#system_desc = #ttcore.system_desc<[{role = host, target_triple = "x86_64-pc-linux-gnu"}], [{arch = <wormhole_b0>, grid = 8x8, coord_translation_offsets = 18x18, l1_size = 1499136, num_dram_channels = 12, dram_channel_size = 1073741824, noc_l1_address_align_bytes = 16, pcie_address_align_bytes = 32, noc_dram_address_align_bytes = 32, l1_unreserved_base = 1024, erisc_l1_unreserved_base = 1024, dram_unreserved_base = 1024, dram_unreserved_end = 1073741824, supported_data_types = [<f32>, <f16>, <bf16>, <bfp_f8>, <bfp_bf8>, <bfp_f4>, <bfp_bf4>, <bfp_f2>, <bfp_bf2>, <u32>, <u16>, <u8>, <si32>], supported_tile_sizes = [ 4x16,  16x16,  32x16,  4x32,  16x32,  32x32], dst_physical_size_tiles = 16, num_cbs = 32, num_compute_threads = 1, num_datamovement_threads = 2, dram_grid = 1x12, dram_bank_to_logical_worker_noc0 = [(7, 3), (0, 0), (3, 0), (4, 0), (0, 4), (7, 7), (1, 4), (6, 4), (5, 4), (2, 6), (3, 4), (4, 4)], dram_bank_to_logical_worker_noc1 = [(7, 3), (0, 0), (3, 0), (4, 0), (0, 4), (7, 7), (1, 4), (6, 4), (5, 4), (2, 6), (3, 4), (4, 4)]}], [0], [1 : i32], [ 0x0x0x0]>
+module {
+  ttcore.device_module {
+    builtin.module attributes {ttcore.system_desc = #system_desc, ttnn.l1_const_eval_usage = 1024 : ui64} {
+      ttcore.device @default_device = <workerGrid = #ttcore.grid<8x8, virt_to_physical_map = (d0, d1) -> (0, d0, d1), physical_to_virt_map = (d0, d1, d2) -> (d1, d2)>, dramGrid = #ttcore.grid<1x12>, l1Map = (d0, d1, d2)[s0] -> (0, d0, d1, d2 + s0), dramMap = (d0, d1, d2)[s0, s1, s2, s3, s4, s5, s6] -> (0, 0, (((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) mod 12, ((((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) floordiv s4) floordiv 12) * s4 + ((d0 * s1) * (s2 * (s3 * s6)) + d1 * (s2 * (s3 * s6)) + d2) mod s4 + s5), meshShape = , chipIds = [0]>
+    }
+  }
+}
+
+Pass Manager with 7 passes:
+builtin.module(
+  ttcore-mark-functions-as-forward,
+  ttcore-wrap-device-module,
+  cpu-hoist-manually-tagged,
+  ttcore.device_module(
+    builtin.module(
+      ttir-element-type-normalization,
+      ttcore-register-device{  mock-system-desc-arch=wormhole_b0 system-desc-path=},
+      tt-populate-argument-types{argument-types=
+      },
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      ttir-fusing{enable-permute-matmul-fusion=false enable-permute-slice-after-matmul-fusion=true ttnn-enable-conv2d-with-multiply-pattern=false},
+      ttir-quant-dequant-conversion,
+      ttir-to-ttir-decomposition{config=ttnn},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      ttir-implicit-broadcast-fold,
+      ttir-fusing{enable-permute-matmul-fusion=false enable-permute-slice-after-matmul-fusion=true ttnn-enable-conv2d-with-multiply-pattern=false},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      inline{default-pipeline=canonicalize inlining-threshold=4294967295 max-iterations=4 },
+      ttir-infer-kv-cache-argument-types,
+      ttir-propagate-weight-dtype,
+      ttir-flatten-sliding-window,
+      ttir-explicate-tms,
+      ttir-erase-inverse-ops{enable-commute-downwards=true enable-commute-upwards=true force=true max-iterations=100},
+      ttir-implicit-broadcast-fold,
+      ttir-fusing{enable-permute-matmul-fusion=false enable-permute-slice-after-matmul-fusion=true ttnn-enable-conv2d-with-multiply-pattern=false},
+      ttir-fold-full-to-scalar,
+      ttir-consolidate-static-cache-updates,
+      cse,
+      ttir-quant-data-type-conversion{target-bit-width=32},
+      cse,
+      const-eval-hoist-transform
+    )
+  ),
+  cpu-hoist-const-eval,
+  ttcore.device_module(
+    builtin.module(
+      ttnn-layout,
+      convert-ttir-to-ttnn,
+      ttnn-resolve-composites{composite-resolution=inline},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      symbol-dce,
+      ttnn-fusing{enable-op-constraints=false enable-rope-fusion=false enable-sdpa-fusion=false max-fallback-attempts=10000},
+      ttnn-decomposition{enable-op-constraints=false max-fallback-attempts=10000},
+      ttnn-memory-management{aggressive-memory-saving=false},
+      ttnn-workaround{ttnn-enable-decomposition-workaround-pass=true ttnn-enable-layout-workaround-pass=true ttnn-optimization-level=0},
+      ttnn-allocate-distributed-op-buffers,
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      cse,
+      ttnn-weight-dtype-conversion{target-dtype=none},
+      ttnn-set-compute-kernel-config{dst-full-sync-en=None fp32-dest-acc-en=1 math-approx-mode=None math-fidelity=hifi4 packer-l1-acc=None},
+      const-eval-hoist-transform,
+      ttnn-configure-ccl-ops,
+      ttnn-prepare-conv3d-weights,
+      const-eval-hoist-transform,
+      ttnn-force-const-eval-to-system-memory,
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      ttnn-allocate-distributed-op-semaphores,
+      ttnn-decompose-layouts,
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      ttcore-optimization-barrier-fold,
+      ttnn-deallocate
+    )
+  ),
+  ttcore.cpu_module(
+    builtin.module(
+      ttir-to-ttir-decomposition{config=cpu-fallback},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      cse,
+      ttir-cpu-boolean-narrowing,
+      convert-ttir-to-linalg,
+      func.func(
+        tosa-optional-decompositions
+      ),
+      func.func(
+        canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true}
+      ),
+      func.func(
+        tosa-infer-shapes
+      ),
+      func.func(
+        tosa-make-broadcastable
+      ),
+      func.func(
+        tosa-to-linalg-named{prefer-conv2d-kernel-layout-hwcf=false}
+      ),
+      func.func(
+        canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true}
+      ),
+      func.func(
+        tosa-layerwise-constant-fold{aggressive-reduce-constant=true}
+      ),
+      func.func(
+        tosa-make-broadcastable
+      ),
+      func.func(
+        tosa-to-linalg{aggressive-reduce-constant=false disable-tosa-decompositions=false}
+      ),
+      tosa-to-tensor,
+      tosa-to-arith{include-apply-rescale=false use-32-bit=false},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      convert-elementwise-to-linalg,
+      convert-tensor-to-linalg,
+      one-shot-bufferize{allow-return-allocs-from-loops=false allow-unknown-ops=false analysis-fuzzer-seed=0 analysis-heuristic=bottom-up buffer-alignment=64 bufferize-function-boundaries=true check-parallel-regions=true copy-before-write=false  dump-alias-sets=false function-boundary-type-conversion=identity-layout-map must-infer-memory-space=false  print-conflicts=false test-analysis-only=false unknown-type-conversion=identity-layout-map use-encoding-for-memory-space=false},
+      expand-realloc{emit-deallocs=false},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      ownership-based-buffer-deallocation{private-function-dynamic-ownership=false},
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      buffer-deallocation-simplification,
+      bufferization-lower-deallocations,
+      cse,
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      convert-bufferization-to-memref,
+      ::mlir::ModuleOp,
+      convert-linalg-to-loops,
+      expand-strided-metadata,
+      lower-affine,
+      convert-scf-to-cf,
+      convert-cf-to-llvm{index-bitwidth=0},
+      convert-arith-to-llvm{index-bitwidth=0},
+      convert-math-to-llvm{approximate-log1p=true},
+      convert-math-to-libm,
+      convert-func-to-llvm{index-bitwidth=0 use-bare-ptr-memref-call-conv=false},
+      finalize-memref-to-llvm{index-bitwidth=0 use-aligned-alloc=false use-generic-functions=false},
+      reconcile-unrealized-casts,
+      canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=normal test-convergence=false top-down=true},
+      sccp,
+      cse,
+      symbol-dce,
+      emit-calling-convention-wrappers
+    )
+  )
+)
+
+<scratch>.mlir:1:1: warning: Empty argument type map provided. Skipping argument type population. This may affect subsequent compile steps
+module {}
+^

@@ -67,8 +67,18 @@ Coming soon!
 
 ## TT-Forge-ONNX Overview
 
-<!-- TODO: add imgs/compiler_arch/forge-onnx_overview.svg — the diagram was
-     referenced here but has never existed in the repository. -->
+![TT-Forge-ONNX Overview](imgs/compiler_arch/forge-onnx_overview.drawio.svg "TT-Forge-ONNX Overview")
+
+The diagram traces a single ONNX `Add` from the frontend to the FPU, pass by pass, and
+marks where a Quasar target diverges from Wormhole. It is generated — run
+`python scripts/gen_pipeline_diagram.py` to rebuild it after a tt-mlir pin bump; the
+tt-mlir pass list is read out of the real pipeline rather than transcribed. The file is
+also a diagrams.net document, so it opens editable at
+[app.diagrams.net](https://app.diagrams.net).
+
+For a runnable narration of the same path, with the flatbuffer inspected at each stage,
+see `python scripts/add_op_walkthrough.py`. For what the Quasar annotations mean, see
+[Quasar](dev_notes/quasar.md).
 
 
 ### Initialize Compile
