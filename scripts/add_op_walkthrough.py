@@ -3,31 +3,43 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Interactive walkthrough of a single ONNX Add through tt-forge-onnx.
+"""Step an ONNX Add through tt-forge-onnx, file by file, watching the IR change.
 
-Press Enter to advance. The left pane is the code path -- which file, which function,
-what it does. The right pane is the flatbuffer being assembled: what this stage
-contributes to the binary that eventually runs on hardware.
+Press Enter to travel to the next file. Three things on screen at once:
 
-Everything on the right is read out of a real compile performed at startup. Nothing
-is mocked. The compile names a target architecture, so it needs no device and runs
-anywhere.
+  travel bar   the chain of files, with where you are now
+  left pane    the REAL source, read off disk, at the line that matters
+  right pane   the IR at this point, with +/- marking what this hop changed
+
+Nothing is transcribed or paraphrased. Source is read live from the working tree,
+so it stays correct as the code moves. The IR snapshots come from running the real
+pipeline passes one at a time, and the flatbuffer from a real forge compile that
+names a target architecture -- so the whole thing needs no device.
 
     python scripts/add_op_walkthrough.py
     python scripts/add_op_walkthrough.py --arch quasar
-    python scripts/add_op_walkthrough.py --no-pager      # print everything and exit
+    python scripts/add_op_walkthrough.py --no-pager
+    python scripts/add_op_walkthrough.py --ir 6        # print one IR snapshot whole
 
-Keys:  Enter next   b back   q quit   <n> jump to stage n
+Keys:  Enter next   b back   q quit   <n> jump   f full source   i full IR
 """
 
 import argparse
+import difflib
 import json
 import os
 import shutil
+import subprocess
 import sys
 import textwrap
 
-# --------------------------------------------------------------------------- ANSI
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TTMLIR = os.path.join(REPO, "third_party", "tt-mlir")
+TTMETAL = os.path.join(TTMLIR, "third_party", "tt-metal", "src", "tt-metal")
+OPT = os.path.join(TTMLIR, "build", "bin", "ttmlir-opt")
+SHAPE = [2, 32, 32]
+
+# --------------------------------------------------------------------------- colour
 
 _TTY = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -36,30 +48,149 @@ def _c(code):
     return (lambda s: f"\033[{code}m{s}\033[0m") if _TTY else (lambda s: s)
 
 
-BOLD = _c("1")
-DIM = _c("2")
-CODE_C = _c("38;5;75")  # left pane accent  - blue
-FB_C = _c("38;5;209")  # right pane accent - amber
-NUM = _c("38;5;150")
-WARN = _c("38;5;203")
-RULE = _c("38;5;240")
-
-LAYER_COLORS = {
-    "host · python": _c("38;5;110"),
-    "forge · c++": _c("38;5;75"),
+BOLD, DIM = _c("1"), _c("2")
+BLUE, AMBER = _c("38;5;75"), _c("38;5;209")
+GREEN, RED = _c("38;5;114"), _c("38;5;203")
+RULE, HERE = _c("38;5;240"), _c("48;5;24")
+LAYER = {
+    "host": _c("38;5;110"),
+    "forge": _c("38;5;75"),
     "tt-mlir": _c("38;5;140"),
     "tt-metal": _c("38;5;176"),
     "silicon": _c("38;5;209"),
 }
 
-SHAPE = [2, 32, 32]
+
+def vlen(s):
+    """Printable width, ignoring ANSI escapes."""
+    out, i = 0, 0
+    while i < len(s):
+        if s[i] == "\033":
+            while i < len(s) and s[i] != "m":
+                i += 1
+        else:
+            out += 1
+        i += 1
+    return out
 
 
-# --------------------------------------------------------------------------- capture
+def pad(s, w):
+    return s + " " * max(0, w - vlen(s))
 
 
-def run_compile(arch_name):
-    """Compile a single ONNX Add for `arch_name` and return everything we can observe."""
+def clip(s, w):
+    """Truncate to printable width. Only used on lines known to be ANSI-free."""
+    return s if len(s) <= w else s[: max(0, w - 1)] + "…"
+
+
+# --------------------------------------------------------------------------- source
+
+
+def read_source(relpath, anchor, before=6, after=10):
+    """Real lines around `anchor` in `relpath`, as (lineno, text, is_anchor)."""
+    path = relpath if os.path.isabs(relpath) else os.path.join(REPO, relpath)
+    if not os.path.exists(path):
+        return [(0, f"(missing: {relpath})", False)]
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        lines = fh.read().splitlines()
+    idx = next((i for i, l in enumerate(lines) if anchor in l), None)
+    if idx is None:
+        return [(0, f"(anchor not found: {anchor!r})", False)]
+    lo, hi = max(0, idx - before), min(len(lines), idx + after + 1)
+    return [(i + 1, lines[i], i == idx) for i in range(lo, hi)]
+
+
+def render_source(rows, width):
+    out = []
+    for no, text, is_anchor in rows:
+        body = clip(text.rstrip("\n").replace("\t", "    "), width - 7)
+        num = f"{no:5d} " if no else "      "
+        if is_anchor:
+            out.append(HERE(pad(f"{num}{body}", width)))
+        else:
+            out.append(DIM(num) + body)
+    return out
+
+
+# --------------------------------------------------------------------------- IR chain
+
+
+def run_opt(passes, src, arch):
+    """Run ttmlir-opt with an explicit pass list and return the resulting IR."""
+    if not os.path.exists(OPT):
+        return None
+    cmd = [OPT]
+    for p in passes:
+        cmd.append(p.format(arch=arch))
+    cmd.append(src)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return res.stdout if res.returncode == 0 and res.stdout.strip() else None
+
+
+def build_ir_chain(arch, scratch):
+    """Real IR after each interesting pass, by invoking the passes individually."""
+    ttir = (
+        "module {\n"
+        f"  func.func @forward(%arg0: tensor<{'x'.join(map(str, SHAPE))}xf32>, "
+        f"%arg1: tensor<{'x'.join(map(str, SHAPE))}xf32>) "
+        f"-> tensor<{'x'.join(map(str, SHAPE))}xf32> {{\n"
+        f'    %0 = "ttir.add"(%arg0, %arg1) : (tensor<{"x".join(map(str, SHAPE))}xf32>, '
+        f'tensor<{"x".join(map(str, SHAPE))}xf32>) -> tensor<{"x".join(map(str, SHAPE))}xf32>\n'
+        f"    return %0 : tensor<{'x'.join(map(str, SHAPE))}xf32>\n"
+        "  }\n"
+        "}\n"
+    )
+    src = os.path.join(scratch, f"add_{arch}.ttir.mlir")
+    with open(src, "w", encoding="utf-8") as fh:
+        fh.write(ttir)
+
+    reg = ["--ttcore-register-device=mock-system-desc-arch={arch}"]
+    chain = {
+        "ttir": ttir,
+        "after_register_device": run_opt(reg, src, arch),
+        "after_ttnn_layout": run_opt(reg + ["--ttnn-layout"], src, arch),
+        "after_convert": run_opt(reg + ["--ttnn-layout", "--convert-ttir-to-ttnn"], src, arch),
+        "full_pipeline": run_opt(["--ttir-to-ttnn-backend-pipeline=mock-system-desc-arch={arch}"], src, arch),
+    }
+    return chain, src
+
+
+def func_body(ir, keep=("ttir.", "ttnn.", "func.func", "return", "ttcore.device")):
+    """The interesting lines of a module -- op lines, not the attribute preamble."""
+    if not ir:
+        return ["(pass did not run — is ttmlir-opt built?)"]
+    out = [l.rstrip() for l in ir.splitlines() if any(k in l for k in keep)]
+    return out or ["(no matching lines)"]
+
+
+def ir_diff(prev, cur, width):
+    """Unified-ish diff of two IR snapshots, marking what this hop changed."""
+    a, b = func_body(prev), func_body(cur)
+    out = []
+    for line in difflib.unified_diff(a, b, lineterm="", n=1):
+        if line.startswith(("---", "+++", "@@")):
+            continue
+        body = clip(line[1:].strip(), width - 2)
+        if line.startswith("+"):
+            out.append(GREEN("+ " + body))
+        elif line.startswith("-"):
+            out.append(RED("- " + body))
+        else:
+            out.append(DIM("  " + body))
+    return out or [DIM("(no change to the op lines at this step)")]
+
+
+def ir_plain(cur, width):
+    return [clip(l.strip(), width) for l in func_body(cur)]
+
+
+# --------------------------------------------------------------------------- compile
+
+
+def run_compile(arch_name, scratch):
     import torch
     from onnx import TensorProto, helper
 
@@ -72,9 +203,8 @@ def run_compile(arch_name):
         "quasar": forge._C.Arch.QUASAR,
     }[arch_name]
 
-    node = helper.make_node("Add", inputs=["input_A", "input_B"], outputs=["output"])
     graph = helper.make_graph(
-        nodes=[node],
+        nodes=[helper.make_node("Add", inputs=["input_A", "input_B"], outputs=["output"])],
         name="AddGraph",
         inputs=[
             helper.make_tensor_value_info("input_A", TensorProto.FLOAT, SHAPE),
@@ -91,540 +221,432 @@ def run_compile(arch_name):
         module_name=f"walkthrough_add_{arch_name}",
         compiler_cfg=cfg,
     )
-
     binary = compiled.compiled_binary
     blob = json.loads(binary.as_json())
-
-    path = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"walkthrough_add_{arch_name}.ttnn")
+    path = os.path.join(scratch, f"walkthrough_add_{arch_name}.ttnn")
     try:
         binary.store(path)
         size = os.path.getsize(path)
     except Exception:
         path, size = None, None
-
-    return {"arch": arch_name, "onnx": model, "blob": blob, "path": path, "size": size}
-
-
-# --------------------------------------------------------------------------- helpers
+    return {"blob": blob, "path": path, "size": size}
 
 
-def ttnn_source(cap):
-    return cap["blob"].get("mlir", {}).get("source", "") or ""
-
-
-def program(cap):
-    programs = cap["blob"].get("programs") or [{}]
-    return programs[0]
-
-
-def op_lines(cap):
-    """One line per op: the SSA expression, with the type signature trimmed.
-
-    debug_info carries the whole MLIR line including a multi-hundred-character
-    ttnn_layout; keeping it would bury the op it is describing.
-    """
-    out = []
-    for i, op in enumerate(program(cap).get("operations", [])):
-        debug = (op.get("debug_info") or "").split("\n")[0]
-        expr = debug.split(" : (")[0].strip()
-        out.append(f"{i}  {op.get('type_type','?')}")
-        if expr:
-            out.append(f"     {expr[:52]}")
-    return out or ["(no operations)"]
-
-
-def grep_source(cap, needle, before=0, after=0, limit=14):
-    """Pull the lines around `needle` out of the embedded TTNN module."""
-    lines = ttnn_source(cap).splitlines()
-    hits = []
-    for i, line in enumerate(lines):
-        if needle in line:
-            lo, hi = max(0, i - before), min(len(lines), i + after + 1)
-            hits.extend(lines[lo:hi])
-            if len(hits) >= limit:
-                break
-    return hits[:limit] or [f"(no line containing {needle!r})"]
-
-
-def hexdump(path, count=96, per_row=8):
-    """8 bytes per row so a line fits inside one pane without wrapping."""
+def hexdump(path, count=64, per_row=8):
     if not path or not os.path.exists(path):
-        return ["(binary not written to disk)"]
+        return ["(binary not on disk)"]
     with open(path, "rb") as fh:
         data = fh.read(count)
     out = []
     for off in range(0, len(data), per_row):
         chunk = data[off : off + per_row]
-        hexpart = " ".join(f"{b:02x}" for b in chunk).ljust(per_row * 3 - 1)
-        text = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
-        out.append(f"{off:04x}  {hexpart}  {text}")
+        hx = " ".join(f"{b:02x}" for b in chunk).ljust(per_row * 3 - 1)
+        tx = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+        out.append(f"{off:04x}  {hx}  {tx}")
     return out
 
 
 # --------------------------------------------------------------------------- stages
 
 
-def build_stages(cap):
-    blob = cap["blob"]
-    prog = program(cap)
+def build_stages(cap, chain, arch):
+    blob, prog = cap["blob"], (cap["blob"].get("programs") or [{}])[0]
     ops = prog.get("operations", [])
-    arch = cap["arch"]
 
-    def sysdesc_excerpt():
-        raw = json.dumps(blob.get("system_desc", {}))
-        chip = blob.get("system_desc", {}).get("chip_descs", [{}])
-        fields = ("arch", "grid", "l1_size", "num_dram_channels", "dram_channel_size")
-        if chip and isinstance(chip[0], dict):
-            return [f"{k} = {chip[0].get(k)}" for k in fields if k in chip[0]] or [raw[:300]]
-        return [raw[:300]]
+    def op_stream(width):
+        out = []
+        for i, op in enumerate(ops):
+            expr = (op.get("debug_info") or "").split("\n")[0].split(" : (")[0].strip()
+            out.append(f"{i}  {op.get('type_type','?')}")
+            if expr:
+                out.append(clip("     " + expr, width))
+        return out or ["(none)"]
 
-    return [
+    def fb_summary(width):
+        return [
+            f"keys        {', '.join(blob.keys())}",
+            f"program     {prog.get('name')}",
+            f"operations  {len(ops)}",
+            f"inputs      {len(prog.get('inputs', []))}",
+            f"outputs     {len(prog.get('outputs', []))}",
+            f"bytes       {cap['size']}",
+            f"tt-mlir     {str(blob.get('ttmlir_git_hash'))[:12]}",
+        ]
+
+    S = []
+    add = S.append
+
+    add(
         dict(
-            layer="host · python",
-            title="The ONNX graph",
-            where="your test / scripts/add_op_walkthrough.py",
-            code=[
-                "A single-node ONNX graph is the smallest thing that",
-                "exercises the entire stack end to end.",
-                "",
-                'helper.make_node("Add",',
-                '    inputs=["input_A", "input_B"],',
-                '    outputs=["output"])',
-                "",
-                f"Both inputs are float32 {tuple(SHAPE)}.",
-            ],
-            fb_title="nothing yet",
-            fb=[
-                "The flatbuffer does not exist.",
-                "",
-                "Everything up to stage 8 is host-side graph",
-                "manipulation. The binary is only serialised at",
-                "the very end.",
-            ],
-        ),
+            layer="host",
+            short="compile.py",
+            title="forge.compile dispatches the stages",
+            file="forge/forge/compile.py",
+            anchor="CompileDepth.RUN_MLIR_COMPILER: run_mlir_compiler",
+            note="Twelve stages in a table. RUN_MLIR_COMPILER is the hop into C++.",
+            ir_key=None,
+            ir_label="no IR yet",
+            ir=lambda w: ["The graph is still forge's own IR.", "", "Nothing MLIR exists until the next file."],
+        )
+    )
+    add(
         dict(
-            layer="host · python",
-            title="forge.compile()",
-            where="forge/forge/compile.py:279-290",
-            code=[
-                "Entry point. Drives a fixed table of twelve",
-                "CompileDepth stages, each a function that",
-                "transforms the graph and hands it on:",
-                "",
-                "  INIT_COMPILE",
-                "  GENERATE_INITIAL_GRAPH   <- TVM converts ONNX",
-                "  POST_INITIAL_GRAPH_PASS",
-                "  CONSTEVAL_GRAPH          <- fold constant subgraphs",
-                "  POST_PATTERN_MATCHER",
-                "  OPTIMIZED_GRAPH",
-                "  AUTOGRAD / POST_AUTOGRAD",
-                "  PRE_LOWERING_PASS",
-                "  SPLIT_GRAPH",
-                "  RUN_MLIR_COMPILER        <- the interesting one",
-                "  FINISH_COMPILE",
+            layer="host",
+            short="compile.py",
+            title="…and calls into the C++ compiler",
+            file="forge/forge/compile.py",
+            anchor="context.compiled_binary = forge._C.run_mlir_compiler",
+            note="The pybind boundary. compiler_cfg.mlir_config carries target_arch.",
+            ir_key=None,
+            ir_label="no IR yet",
+            ir=lambda w: [
+                f"This run passes target_arch={arch},",
+                "which is what removes the device",
+                "requirement two files from now.",
             ],
-            fb_title="still nothing",
-            fb=[
-                "Consteval matters for the binary even though it",
-                "produces none of it: anything folded here never",
-                "becomes an operation in the final program.",
-                "",
-                "For a bare Add there is nothing constant to fold.",
-                "On ResNet-50 this removes 53 weight-preparation",
-                "chains before the flatbuffer is ever written.",
-            ],
-        ),
+        )
+    )
+    add(
         dict(
-            layer="forge · c++",
-            title="Where the target comes from",
-            where="forge/csrc/passes/lower_to_mlir.cpp:201",
-            code=[
-                "Normally emit_mlir() stamps the module with the",
-                "descriptor of the attached device:",
-                "",
-                "  graphModule_->setAttr(",
-                "      SystemDescAttr::name,",
-                "      get_system_desc_attr(graphModule_));",
-                "",
-                "which calls TTSystem::get_system() and opens",
-                "hardware.",
-                "",
-                f"This run set target_arch={arch}, so that stamp is",
-                "SKIPPED and tt-mlir builds the descriptor from the",
-                "pipeline option instead. That is why no device was",
-                "needed to produce what you are looking at.",
-            ],
-            fb_title="system_desc — first real content",
-            fb=sysdesc_excerpt()
-            + [
-                "",
-                "This lands in the binary. The runtime reads it back",
-                "to check the program matches the machine it is",
-                "about to run on.",
-            ],
-        ),
+            layer="forge",
+            short="mlir_compiler.cpp",
+            title="Hand the graph to the lowering",
+            file="forge/csrc/passes/mlir_compiler.cpp",
+            anchor="lower_to_mlir(module, context, mlir_config)",
+            note="mlir_config is threaded in so lowering can see the target.",
+            ir_key=None,
+            ir_label="no IR yet",
+            ir=lambda w: ["Next file builds the first MLIR."],
+        )
+    )
+    add(
         dict(
-            layer="forge · c++",
-            title="lower_to_mlir → TTIR",
-            where="forge/csrc/passes/lower_to_mlir.cpp",
-            code=[
-                "Each forge graph node is emitted as a TTIR op",
-                "through a handler map. The Add becomes:",
-                "",
-                '  %0 = "ttir.add"(%arg0, %arg1)',
-                "",
-                "TTIR is the arch-neutral tensor IR. No layouts, no",
-                "memory spaces, no grids -- just ops and shapes.",
-                "",
-                DIM("Note: the TTIR module is not retained in the"),
-                DIM("binary. Only the final TTNN module is embedded,"),
-                DIM("which is what stage 7 shows."),
-            ],
-            fb_title="nothing yet",
-            fb=[
-                "TTIR is purely in-memory. It is the input to the",
-                "pipeline, never serialised.",
-            ],
-        ),
+            layer="forge",
+            short="lower_to_mlir.cpp",
+            title="Emit TTIR — and decide the target",
+            file="forge/csrc/passes/lower_to_mlir.cpp",
+            anchor="SystemDescAttr::name, get_system_desc_attr",
+            note="Stamping the live device's descriptor here is what normally forces hardware. "
+            "Skipped when a target is named.",
+            ir_key="ttir",
+            ir_label="TTIR — first IR in existence",
+            ir=None,
+        )
+    )
+    add(
+        dict(
+            layer="forge",
+            short="mlir_passes.cpp",
+            title="Look up the pipeline by name",
+            file="forge/csrc/passes/mlir_passes.cpp",
+            anchor="ttir-to-ttnn-backend-pipeline",
+            note="The options string built from MLIRConfig is parsed by MLIR itself.",
+            ir_key="ttir",
+            ir_label="TTIR — unchanged, about to enter the pipeline",
+            ir=None,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="ttcore-register-device",
-            where="lib/Dialect/TTCore/Transforms/TTCoreRegisterDevice.cpp:74-88",
-            code=[
-                "First pass of ttir-to-ttnn-backend-pipeline.",
-                "",
-                "  systemDescPath.empty()",
-                "    ? registerDevice(op, mockSystemDescArch, ...)",
-                "    : registerDevice(op, systemDescPath, ...)",
-                "",
-                "It only fabricates a descriptor if the module does",
-                "not already carry one -- which is exactly the",
-                "handoff stage 3 set up.",
-                "",
-                "A ttcore.device with the worker grid is attached.",
-            ],
-            fb_title="grid drives everything downstream",
-            fb=grep_source(cap, "ttcore.device", limit=4)
-            + [
-                "",
-                "Every layout and sharding decision from here is",
-                "derived from this grid and the L1 size. No pass",
-                "asks 'which chip is this'.",
-            ],
-        ),
+            short="TTCoreRegisterDevice.cpp",
+            title="First pass: attach the device",
+            file="third_party/tt-mlir/lib/Dialect/TTCore/Transforms/TTCoreRegisterDevice.cpp",
+            anchor="mockSystemDescArch",
+            before=8,
+            after=12,
+            note="Builds the descriptor from the pipeline option, because the module carries none.",
+            ir_key="after_register_device",
+            ir_label="+ ttcore.device appears",
+            ir=None,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="TTIR-level passes",
-            where="lib/Dialect/TTNN/Pipelines/TTNNPipelines.cpp:32-97",
-            code=[
-                "Decomposition, fusing, implicit-broadcast folding,",
-                "sliding-window flattening, inverse-op erasure,",
-                "inlining, CSE.",
-                "",
-                "Composite ops are broken into primitives here and",
-                "patterns like conv+relu are fused into one op.",
-                "",
-                "A bare Add passes through nearly untouched -- which",
-                "is why it is the right thing to walk through first.",
-            ],
-            fb_title="op count is decided here",
-            fb=[
-                "Fusion and decomposition are what determine how",
-                "many operations end up in the program.",
-                "",
-                f"This compile ended with {len(ops)} operations.",
-            ],
-        ),
+            short="TTNNPipelines.cpp",
+            title="Decide where tensors live",
+            file="third_party/tt-mlir/lib/Dialect/TTNN/Pipelines/TTNNPipelines.cpp",
+            anchor="createTTNNLayout()",
+            before=4,
+            after=8,
+            note="Grid and L1 size from the descriptor become a layout on every tensor.",
+            ir_key="after_ttnn_layout",
+            ir_label="+ ttnn_layout on every tensor (ops still ttir)",
+            ir=None,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="TTNNLayout → ConvertTTIRToTTNN",
-            where="TTNNPipelines.cpp:166-174",
-            code=[
-                "The step that decides WHERE TENSORS LIVE.",
-                "",
-                "  pm.addPass(createTTNNLayout());",
-                "  pm.addPass(createConvertTTIRToTTNNPass());",
-                "",
-                "Each tensor gets a ttnn_layout: tile shape, core",
-                "grid, memref, DRAM vs L1, interleaved vs sharded.",
-                "Then TTIR ops are rewritten as TTNN ops.",
-                "",
-                "This is where ttir.add becomes ttnn.add, and where",
-                "the to_layout conversions around it appear.",
-            ],
-            fb_title="the layout that will be serialised",
-            fb=grep_source(cap, "#ttnn_layout", limit=6)
-            + ["", "DRAM + interleaved is what optimization-level 0", "gives you: the most conservative choice."],
-        ),
+            short="TTNNPipelines.cpp",
+            title="Rewrite TTIR ops as TTNN ops",
+            file="third_party/tt-mlir/lib/Dialect/TTNN/Pipelines/TTNNPipelines.cpp",
+            anchor="createConvertTTIRToTTNNPass()",
+            before=4,
+            after=6,
+            note="ttir.add becomes ttnn.add. This is the dialect boundary.",
+            ir_key="after_convert",
+            ir_label="ttir.add → ttnn.add",
+            ir=None,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="The TTNN module",
-            where="embedded in the binary as mlir.source",
-            code=[
-                "The final IR before serialisation. This is the",
-                "authoritative description of what will run.",
-                "",
-                "The right pane is the real @forward function from",
-                "the binary you just built -- not a reconstruction.",
-                "",
-                "Note the deallocates: liveness analysis inserted",
-                "them so intermediates are freed as soon as their",
-                "last use passes.",
-            ],
-            fb_title="mlir.source (real, from the binary)",
-            fb=grep_source(cap, "ttnn.", before=0, after=0, limit=16),
-        ),
+            short="(full pipeline)",
+            title="The rest of the pipeline",
+            file="third_party/tt-mlir/lib/Dialect/TTNN/Pipelines/TTNNPipelines.cpp",
+            anchor="createTTIRToTTIRDecompositionPass()",
+            before=6,
+            after=10,
+            note="Decomposition, fusing, layout conversions and liveness deallocates.",
+            ir_key="full_pipeline",
+            ir_label="+ to_layout, + deallocate",
+            ir=None,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="ttnnToFlatbuffer",
-            where="ttmlir/Target/TTNN/TTNNToFlatbuffer.h",
-            code=[
-                "The TTNN module is serialised. Compilation ends",
-                "here -- everything after this is execution.",
-                "",
-                "  auto binary = ttnnToFlatbuffer(mlir_module.get());",
-                "",
-                "The binary is self-describing: it carries the ops,",
-                "the tensor descriptors, the system descriptor it",
-                "was compiled against, and a schema hash so the",
-                "runtime can refuse a mismatched build.",
-            ],
-            fb_title="the binary now exists",
-            fb=[
-                f"top-level keys : {', '.join(blob.keys())}",
-                f"schema_hash    : {str(blob.get('schema_hash'))[:40]}",
-                f"ttmlir version : {blob.get('version')}",
-                f"program name   : {prog.get('name')}",
-                f"operations     : {len(ops)}",
-                f"inputs         : {len(prog.get('inputs', []))}",
-                f"outputs        : {len(prog.get('outputs', []))}",
-                f"size on disk   : {cap['size']} bytes" if cap["size"] else "size on disk   : (not written)",
-            ],
-        ),
+            short="flatbuffer",
+            title="Serialise — compilation ends",
+            file="forge/csrc/passes/mlir_compiler.cpp",
+            anchor="ttnnToFlatbuffer",
+            note="From here the artifact is bytes, not IR. Everything after is execution.",
+            ir_key=None,
+            ir_label="the binary (real, from this compile)",
+            ir=fb_summary,
+        )
+    )
+    add(
         dict(
             layer="tt-mlir",
-            title="What is actually in it",
-            where=cap["path"] or "(in memory)",
-            code=[
-                "The op stream the runtime will replay, in order.",
-                "",
-                "Two things worth noticing:",
-                "",
-                "  - the add is one op among several; most of the",
-                "    program is layout conversion and memory",
-                "    management",
-                "",
-                "  - each op carries its MLIR line as debug_info,",
-                "    so a runtime failure can be traced back to the",
-                "    IR that produced it",
-            ],
-            fb_title="programs[0].operations",
-            fb=op_lines(cap),
-        ),
+            short="flatbuffer",
+            title="What the runtime will replay",
+            file="forge/csrc/passes/mlir_compiler.cpp",
+            anchor="ttnnToFlatbuffer",
+            note="The op stream, in order, read back out of the binary just built.",
+            ir_key=None,
+            ir_label="programs[0].operations",
+            ir=op_stream,
+        )
+    )
+    add(
         dict(
-            layer="tt-mlir",
-            title="The bytes",
-            where=cap["path"] or "(in memory)",
-            code=[
-                "A flatbuffer: no parsing step, the runtime reads",
-                "fields directly out of the mapped buffer.",
-                "",
-                "This file is the complete deliverable of the",
-                "compiler. Hand it to ttrt or to forge's runtime on",
-                "a matching machine and it runs.",
-            ],
-            fb_title="first 96 bytes",
-            fb=hexdump(cap["path"]),
-        ),
+            layer="forge",
+            short="runtime.cpp",
+            title="Open a device, submit the binary",
+            file="forge/csrc/runtime/runtime.cpp",
+            anchor="runtime::submit(device, binary, program_idx, rt_inputs)",
+            note="Now hardware is genuinely required — this is execution, not compilation.",
+            ir_key=None,
+            ir_label="first 64 bytes on disk",
+            ir=lambda w: hexdump(cap["path"]),
+        )
+    )
+    add(
         dict(
             layer="tt-metal",
-            title="Runtime replay",
-            where="runtime/lib/ttnn/program_executor.cpp:222-290",
-            code=[
-                "ProgramExecutor::execute() walks the operation list",
-                "and calls runOperation() on each -- a switch on",
-                "OpType routing every op to its implementation:",
+            short="program_executor.cpp",
+            title="Replay op by op",
+            file="third_party/tt-mlir/runtime/lib/ttnn/program_executor.cpp",
+            anchor="void ProgramExecutor::runOperation",
+            before=2,
+            after=16,
+            note="A switch on OpType routes each flatbuffer op to a TTNN call.",
+            ir_key=None,
+            ir_label="binary being consumed",
+            ir=lambda w: [
+                "EltwiseBinaryOp → ttnn::add",
                 "",
-                "  case OpType::ToLayoutOp:",
-                "      return operations::layout::run(...)",
-                "  case OpType::EltwiseBinaryOp:",
-                "      return operations::binary::run(...)",
-                "",
-                "which calls ttnn::add, which selects a device",
-                "operation and then a PROGRAM FACTORY.",
+                "which selects a device operation,",
+                "then a program factory.",
             ],
-            fb_title="binary → live ops",
-            fb=[
-                "The flatbuffer is now being consumed rather than",
-                "produced.",
+        )
+    )
+    add(
+        dict(
+            layer="tt-metal",
+            short="binary_ng_utils.cpp",
+            title="Pick the kernels",
+            file=os.path.join(TTMETAL, "ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_utils.cpp"),
+            anchor="get_kernel_file_path",
+            before=2,
+            after=14,
+            note="One source file per RISC-V role. This is where architectures diverge.",
+            ir_key=None,
+            ir_label="the Quasar boundary",
+            ir=lambda w: [
+                "Everything so far was arch-neutral.",
                 "",
-                "Factory selection is where architectures diverge.",
-                "Everything up to this point was arch-neutral.",
-                "",
-                WARN("On Quasar the mainline factories are refused:"),
-                WARN("DataMovementKernel's constructor hard-fails."),
+                RED("On Quasar the mainline factories are"),
+                RED("refused outright — next file shows why."),
             ],
-        ),
+        )
+    )
+    add(
+        dict(
+            layer="tt-metal",
+            short="kernel.hpp",
+            title="Why Quasar needs its own factories",
+            file=os.path.join(TTMETAL, "tt_metal/impl/kernels/kernel.hpp"),
+            anchor="DataMovementKernel is not supported on Quasar",
+            before=6,
+            after=4,
+            note="A hard fail in the constructor, so an unported op compiles then dies at execution.",
+            ir_key=None,
+            ir_label="compile vs run",
+            ir=lambda w: [
+                "This is the asymmetry that makes Quasar",
+                "compile-clean and run-broken.",
+                "",
+                f"This walkthrough compiled for {arch}",
+                "without ever reaching this line.",
+            ],
+        )
+    )
+    add(
         dict(
             layer="silicon",
-            title="Three kernels, five processors",
-            where="binary_ng_utils.cpp:82-115 (get_kernel_file_path)",
-            code=[
-                "For an un-broadcast interleaved Add the factory",
-                "names one source file per RISC-V role:",
+            short="eltwise_binary_no_bcast.cpp",
+            title="The actual addition",
+            file=os.path.join(
+                TTMETAL,
+                "ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/kernels/compute/eltwise_binary_no_bcast.cpp",
+            ),
+            anchor="tile_regs_acquire",
+            before=8,
+            after=12,
+            note="The only arithmetic in the whole journey. Everything else was logistics.",
+            ir_key=None,
+            ir_label="round trip",
+            ir=lambda w: [
+                "dest regs → output CB → DRAM → host",
+                "→ torch.Tensor → verify() by PCC.",
                 "",
-                "  reader_interleaved_no_bcast.cpp   BRISC",
-                "  eltwise_binary_no_bcast.cpp       TRISC0/1/2",
-                "  writer_interleaved_no_bcast.cpp   NCRISC",
-                "",
-                "They are JIT-compiled for the arch, then enqueued.",
+                DIM("On Quasar execution wedges just before"),
+                DIM("this: srcA/srcB valid=1, matrix=0."),
             ],
-            fb_title="the binary is spent",
-            fb=[
-                "Nothing of the flatbuffer survives past here. It",
-                "described what to run; the kernels are what runs.",
-                "",
-                "  BRISC   DRAM -> L1 circular buffer",
-                "  TRISC0  L1 -> srcA / srcB registers",
-                "  TRISC1  FPU -> destination registers",
-                "  TRISC2  dest -> output circular buffer",
-                "  NCRISC  L1 -> DRAM",
-            ],
-        ),
-        dict(
-            layer="silicon",
-            title="The addition",
-            where="kernels/compute/eltwise_binary_no_bcast.cpp:46-57",
-            code=[
-                "The only arithmetic in the entire journey:",
-                "",
-                "  tile_regs_acquire();",
-                "  add_tiles(cb_a, cb_b, i, i, dst);",
-                "  tile_regs_commit();",
-                "",
-                "  tile_regs_wait();",
-                "  pack_tile(i, cb_out);",
-                "  tile_regs_release();",
-                "",
-                "Everything else -- all twelve stages before this --",
-                "was logistics to get two tiles next to an FPU.",
-            ],
-            fb_title="round trip complete",
-            fb=[
-                "Result tiles go back out to DRAM, are copied to",
-                "host memory, and become a torch.Tensor.",
-                "",
-                "verify() then compares against the framework model",
-                "by PCC.",
-                "",
-                DIM("On Quasar this stage is where execution currently"),
-                DIM("wedges: srcA/srcB reach valid=1 unpack=1 and"),
-                DIM("matrix=0 -- unpack delivered, math never took it."),
-            ],
-        ),
-    ]
+        )
+    )
+    return S
 
 
 # --------------------------------------------------------------------------- render
 
 
-def wrap(lines, width):
-    out = []
-    for line in lines:
-        if not line:
-            out.append("")
-            continue
-        # Pre-coloured lines are passed through; ANSI breaks naive wrapping.
-        if "\033[" in line:
-            out.append(line)
-            continue
-        out.extend(textwrap.wrap(line, width) or [""])
-    return out
-
-
-def visible_len(s):
-    out, i = 0, 0
-    while i < len(s):
-        if s[i] == "\033":
-            while i < len(s) and s[i] != "m":
-                i += 1
+def travel_bar(stages, i, width):
+    """The chain of files, with the current hop highlighted."""
+    names = []
+    for n, st in enumerate(stages):
+        s = st["short"]
+        names.append(HERE(f" {s} ") if n == i else (DIM(s) if abs(n - i) > 2 else s))
+    bar, out = "", []
+    for n, chunk in enumerate(names):
+        sep = DIM(" → ") if n else ""
+        if vlen(bar) + vlen(sep) + vlen(chunk) > width:
+            out.append(bar)
+            bar = chunk
         else:
-            out += 1
-        i += 1
+            bar += sep + chunk
+    out.append(bar)
     return out
 
 
-def pad(s, width):
-    return s + " " * max(0, width - visible_len(s))
-
-
-def render(stage, index, total, cols):
-    layer = stage["layer"]
-    lc = LAYER_COLORS.get(layer, BOLD)
-
+def render(stages, i, chain, cols):
+    st = stages[i]
     print("\033[2J\033[H" if _TTY else "")
-    head = f" {index + 1}/{total}  {stage['title']} "
-    print(BOLD(head))
-    print(f" {lc(layer.upper())}   {DIM(stage['where'])}")
-    print(RULE("─" * min(cols, 100)))
+    lc = LAYER.get(st["layer"], BOLD)
+    print(BOLD(f" {i + 1}/{len(stages)}  {st['title']}"))
+    print(f" {lc(st['layer'].upper())}")
+    for line in travel_bar(stages, i, min(cols, 150) - 2):
+        print(" " + line)
+    print(RULE("─" * min(cols, 150)))
+
+    shown = st["file"]
+    if shown.startswith(REPO):
+        shown = os.path.relpath(shown, REPO)
+    print(f" {BLUE(shown)}")
+    for line in textwrap.wrap(st["note"], min(cols, 150) - 2):
+        print(" " + DIM(line))
     print()
 
-    stacked = cols < 96
-    if stacked:
-        print(CODE_C("── CODE ──"))
-        for line in wrap(stage["code"], min(cols - 2, 88)):
-            print("  " + line)
-        print()
-        print(FB_C(f"── FLATBUFFER · {stage['fb_title']} ──"))
-        for line in wrap(stage["fb"], min(cols - 2, 88)):
-            print("  " + line)
+    stacked = cols < 110
+    pane = (min(cols, 170) - 3) // 2 if not stacked else min(cols, 110) - 2
+
+    rows = read_source(st["file"], st["anchor"], st.get("before", 6), st.get("after", 10))
+    left = render_source(rows, pane)
+
+    if st["ir_key"]:
+        keys = list(chain.keys())
+        pos = keys.index(st["ir_key"])
+        prev = chain[keys[pos - 1]] if pos > 0 else None
+        right = ir_diff(prev, chain[st["ir_key"]], pane) if prev else ir_plain(chain[st["ir_key"]], pane)
     else:
-        gutter = 3
-        pane = (min(cols, 150) - gutter) // 2
-        left = wrap(stage["code"], pane)
-        right = wrap(stage["fb"], pane)
-        print(pad(CODE_C("── CODE ──"), pane) + " " * gutter + FB_C(f"── FLATBUFFER · {stage['fb_title']}"))
+        right = [clip(x, pane) if "\033" not in x else x for x in st["ir"](pane)]
+
+    if stacked:
+        print(BLUE("── SOURCE ──"))
+        for l in left:
+            print(" " + l)
         print()
-        for i in range(max(len(left), len(right))):
-            l = left[i] if i < len(left) else ""
-            r = right[i] if i < len(right) else ""
-            print(pad(l, pane) + " " * gutter + r)
+        print(AMBER(f"── IR · {st['ir_label']} ──"))
+        for r in right:
+            print(" " + r)
+    else:
+        print(pad(BLUE("── SOURCE ──"), pane) + "   " + AMBER(f"── IR · {st['ir_label']}"))
+        print()
+        for n in range(max(len(left), len(right))):
+            l = left[n] if n < len(left) else ""
+            r = right[n] if n < len(right) else ""
+            print(pad(l, pane) + "   " + r)
 
     print()
-    print(RULE("─" * min(cols, 100)))
-    print(DIM(" Enter next   b back   q quit   <n> jump"))
+    print(RULE("─" * min(cols, 150)))
+    print(DIM(" Enter next   b back   q quit   <n> jump   f full source   i full IR"))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--arch", default="wormhole_b0", choices=["wormhole_b0", "blackhole", "quasar"])
     ap.add_argument("--no-pager", action="store_true", help="print every stage and exit")
+    ap.add_argument("--ir", type=int, metavar="N", help="print stage N's IR snapshot whole and exit")
     args = ap.parse_args()
 
-    print(f"Compiling a single ONNX Add for {args.arch} (no device needed)…")
+    scratch = os.environ.get("TMPDIR", "/tmp")
+    print(f"Building IR snapshots for {args.arch} …")
+    chain, ttir_path = build_ir_chain(args.arch, scratch)
+    if chain["full_pipeline"] is None:
+        print(f"  {RED('warning')}: ttmlir-opt produced nothing — is {OPT} built?")
+
+    print("Compiling a single ONNX Add (no device needed) …")
     try:
-        cap = run_compile(args.arch)
-    except Exception as exc:  # noqa: BLE001 - the message matters more than the type
-        print(f"\n{WARN('Compile failed:')} {exc}\n")
-        print("This walkthrough reads a real compile. Check that forge imports:")
-        print("    source env/activate")
+        cap = run_compile(args.arch, scratch)
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n{RED('Compile failed:')} {exc}\n  try:  source env/activate")
         return 1
 
-    stages = build_stages(cap)
-    total = len(stages)
-    print(f"Done — {len(program(cap).get('operations', []))} ops, {cap['size']} bytes.\n")
+    stages = build_stages(cap, chain, args.arch)
+    nops = len((cap["blob"].get("programs") or [{}])[0].get("operations", []))
+    print(f"Ready — {nops} ops, {cap['size']} bytes, {len(stages)} hops.\n")
 
+    if args.ir is not None:
+        st = stages[max(0, min(args.ir - 1, len(stages) - 1))]
+        print(chain.get(st["ir_key"]) or "(this stage has no IR snapshot)")
+        return 0
+
+    cols = shutil.get_terminal_size((120, 40)).columns
     if args.no_pager:
-        cols = shutil.get_terminal_size((100, 40)).columns
-        for i, st in enumerate(stages):
-            render(st, i, total, cols)
+        for i in range(len(stages)):
+            render(stages, i, chain, cols)
             print()
         return 0
 
     i = 0
     while True:
-        cols = shutil.get_terminal_size((100, 40)).columns
-        render(stages[i], i, total, cols)
+        cols = shutil.get_terminal_size((120, 40)).columns
+        render(stages, i, chain, cols)
         try:
             key = input(" > ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -633,14 +655,21 @@ def main():
 
         if key == "q":
             return 0
-        if key == "b":
+        if key == "f":
+            rows = read_source(stages[i]["file"], stages[i]["anchor"], 30, 40)
+            print("\n".join(render_source(rows, cols - 2)))
+            input(DIM(" (enter) "))
+        elif key == "i":
+            print(chain.get(stages[i]["ir_key"]) or "(no IR snapshot at this stage)")
+            input(DIM(" (enter) "))
+        elif key == "b":
             i = max(0, i - 1)
-        elif key.isdigit() and 1 <= int(key) <= total:
+        elif key.isdigit() and 1 <= int(key) <= len(stages):
             i = int(key) - 1
         else:
             i += 1
-            if i >= total:
-                print(BOLD("\n  End of walkthrough.\n"))
+            if i >= len(stages):
+                print(BOLD("\n  Journey complete.\n"))
                 return 0
 
 
