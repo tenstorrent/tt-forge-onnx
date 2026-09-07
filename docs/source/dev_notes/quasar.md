@@ -443,6 +443,45 @@ performance one: the hand-written Quasar ResNet-50 folds relu into the preceding
 add/conv and removes the op entirely, which needs a binary+activation pattern in
 tt-mlir's fusing pass that does not exist yet.
 
+## How an op is actually mapped
+
+![How one ONNX Add is mapped onto Quasar](../imgs/compiler_arch/quasar-add-mapping.drawio.svg "Add on Quasar")
+
+Worth internalising because it is the shape of *every* op mapping, not just add's.
+Compilation is arch-neutral, so the same `ttnn.add` reaches the runtime for every
+target; a single branch then picks the implementation:
+
+```cpp
+#define RUN_ELTWISE_BINARY(NAME)                                          \
+  runEltwiseBinaryOp(op, tensorPool, [](auto &&...args) {                 \
+    return utils::isQuasar()                                              \
+               ? ::ttnn::operations::experimental::quasar::binary::NAME(  \
+                     std::forward<decltype(args)>(args)...)               \
+               : ::ttnn::NAME(std::forward<decltype(args)>(args)...);     \
+  })
+```
+
+The swap is one line because the Quasar entry point takes the same leading arguments
+as the mainline op — `(lhs, rhs, output_dtype, memory_config)` — so one forwarded
+parameter pack binds to both and no per-op shim is needed. That is why all 14 eltwise
+binary ops landed in a single commit. Where the signatures diverge, as for conv2d and
+matmul's program configs, the swap does not work and the op needs real handling.
+
+The `false` branch is drawn dashed because on Quasar it is **refused, not slow**: the
+mainline program factory constructs a `DataMovementKernel`, whose constructor
+`TT_FATAL`s with *"not supported on Quasar. Use QuasarDataMovementKernel instead"*
+(`tt_metal/impl/kernels/kernel.hpp:417`). That refusal is the entire reason
+`isQuasar()` exists.
+
+Score any op three ways, and only the third counts. For add: (1) a Quasar op exists,
+(2) the runtime dispatches to it, (3) it depends on how it is driven. From tt-metal
+directly it **passes** — 4/4 ResNet-50 residual-add shapes on craq-sim, bf16, TILE,
+HEIGHT_SHARDED in L1 across the 8x4 = 32-core grid, with a fused RELU. From forge it
+wedges, and forge emits something quite different: f32, DRAM, INTERLEAVED, a 1x1 grid.
+Since (1) and (2) are both green, "add is unmapped" is the wrong diagnosis.
+
+Regenerate with `python scripts/gen_add_mapping_diagram.py`.
+
 ## Where Quasar support lives, and how it gets lost
 
 Quasar support is **not** in tt-mlir or tt-metal `main`. It lives on branches that
