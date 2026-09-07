@@ -424,35 +424,56 @@ One structural consequence worth recording: `D2M → TTMetal/TTKernel` lowering 
 on Quasar (`lib/Dialect/D2M/Utils/DMAUtils.cpp:51-60`), so **only the TTNN path is
 viable** — which is the path forge takes anyway.
 
-### Support, stage by stage
+### Who does what, by repo
 
-![Quasar support, stage by stage](../imgs/compiler_arch/quasar-bringup-phases.drawio.svg "Quasar stages")
+![Quasar support: what each repo has to do](../imgs/compiler_arch/quasar-bringup-phases.drawio.svg "Quasar support by repo")
 
-Eight stages left to right, each with its current status. Stages 0-2 are green as of
-2026-09-07, which is what unblocked everything downstream.
+Rows are repos, columns are phases in order. Status as of 2026-09-07.
 
-The ordering is the part worth internalising, because the intuitive one wastes effort.
-**The critical path runs through stage 2 (execution), not stage 3 (op dispatch)** — that
-is the only arrow marked *gates*. Stage 3 is by far the bigger pile of work, but it was
-unmeasurable until stage 2 landed: you can compile a Quasar binary for any op, and
-without execution you cannot tell a correct one from a wrong one.
+**The empty cells are the point.** forge has nothing to do in phases 3 and 4, and
+tt-mlir has nothing to do in phase 4 — because no compiler pass needs a Quasar change
+at all. Read those before the full ones.
 
-Two calibrations on the table:
+The single cross-lane arrow is the whole seam between the arch-neutral stack and
+Quasar-specific code:
 
-* **Stage 3 is smaller than it looks.** Not 131 op types, not 121 files. tt-metal
-  implements 28 Quasar op families, ten of which are reached today — so eighteen
-  already exist and are simply unwired (`pad`, `slice`, `transpose`, `typecast`,
+```
+ttnn.add  ->  ttnn::operations::experimental::quasar::binary::add     (isQuasar)
+binary.cpp:45          ->          binary.hpp:183
+```
+
+Everything above that arrow is shared by every architecture. Everything below it is
+tt-metal's, and mostly upstream.
+
+The work per repo, in one line each:
+
+| Repo | Files | What it is |
+|---|---|---|
+| tt-forge-onnx | 12 | plumb an arch through config — no per-op work, ever |
+| tt-mlir | 16, **13 of them runtime op dispatch** | the bulk: an `isQuasar()` branch per op |
+| ttnn / tt-metal | 2 local | the Quasar op library, HAL and SoC YAMLs are upstream |
+
+Two calibrations people get wrong:
+
+* **Phase 3 is smaller than it looks.** Not 131 op types, not 121 files. tt-metal
+  implements 28 Quasar op families, ten of which are reached today — so eighteen already
+  exist and are simply unwired (`pad`, `slice`, `transpose`, `typecast`,
   `to_memory_config`, `tilize`/`untilize`, …), each an `isQuasar()` branch and a
   namespace swap. Then subtract the ops that need no Quasar path at all because they
   build no kernel: `deallocate` and `get_device` run straight through mainline.
-* **Stage 6 contradicts the arch-neutrality claim above, deliberately.** Every pass is
-  arch-neutral *today* only because `TTMLIR_ENABLE_OPMODEL` defaults OFF
+* **The optimizer is where arch-neutrality ends.** Every pass is arch-neutral *today*
+  only because `TTMLIR_ENABLE_OPMODEL` defaults OFF
   (`third_party/tt-mlir/CMakeLists.txt:40`), so nothing shards or picks an L1 layout and
   everything lands DRAM-interleaved at optimization level 0. Quasar's 4 MiB L1 — 2.8x
-  Wormhole's — is unexploited. Turning the optimizer on is where genuine arch-aware
-  compiler work begins, and where the performance story lives.
+  Wormhole's — is unexploited. That is where the performance story lives, and it is not
+  on this diagram.
 
-Regenerate with `python scripts/gen_quasar_phase_diagram.py` after any stage moves.
+The `gates` marker between phases 2 and 3 preserves the ordering lesson: nothing in
+phase 3 can be validated until phase 2 executes.
+
+Regenerate with `python scripts/gen_quasar_phase_diagram.py`. The generator refuses to
+draw a cell with more than three body lines or a line too wide for its box, so the
+picture cannot quietly become unreadable.
 
 ### The picture
 
