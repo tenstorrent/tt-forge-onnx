@@ -20,7 +20,9 @@ to its pin. Verify before anything else:
 ```bash
 cd /proj_sw/user_dev/ctr-lelanchelian/tt-forge-onnx
 
-git -C third_party/tt-mlir rev-parse --short HEAD          # expect 6f17e2407b
+# Expect whatever the parent repo pins -- compare, don't hardcode a SHA here.
+git -C third_party/tt-mlir rev-parse --short=10 HEAD
+git ls-tree HEAD third_party/tt-mlir | awk '{print substr($3,1,10)}'
 
 grep -q "l1Size = 4194304" \
   third_party/tt-mlir/lib/Dialect/TTCore/IR/TTCoreOpsTypes.cpp \
