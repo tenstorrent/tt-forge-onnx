@@ -42,5 +42,6 @@ dev_notes/standalone_ttir_run
 dev_notes/verification
 dev_notes/quasar
 dev_notes/quasar_run_single_op
+dev_notes/quasar_changes_transcript
 docstring_standard
 ```

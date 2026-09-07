@@ -486,6 +486,14 @@ performance one: the hand-written Quasar ResNet-50 folds relu into the preceding
 add/conv and removes the op entirely, which needs a binary+activation pattern in
 tt-mlir's fusing pass that does not exist yet.
 
+## Explaining this to someone
+
+`quasar_changes_transcript.md` is a call script for walking through the change set,
+paired with `imgs/compiler_arch/quasar-changes.drawio.svg` — three rows, one per change,
+each read left to right as before, what we changed, after, with the file and line on the
+change box so a listener can follow in the source. About 12 minutes, or 5 if you read
+only the bolded lines.
+
 ## How an op is actually mapped
 
 ![How one ONNX Add is mapped onto Quasar](../imgs/compiler_arch/quasar-add-mapping.drawio.svg "Add on Quasar")
