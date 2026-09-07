@@ -62,10 +62,30 @@ def compile_for(arch, module_name):
     return forge.compile(build_add_model(), inputs, module_name=module_name, compiler_cfg=cfg)
 
 
+def compile_for_dtype(arch, module_name, df):
+    """Compile the Add for a named arch with a data-format override. No hardware."""
+    cfg = CompilerConfig(mlir_config=MLIRConfig().set_target_arch(arch))
+    cfg.default_df_override = df
+    inputs = [torch.rand(SHAPE), torch.rand(SHAPE)]
+    return forge.compile(build_add_model(), inputs, module_name=module_name, compiler_cfg=cfg)
+
+
 def op_types(compiled_model):
     """The TTNN op stream the compiler emitted, read back out of the flatbuffer."""
     binary = json.loads(compiled_model.compiled_binary.as_json())
     return [op["type_type"] for op in binary["programs"][0]["operations"]]
+
+
+def ttnn_source(compiled_model):
+    """The final TTNN module, which the flatbuffer carries verbatim."""
+    binary = json.loads(compiled_model.compiled_binary.as_json())
+    return binary["mlir"]["source"]
+
+
+def chip_desc(compiled_model):
+    """The chip descriptor the compile was performed against."""
+    binary = json.loads(compiled_model.compiled_binary.as_json())
+    return binary["system_desc"]["chip_descs"][0]
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +147,90 @@ def test_add_compiles_identically_for_every_arch():
     reference = streams[arch_slug(ARCHS[0])]
     for name, stream in streams.items():
         assert stream == reference, f"{name} lowered differently: {stream} vs {reference}"
+
+
+# ---------------------------------------------------------------------------
+# Data format — no device
+#
+# The dtype is not a detail for Quasar: f32 makes is_binary_sfpu_op true for every
+# op including add, so it routes the SFPU kernel, while bf16 takes the FPU binary_ng
+# kernel. Only bf16 currently executes (see docs/source/dev_notes/quasar.md), so the
+# compiler emitting the dtype that was asked for is worth asserting device-free
+# rather than discovering on a simulator run that takes minutes.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("arch", ARCHS, ids=arch_slug)
+def test_add_defaults_to_f32(arch):
+    """With no override the Add stays float32, matching the ONNX graph."""
+    compiled = compile_for(arch, f"add_default_df_{arch_slug(arch)}")
+    source = ttnn_source(compiled)
+
+    assert '"ttnn.add"' in source
+    add_line = next(line for line in source.splitlines() if '"ttnn.add"' in line)
+    assert "xf32," in add_line, f"expected f32 operands, got: {add_line.strip()}"
+
+
+@pytest.mark.parametrize("arch", ARCHS, ids=arch_slug)
+def test_add_honours_bf16_override(arch):
+    """default_df_override reaches the emitted TTNN tensors, not just the graph.
+
+    This is the knob that makes add executable on Quasar, so it has to be verified
+    where it lands -- in the IR -- rather than where it is set.
+    """
+    compiled = compile_for_dtype(
+        arch, f"add_bf16_{arch_slug(arch)}", forge._C.DataFormat.Float16_b
+    )
+    source = ttnn_source(compiled)
+
+    add_line = next(line for line in source.splitlines() if '"ttnn.add"' in line)
+    assert "xbf16," in add_line, f"expected bf16 operands, got: {add_line.strip()}"
+    assert "xf32," not in add_line
+
+    # The override must not perturb the op stream: same ops, different element type.
+    assert op_types(compiled) == op_types(compile_for(arch, f"add_cmp_{arch_slug(arch)}"))
+
+
+def test_quasar_descriptor_excludes_block_float():
+    """Quasar's descriptor must not advertise formats the device cannot run.
+
+    tt-metal's is_supported_quasar excludes Bfp2/Bfp4/Bfp8 and their _b variants --
+    Quasar's narrow formats are MX -- and it has no unsigned 16/32-bit device format.
+    Advertising them makes every legality check downstream believe bf8_b is available
+    and defers the failure to a tt-metal host format-validator throw.
+    """
+    compiled = compile_for(forge._C.Arch.QUASAR, "add_desc_quasar")
+    formats = chip_desc(compiled)["supported_data_types"]
+
+    assert formats == ["Float32", "Float16", "BFloat16", "UInt8", "Int32"], formats
+    assert not [f for f in formats if f.startswith("BFP")]
+    assert "UInt16" not in formats and "UInt32" not in formats
+
+
+def test_wormhole_descriptor_keeps_block_float():
+    """The counterpart: narrowing Quasar must not have narrowed Wormhole."""
+    compiled = compile_for(forge._C.Arch.WORMHOLE_B0, "add_desc_wormhole")
+    formats = chip_desc(compiled)["supported_data_types"]
+
+    assert len(formats) == 13, formats
+    for expected in ("BFP_BFloat8", "BFP_BFloat4", "UInt16", "UInt32"):
+        assert expected in formats
+
+
+def test_quasar_rejects_bf8_weight_override():
+    """Asking for a format Quasar lacks must fail at config time, not in the runtime."""
+    cfg = CompilerConfig(
+        mlir_config=MLIRConfig()
+        .set_target_arch(forge._C.Arch.QUASAR)
+        .set_experimental_weight_dtype(forge._C.DataFormat.Bfp8_b)
+    )
+    with pytest.raises(Exception, match="Quasar"):
+        forge.compile(
+            build_add_model(),
+            [torch.rand(SHAPE), torch.rand(SHAPE)],
+            module_name="add_bfp8_quasar",
+            compiler_cfg=cfg,
+        )
 
 
 # ---------------------------------------------------------------------------
