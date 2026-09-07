@@ -525,6 +525,31 @@ each read left to right as before, what we changed, after, with the file and lin
 change box so a listener can follow in the source. About 12 minutes, or 5 if you read
 only the bolded lines.
 
+## The change map
+
+![What we changed to run an op on Quasar](../imgs/compiler_arch/quasar-change-map.drawio.svg "Quasar change map")
+
+The spine is stock — the identical path a Wormhole compile takes: ONNX module, forge
+graph, `lower_to_mlir` to TTIR, the descriptor stamp, TTNN, the flatbuffer, runtime
+dispatch, the Tensix kernel. **Every Quasar change is a branch off one step of it, not a
+replacement for part of it**, which is the shape worth carrying away.
+
+Four branches, four changes:
+
+| | Attaches to | What |
+|---|---|---|
+| **1** | the descriptor stamp | the system descriptor, corrected for Quasar — formats and `num_cbs` now come from tt-metal's own API instead of a hardcoded Wormhole list |
+| **2** | the forge graph | `default_df_override = Float16_b`, because f32 routes the SFPU kernel and livelocks |
+| **3** | runtime dispatch | **the mapping** — `isQuasar()` selects `experimental::quasar::binary::add` over mainline, which is *refused* on Quasar rather than slower |
+| **4** | runtime dispatch | run from `$TT_METAL_HOME`, since kernel include paths resolve against the cwd |
+
+Note that changes 3 and 4 both hang off the same step. That is not an accident: the
+runtime dispatch box is the only place in the whole spine where anything is
+Quasar-specific.
+
+The two banners are the honest bookends — what works, and what does not yet. Regenerate
+with `python scripts/gen_quasar_change_map.py`.
+
 ## How an op is actually mapped
 
 ![How one ONNX Add is mapped onto Quasar](../imgs/compiler_arch/quasar-add-mapping.drawio.svg "Add on Quasar")
