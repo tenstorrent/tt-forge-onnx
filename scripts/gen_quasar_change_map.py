@@ -41,24 +41,58 @@ OUT = os.path.join(
     REPO, "docs", "source", "imgs", "compiler_arch", "quasar-change-map.drawio.svg"
 )
 
-W, H = 2480, 1000
-SW, SH = 258, 86            # spine box
+W, H = 2820, 1180
+SW, SH = 300, 150           # spine box
 SGAP = 46
-SX0, SY = 40, 452           # the spine sits mid-canvas, branches above and below
+SX0, SY = 40, 508           # the spine sits mid-canvas, branches above and below
 
 TITLE = "What we changed to run an op on Quasar"
 SUB = ("The spine is stock — the identical path a Wormhole compile takes. Every Quasar "
        "change is a branch off one step of it, not a replacement for it.")
 
 SPINE = [
-    dict(id="s0", label="ONNX module", sub="Add node, float32"),
-    dict(id="s1", label="forge graph", sub='graphlib::Graph, op = "add"'),
-    dict(id="s2", label="lower_to_mlir → TTIR", sub="ttir.add · lower_to_mlir.cpp:843"),
-    dict(id="s3", label="stamp the descriptor", sub="ttcore-register-device"),
-    dict(id="s4", label="TTNN", sub="ttnn.add · arch-neutral"),
-    dict(id="s5", label=".ttnn flatbuffer", sub="EltwiseBinaryOp"),
-    dict(id="s6", label="runtime dispatch", sub="isQuasar() ? :"),
-    dict(id="s7", label="Tensix kernel", sub="add_tiles on the FPU"),
+    dict(id="s0", label="ONNX module", sub="the input",
+         lines=["one Add node, float32,",
+                "the smallest graph that",
+                "exercises the whole stack"]),
+    dict(id="s1", label="forge graph", sub="compile.py:182",
+         lines=["TVM Relay -> a generated",
+                "Python module -> traced into",
+                'graphlib::Graph, op = "add".',
+                "9 CompileDepth stages run."]),
+    dict(id="s2", label="lower_to_mlir → TTIR", sub="lower_to_mlir.cpp:843",
+         lines=["a string-keyed handler map:",
+                '  "add" -> ttir::AddOp',
+                "arch-neutral — ops and shapes,",
+                "no layouts, no memory spaces"]),
+    dict(id="s3", label="stamp the descriptor", sub="ttcore-register-device",
+         lines=["emit_mlir stamps the live",
+                "device's descriptor, OR skips it",
+                "when a target is named and",
+                "registerDevice fabricates one.",
+                "-> ttcore.device (worker grid)"]),
+    dict(id="s4", label="TTNN", sub="ttnn-layout, convert-ttir-to-ttnn",
+         lines=["ttir.add -> ttnn.add, and every",
+                "tensor gets a #ttnn_layout:",
+                "tile shape, core grid, DRAM vs",
+                "L1, interleaved vs sharded.",
+                "Identical for both arches."]),
+    dict(id="s5", label=".ttnn flatbuffer", sub="ttnnToFlatbuffer",
+         lines=["compilation ends here. Carries",
+                "the op stream, the tensor",
+                "descriptors, the system_desc it",
+                "was built against, a schema hash"]),
+    dict(id="s6", label="runtime dispatch", sub="program_executor.cpp:318",
+         lines=["ProgramExecutor replays the op",
+                "stream; a switch on OpType",
+                "routes EltwiseBinaryOp to",
+                "binary::run, which asks",
+                "isQuasar(). THE ONLY ARCH FORK."]),
+    dict(id="s7", label="Tensix kernel", sub="silicon",
+         lines=["3 kernels across 5 RISC-V:",
+                "BRISC DRAM->L1, TRISC0 unpack,",
+                "TRISC1 add_tiles on the FPU,",
+                "TRISC2 pack, NCRISC L1->DRAM"]),
 ]
 
 # side: -1 above, +1 below.  attach: spine index.
@@ -205,12 +239,16 @@ def emit_mxfile():
 
     for i, s in enumerate(SPINE):
         fill, stroke, font = BADGE_STYLE[NEUTRAL]
-        box(s["id"],
-            f'<b>{escape(s["label"])}</b><br>'
-            f'<font style="font-size:9.5px">{escape(s["sub"])}</font>',
-            f"rounded=1;arcSize=20;whiteSpace=wrap;html=1;fillColor={fill};"
-            f"strokeColor={stroke};fontColor={font};align=center;"
-            "verticalAlign=middle;fontSize=12;strokeWidth=1.8;",
+        body = [f'<b>{escape(s["label"])}</b>',
+                f'<font style="font-size:9px;color:#5b6472">{escape(s["sub"])}</font>',
+                ""]
+        body += [f'<font style="font-size:8.5px">{escape(l)}</font>'
+                 for l in s.get("lines", [])]
+        box(s["id"], "<br>".join(body),
+            f"rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor={fill};"
+            f"strokeColor={stroke};fontColor={font};align=left;"
+            "verticalAlign=top;spacingLeft=10;spacingTop=5;fontSize=11;"
+            "strokeWidth=1.8;",
             spine_x(i), SY, SW, SH)
 
     for i in range(len(SPINE) - 1):
@@ -293,13 +331,12 @@ def emit_svg(mxfile):
         x = spine_x(i)
         p.append(f'<rect x="{x}" y="{SY}" width="{SW}" height="{SH}" rx="18" '
                  f'fill="{fill}" stroke="{stroke}" stroke-width="1.8"/>')
-        p.append(f'<text x="{x + SW / 2}" y="{SY + 36}" text-anchor="middle" '
-                 'font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
-                 f'font-size="12.5" font-weight="bold" fill="{font}">'
-                 f'{escape(s["label"])}</text>')
-        p.append(f'<text x="{x + SW / 2}" y="{SY + 55}" text-anchor="middle" '
-                 'font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
-                 f'font-size="9.5" fill="#3f4854">{escape(s["sub"])}</text>')
+        p.append(svg_text(x + 11, SY + 21, s["label"], 12, "bold", font))
+        p.append(svg_text(x + 11, SY + 35, s["sub"], 8.5, "normal", "#5b6472"))
+        ty = SY + 52
+        for l in s.get("lines", []):
+            p.append(svg_text(x + 11, ty, l, 8.5, "normal", "#3f4854"))
+            ty += 11
 
     y = SY + SH / 2
     for i in range(len(SPINE) - 1):
@@ -378,6 +415,15 @@ def main():
                     if len(l) * 5.25 + 24 > w:
                         raise SystemExit(f"{n}: line needs "
                                          f"{len(l) * 5.25 + 24:.0f}px, card is {w}: {l!r}")
+    for i, sp in enumerate(SPINE):
+        for l in sp.get("lines", []) + [sp["label"], sp["sub"]]:
+            if len(l) * 4.9 + 22 > SW:
+                raise SystemExit(f"spine {i}: line needs {len(l) * 4.9 + 22:.0f}px, "
+                                 f"box is {SW}px: {l!r}")
+        need = 52 + len(sp.get("lines", [])) * 11 + 6
+        if need > SH:
+            raise SystemExit(f"spine {i}: {len(sp['lines'])} lines need {need}px, "
+                             f"box is {SH}px")
     print(f"layout: {len(SPINE)} spine boxes, {len(CHANGES)} change cards, "
           f"2 banners, no overlaps, all text fits")
 

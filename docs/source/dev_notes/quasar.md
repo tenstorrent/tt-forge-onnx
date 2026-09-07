@@ -529,10 +529,22 @@ only the bolded lines.
 
 ![What we changed to run an op on Quasar](../imgs/compiler_arch/quasar-change-map.drawio.svg "Quasar change map")
 
-The spine is stock — the identical path a Wormhole compile takes: ONNX module, forge
-graph, `lower_to_mlir` to TTIR, the descriptor stamp, TTNN, the flatbuffer, runtime
-dispatch, the Tensix kernel. **Every Quasar change is a branch off one step of it, not a
-replacement for part of it**, which is the shape worth carrying away.
+The spine is stock — the identical path a Wormhole compile takes — and each step is
+spelled out rather than just named, so the diagram can be read without this page open:
+
+| Step | What happens there |
+|---|---|
+| ONNX module | one Add node, float32; the smallest graph that exercises the whole stack |
+| forge graph | TVM Relay → a generated Python module → traced into `graphlib::Graph`; 9 `CompileDepth` stages |
+| `lower_to_mlir` → TTIR | a string-keyed handler map: `"add"` → `ttir::AddOp`. Arch-neutral — ops and shapes, no layouts |
+| stamp the descriptor | `emit_mlir` stamps the live device's descriptor, **or skips it** when a target is named and `registerDevice` fabricates one → `ttcore.device` |
+| TTNN | `ttir.add` → `ttnn.add`, and every tensor gets a `#ttnn_layout`: tile shape, core grid, DRAM vs L1, interleaved vs sharded |
+| `.ttnn` flatbuffer | compilation ends; carries the op stream, tensor descriptors, the `system_desc` it was built against, a schema hash |
+| runtime dispatch | `ProgramExecutor` replays the stream; a switch on `OpType` reaches `binary::run`, which asks `isQuasar()`. **The only arch fork.** |
+| Tensix kernel | 3 kernels across 5 RISC-V: BRISC DRAM→L1, TRISC0 unpack, TRISC1 `add_tiles`, TRISC2 pack, NCRISC L1→DRAM |
+
+**Every Quasar change is a branch off one step of it, not a replacement for part of it**,
+which is the shape worth carrying away.
 
 Four branches, four changes:
 
