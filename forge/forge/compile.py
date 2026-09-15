@@ -965,6 +965,33 @@ def split_graph(context: CompileContext) -> CompileDepth:
     return CompileDepth.RUN_MLIR_COMPILER
 
 
+def log_mlir_compile_target(mlir_config) -> None:
+    """
+    Report which architecture the MLIR pipeline is about to compile against.
+
+    An explicit target in the MLIRConfig wins, mirroring lower_to_mlir: a
+    system_desc_path beats a target_arch, and either one keeps the module free of
+    a ttcore.system_desc attribute so the pipeline builds its own. Only when
+    neither is set does the arch come from the attached device, so TTSystem is
+    queried in that case alone -- it opens a device, which would defeat a
+    device-free compile.
+    """
+    config_json = mlir_config.to_json() if mlir_config is not None else {}
+    system_desc_path = config_json.get("system_desc_path")
+    target_arch = config_json.get("target_arch")
+
+    if system_desc_path:
+        logger.info("MLIR compile target: system descriptor {}", system_desc_path)
+    elif target_arch is not None:
+        logger.info("MLIR compile target: mock system descriptor for {}", target_arch)
+    else:
+        from forge._C.runtime.experimental import TTSystem
+
+        devices = TTSystem.get_system().devices
+        arch = str(devices[0].arch) if devices else "no device"
+        logger.info("MLIR compile target: attached device, arch {}", arch)
+
+
 def run_mlir_compiler(context: CompileContext) -> CompileDepth:
     forge_module, compiler_cfg = (
         context.forge_module,
@@ -974,6 +1001,8 @@ def run_mlir_compiler(context: CompileContext) -> CompileDepth:
     assert compiler_cfg is not None
 
     record_execution(ExecutionStage.FAILED_FORGE_MLIR_COMPILATION)
+
+    log_mlir_compile_target(compiler_cfg.mlir_config)
 
     context.compiled_binary = forge._C.run_mlir_compiler(forge_module, compiler_cfg.mlir_config)
 

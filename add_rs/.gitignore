@@ -1,0 +1,7 @@
+# Run artifacts: regenerated on every run, tens of MB, no value in history.
+logs/
+ir/
+*.pt
+*.jpg
+*.png
+ttrt/
