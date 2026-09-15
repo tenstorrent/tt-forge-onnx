@@ -66,7 +66,9 @@ for l in src.splitlines():
         if t.startswith("ttnn."):
             ops[t] = ops.get(t, 0) + 1
 print("[rn50] ttnn ops: " + ", ".join(f"{k}={v}" for k, v in sorted(ops.items())), flush=True)
-with open("/proj_sw/user_dev/ctr-lelanchelian/tt-forge-onnx/add_rs/ir/rn50_qsr.mlir", "w") as f:
+_IR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ir")
+os.makedirs(_IR_DIR, exist_ok=True)
+with open(os.path.join(_IR_DIR, "rn50_qsr.mlir"), "w") as f:
     f.write(src)
 print("[rn50] compile OK", flush=True)
 

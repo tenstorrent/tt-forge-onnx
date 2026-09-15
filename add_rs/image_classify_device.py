@@ -11,7 +11,8 @@ from PIL import Image
 import forge
 from forge.config import CompilerConfig
 
-IMG = sys.argv[1] if len(sys.argv) > 1 else "add_rs/testimg.jpg"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+IMG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(_HERE, "testimg.jpg")
 SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 224
 torch.manual_seed(0)
 

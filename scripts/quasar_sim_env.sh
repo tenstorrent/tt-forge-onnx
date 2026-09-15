@@ -20,7 +20,7 @@ pytest invocation rather than mixed in with the ordinary suite.
 
 INPUTS (all optional):
     QUASAR_SIM_DIR   directory holding the QSR libttsim.so
-                     default: /proj_sw/user_dev/ctr-lelanchelian/craq-sim/src/_out/release_qsr
+                     default: /proj_sw/user_dev/\$USER/craq-sim/src/_out/release_qsr
 
 If libttsim.so is missing, build it from a craq-sim checkout with:
     TT_VERSION=2 ./make.py src/_out/release_qsr/libttsim.so
@@ -35,7 +35,9 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 fi
 
 _qsr_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-_qsr_sim_dir="${QUASAR_SIM_DIR:-/proj_sw/user_dev/ctr-lelanchelian/craq-sim/src/_out/release_qsr}"
+# $USER, not a hardcoded name: this default was one user's path, which is a hard
+# error for anyone else and silently the wrong tree after a re-clone.
+_qsr_sim_dir="${QUASAR_SIM_DIR:-/proj_sw/user_dev/$USER/craq-sim/src/_out/release_qsr}"
 _qsr_so="${_qsr_sim_dir}/libttsim.so"
 _qsr_soc_src="${_qsr_repo_root}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal/tt_metal/soc_descriptors/quasar_32_arch.yaml"
 _qsr_soc_dst="${_qsr_sim_dir}/soc_descriptor.yaml"

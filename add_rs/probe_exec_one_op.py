@@ -871,8 +871,11 @@ for _l in src.splitlines():
 # Full module to a file: the op order and the layout each op runs under is the only
 # way to tell which surrounding op a numeric failure belongs to.
 import os as _os
-_os.makedirs("/proj_sw/user_dev/ctr-lelanchelian/tt-forge-onnx/add_rs/ir", exist_ok=True)
-with open(f"/proj_sw/user_dev/ctr-lelanchelian/tt-forge-onnx/add_rs/ir/{OP}{'_opt' if _os.environ.get('PROBE_OPT') == '1' else ''}.mlir", "w") as _f:
+# Derive from this file, never an absolute tree path: the harness must write into
+# ITS OWN clone, and runs happen from $TT_METAL_HOME, not from the repo.
+_IR_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ir")
+_os.makedirs(_IR_DIR, exist_ok=True)
+with open(_os.path.join(_IR_DIR, f"{OP}{'_opt' if _os.environ.get('PROBE_OPT') == '1' else ''}.mlir"), "w") as _f:
     _f.write(src)
 
 try:

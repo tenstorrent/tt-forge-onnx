@@ -1,0 +1,195 @@
+{
+  "cpu_descs": [
+    {
+      "role": "Host",
+      "target_triple": "x86_64-pc-linux"
+    }
+  ],
+  "chip_descs": [
+    {
+      "arch": "Wormhole_b0",
+      "grid_size": {
+        "y": 8,
+        "x": 8
+      },
+      "coord_translation_offsets": {
+        "y": 18,
+        "x": 18
+      },
+      "l1_size": 1499136,
+      "num_dram_channels": 12,
+      "dram_channel_size": 1073741824,
+      "noc_l1_address_align_bytes": 16,
+      "pcie_address_align_bytes": 32,
+      "noc_dram_address_align_bytes": 32,
+      "l1_unreserved_base": 105664,
+      "erisc_l1_unreserved_base": 98304,
+      "dram_unreserved_base": 1048640,
+      "dram_unreserved_end": 1073107840,
+      "supported_data_types": [
+        "Float32",
+        "Float16",
+        "BFloat16",
+        "BFP_Float8",
+        "BFP_BFloat8",
+        "BFP_Float4",
+        "BFP_BFloat4",
+        "BFP_Float2",
+        "BFP_BFloat2",
+        "UInt32",
+        "UInt16",
+        "UInt8",
+        "Int32"
+      ],
+      "supported_tile_sizes": [
+        {
+          "y": 4,
+          "x": 16
+        },
+        {
+          "y": 16,
+          "x": 16
+        },
+        {
+          "y": 32,
+          "x": 16
+        },
+        {
+          "y": 4,
+          "x": 32
+        },
+        {
+          "y": 16,
+          "x": 32
+        },
+        {
+          "y": 32,
+          "x": 32
+        }
+      ],
+      "dst_physical_size_tiles": 16,
+      "num_cbs": 32,
+      "num_compute_threads": 1,
+      "num_datamovement_threads": 2,
+      "dram_grid_size": {
+        "y": 1,
+        "x": 12
+      },
+      "dram_bank_to_logical_worker_noc0": [
+        {
+          "y": 7,
+          "x": 3
+        },
+        {
+          "y": 0,
+          "x": 0
+        },
+        {
+          "y": 4,
+          "x": 0
+        },
+        {
+          "y": 5,
+          "x": 0
+        },
+        {
+          "y": 0,
+          "x": 4
+        },
+        {
+          "y": 3,
+          "x": 7
+        },
+        {
+          "y": 1,
+          "x": 4
+        },
+        {
+          "y": 7,
+          "x": 4
+        },
+        {
+          "y": 6,
+          "x": 4
+        },
+        {
+          "y": 2,
+          "x": 4
+        },
+        {
+          "y": 4,
+          "x": 4
+        },
+        {
+          "y": 5,
+          "x": 4
+        }
+      ],
+      "dram_bank_to_logical_worker_noc1": [
+        {
+          "y": 7,
+          "x": 3
+        },
+        {
+          "y": 0,
+          "x": 0
+        },
+        {
+          "y": 4,
+          "x": 0
+        },
+        {
+          "y": 5,
+          "x": 0
+        },
+        {
+          "y": 0,
+          "x": 4
+        },
+        {
+          "y": 3,
+          "x": 7
+        },
+        {
+          "y": 1,
+          "x": 4
+        },
+        {
+          "y": 7,
+          "x": 4
+        },
+        {
+          "y": 6,
+          "x": 4
+        },
+        {
+          "y": 2,
+          "x": 4
+        },
+        {
+          "y": 4,
+          "x": 4
+        },
+        {
+          "y": 5,
+          "x": 4
+        }
+      ]
+    }
+  ],
+  "chip_desc_indices": [
+    0
+  ],
+  "chip_capabilities": [
+    "HostMMIO"
+  ],
+  "chip_coords": [
+    {
+      "rack": 0,
+      "shelf": 0,
+      "y": 0,
+      "x": 0
+    }
+  ],
+  "chip_channels": []
+}

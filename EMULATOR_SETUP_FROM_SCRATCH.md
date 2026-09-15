@@ -16,6 +16,23 @@ You clone only the first. The tt-mlir submodule pointer and tt-mlir's
 `TT_METAL_VERSION` pin the other two, so `--recurse-submodules` plus a normal build
 gets all three.
 
+> **[correction] Use ONE tree, or give each its own toolchain.** `env/activate`
+> defaults `TTFORGE_VENV_DIR` to `/opt/ttforge-toolchain/venv` — **outside any
+> repo** — and the build copies `forge/_C.so` into that single venv. So two clones
+> on one machine fight over it: whichever built last owns the binary, and
+> `import forge` from *either* tree loads it. Building a second tree silently
+> repoints the first.
+>
+> If you must keep two, set this **before** `env/activate`, every session, in both:
+>
+> ```bash
+> export TTFORGE_TOOLCHAIN_DIR=$PWD/.toolchain
+> ```
+>
+> Everything below uses `$REPO` rather than a fixed path, so it follows whichever
+> clone you are in. The invariant to keep: **`$REPO` and `$TT_METAL_HOME` must come
+> from the same clone.**
+
 Marked throughout:
 - **[doc]** — from the official setup doc
 - **[verified]** — checked against a working setup in this workspace
@@ -304,7 +321,8 @@ that is ~60 s, but **the copy step is mandatory** — `cmake --build` leaves the
 your change silently do nothing:
 
 ```bash
-cd /proj_sw/user_dev/$USER/tt-forge-onnx/third_party/tt-mlir
+REPO=/proj_sw/user_dev/$USER/tt-forge-onnx     # <-- wherever YOU cloned
+cd "$REPO/third_party/tt-mlir"
 source env/activate
 cmake --build build --target TTMLIRRuntime
 
@@ -324,15 +342,39 @@ NFS **and exit 0**. Always compare sizes.
 Twenty seconds, no hardware, no reservation — and it tells you whether a later
 failure is your code or the emulator. Worth it every time.
 
+**[correction]** This step needs a **craq-sim build**, which the official doc never
+mentions and which is not part of tt-forge-onnx. Build it once:
+
 ```bash
-cd /proj_sw/user_dev/$USER/tt-forge-onnx
+cd /proj_sw/user_dev/$USER
+git clone <craq-sim repo>            # ask your team; not on the public remotes
+cd craq-sim
+TT_VERSION=2 ./make.py src/_out/release_qsr/libttsim.so
+```
+
+`TT_VERSION=2` is required — `quasar_sim_env.sh` refuses anything that is not a QSR
+build. If yours lives elsewhere, `export QUASAR_SIM_DIR=<dir containing libttsim.so>`
+before sourcing. **If you have no craq-sim, skip to §7** — the emulator does not need
+it; you just lose the cheap pre-check.
+
+```bash
+REPO=/proj_sw/user_dev/$USER/tt-forge-onnx     # <-- wherever YOU cloned
+cd "$REPO"
 source env/activate
 source ./scripts/quasar_sim_env.sh        # must be SOURCED, not executed or piped
 
+# $TT_METAL_HOME is derived from the sourced script's own location, so it always
+# matches this clone. Check it, because a mismatch fails silently:
+echo "$TT_METAL_HOME" | grep -q "^$REPO/" && echo "same tree" || echo "MIXED TREES"
+
 cd "$TT_METAL_HOME"                       # REQUIRED — see below
 # the harness ships with the repo at add_rs/ -- 77 op cases, nothing extra to fetch
-python /proj_sw/user_dev/$USER/tt-forge-onnx/add_rs/probe_exec_one_op.py relu
+TT_METAL_CACHE=$REPO/.cache_sim python "$REPO/add_rs/probe_exec_one_op.py" relu
 ```
+
+**[verified]** `TT_METAL_CACHE` is given explicitly here too. Its default is
+`$HOME/.cache/tt-metal-cache` — **shared by every tree on the machine** — so two
+clones, or a craq-sim and an emulator run, will fight over kernel artifacts.
 
 ```
 [relu] RESULT: PASS pcc=1.000000 max_abs_err=0.00097 err/scale=0.00195
@@ -370,21 +412,32 @@ If you kill something, **wait ~4 minutes** before reconnecting. Sooner gives
 ### 7b. Run it
 
 ```bash
-cd /proj_sw/user_dev/$USER/tt-forge-onnx
+REPO=/proj_sw/user_dev/$USER/tt-forge-onnx     # <-- wherever YOU cloned
+cd "$REPO"
 source /proj_sw/user_dev/$USER/emu-run/env_quasar_emu.sh
 
-# forge needs the tt-mlir submodule's tt-metal — the one your runtime links
-export TT_METAL_HOME=$PWD/third_party/tt-mlir/third_party/tt-metal/src/tt-metal
+# forge needs the tt-mlir submodule's tt-metal -- the one your runtime links.
+# env_quasar_emu.sh points at a standalone tt-metal, right for UMD/ttnn tests.
+export TT_METAL_HOME=$REPO/third_party/tt-mlir/third_party/tt-metal/src/tt-metal
 export PYTHONPATH=$TT_METAL_HOME
 
 source env/activate
 cd "$TT_METAL_HOME"
 
-TT_METAL_CACHE=/proj_sw/user_dev/$USER/emu-run/cache_emu \
+TT_METAL_CACHE=$REPO/.cache_emu \
 TTMLIR_OP_TRACE=1 \
-timeout 5400 python -u /proj_sw/user_dev/$USER/tt-forge-onnx/add_rs/probe_exec_one_op.py \
+timeout 5400 python -u "$REPO/add_rs/probe_exec_one_op.py" \
     conv2d_3x3_sp2 2>&1 | tee /tmp/emu_op.log
 ```
+
+**[verified]** Keep the emulator's `TT_METAL_CACHE` distinct from craq-sim's *and*
+per-clone. One fixed cache shared between targets or trees causes kernel-artifact
+collisions that look like miscompiles.
+
+**[verified]** `NNG_SOCKET_LOCAL_PORT` is fixed at 5555, so **two runs on one machine
+collide.** ZeBu allows one job at a time anyway (`HERO:JOBCOUNT_zs5/1`), so run one
+at a time — but if you deliberately want two processes, give the second a different
+local port and matching forward.
 
 Three flags that are not optional in practice:
 
@@ -532,17 +585,19 @@ cmake --build build
 # --- every session ---------------------------------------------------------
 ssh soc-l-04 "ps -u \$USER -o pid,cmd | grep -E 'zrun|vovsh' | grep -v grep"   # must be empty
 
-cd /proj_sw/user_dev/$USER/tt-forge-onnx
-source env/activate && source ./scripts/quasar_sim_env.sh
-cd "$TT_METAL_HOME" && python $OLDPWD/add_rs/probe_exec_one_op.py relu          # craq-sim first
+export REPO=/proj_sw/user_dev/$USER/tt-forge-onnx     # <-- wherever YOU cloned
 
-cd /proj_sw/user_dev/$USER/tt-forge-onnx
-source /proj_sw/user_dev/$USER/emu-run/env_quasar_emu.sh
-export TT_METAL_HOME=$PWD/third_party/tt-mlir/third_party/tt-metal/src/tt-metal
+cd "$REPO" && source env/activate && source ./scripts/quasar_sim_env.sh
+echo "$TT_METAL_HOME" | grep -q "^$REPO/" || echo "MIXED TREES -- stop"
+cd "$TT_METAL_HOME"
+TT_METAL_CACHE=$REPO/.cache_sim python "$REPO/add_rs/probe_exec_one_op.py" relu   # craq-sim first
+
+cd "$REPO" && source /proj_sw/user_dev/$USER/emu-run/env_quasar_emu.sh
+export TT_METAL_HOME=$REPO/third_party/tt-mlir/third_party/tt-metal/src/tt-metal
 export PYTHONPATH=$TT_METAL_HOME
 source env/activate && cd "$TT_METAL_HOME"
-TT_METAL_CACHE=/proj_sw/user_dev/$USER/emu-run/cache_emu TTMLIR_OP_TRACE=1 \
-  timeout 5400 python -u /proj_sw/user_dev/$USER/tt-forge-onnx/add_rs/probe_exec_one_op.py \
+TT_METAL_CACHE=$REPO/.cache_emu TTMLIR_OP_TRACE=1 \
+  timeout 5400 python -u "$REPO/add_rs/probe_exec_one_op.py" \
   conv2d_3x3_sp2 2>&1 | tee /tmp/emu_op.log
 grep -E "optrace|RESULT:" /tmp/emu_op.log | tail -20
 
@@ -560,6 +615,13 @@ ssh soc-l-04 "pkill -u \$USER -f 'verification/emu'; pkill -u \$USER -f zrun; pk
 4. **Stale `NNG_SOCKET_ADDR`** after a re-reservation → waits forever. `ird list` on
    the host; only the debuda port changes.
 5. **`pkill -f` matching your own command line** → kills your shell.
+6. **Two clones on one machine** → they share `/opt/ttforge-toolchain/venv` and
+   overwrite each other's `forge/_C.so`. Use one tree, or set
+   `TTFORGE_TOOLCHAIN_DIR` per tree.
+7. **`$REPO` and `$TT_METAL_HOME` from different clones** → old harness against new
+   metal, silently. The one-line `grep` check above catches it.
+8. **Default `TT_METAL_CACHE`** → shared by every tree and both targets. Always pass
+   it explicitly.
 
 Companions: `ZEBU_AETHER_FIELD_GUIDE.md` (what ZeBu and aether are, and why each
 layer exists), `add_rs/OP_STATUS_2026-09-10.md` (every measurement).

@@ -7,7 +7,8 @@ import sys, torch, torchvision
 from torchvision.models import ResNet50_Weights
 from PIL import Image
 
-img_path = sys.argv[1] if len(sys.argv) > 1 else "image.png"
+_HERE = __import__("os").path.dirname(__import__("os").path.abspath(__file__))
+img_path = sys.argv[1] if len(sys.argv) > 1 else __import__("os").path.join(_HERE, "testimg.jpg")
 SIZE = int(sys.argv[2]) if len(sys.argv) > 2 else 224
 
 weights = ResNet50_Weights.IMAGENET1K_V1
@@ -23,14 +24,14 @@ tf = torchvision.transforms.Compose([
     torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 x = tf(img).unsqueeze(0)
-torch.save(x, f"add_rs/image_input_{SIZE}.pt")
-print(f"input tensor {tuple(x.shape)} saved to add_rs/image_input_{SIZE}.pt")
+torch.save(x, __import__("os").path.join(_HERE, f"image_input_{SIZE}.pt"))
+print(f"input tensor {tuple(x.shape)} saved under {_HERE}")
 
 with torch.no_grad():
     fp32 = m(x).float()
     bf16 = m.bfloat16()(x.bfloat16()).float()
     m.float()
-torch.save(fp32, f"add_rs/image_logits_fp32_{SIZE}.pt")
+torch.save(fp32, __import__("os").path.join(_HERE, f"image_logits_fp32_{SIZE}.pt"))
 
 def top5(logits, label):
     p = torch.softmax(logits, dim=1)[0]

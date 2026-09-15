@@ -1,0 +1,89 @@
+{
+  "cpu_descs": [
+    {
+      "role": "Host",
+      "target_triple": "x86_64-pc-linux"
+    }
+  ],
+  "chip_descs": [
+    {
+      "arch": "Quasar",
+      "grid_size": {
+        "y": 4,
+        "x": 8
+      },
+      "coord_translation_offsets": {
+        "y": 2,
+        "x": 2
+      },
+      "l1_size": 4194304,
+      "num_dram_channels": 2,
+      "dram_channel_size": 1073741824,
+      "noc_l1_address_align_bytes": 16,
+      "pcie_address_align_bytes": 64,
+      "noc_dram_address_align_bytes": 64,
+      "l1_unreserved_base": 313088,
+      "erisc_l1_unreserved_base": 88576,
+      "dram_unreserved_base": 1048704,
+      "dram_unreserved_end": 1068732416,
+      "supported_data_types": [
+        "Float32",
+        "Float16",
+        "BFloat16",
+        "UInt8",
+        "Int32"
+      ],
+      "supported_tile_sizes": [
+        {
+          "y": 4,
+          "x": 16
+        },
+        {
+          "y": 16,
+          "x": 16
+        },
+        {
+          "y": 32,
+          "x": 16
+        },
+        {
+          "y": 4,
+          "x": 32
+        },
+        {
+          "y": 16,
+          "x": 32
+        },
+        {
+          "y": 32,
+          "x": 32
+        }
+      ],
+      "dst_physical_size_tiles": 16,
+      "num_cbs": 64,
+      "num_compute_threads": 4,
+      "num_datamovement_threads": 6,
+      "dram_grid_size": {
+        "y": 1,
+        "x": 2
+      },
+      "dram_bank_to_logical_worker_noc0": [],
+      "dram_bank_to_logical_worker_noc1": []
+    }
+  ],
+  "chip_desc_indices": [
+    0
+  ],
+  "chip_capabilities": [
+    "HostMMIO"
+  ],
+  "chip_coords": [
+    {
+      "rack": 0,
+      "shelf": 0,
+      "y": 0,
+      "x": 0
+    }
+  ],
+  "chip_channels": []
+}
