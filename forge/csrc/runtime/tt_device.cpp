@@ -39,6 +39,7 @@ TTSystem detect_available_devices()
         {
             case target::Arch::Wormhole_b0: arch = ARCH::WORMHOLE_B0; break;
             case target::Arch::Blackhole: arch = ARCH::BLACKHOLE; break;
+            case target::Arch::Quasar: arch = ARCH::QUASAR; break;
             default: log_fatal(LogTTDevice, "Unknown chip type {}", target::EnumNameArch(chip_desc->arch()));
         }
 
