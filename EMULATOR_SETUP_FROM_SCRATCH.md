@@ -1,7 +1,20 @@
 # Fresh machine → ZeBu emulator → one op through tt-forge-onnx
 
-For a **new tt-forge-onnx build with the code already in remote**. Ends with a
-single ONNX op executing on the Quasar RTL and printing a pcc.
+For a **new tt-forge-onnx build**. Ends with a single ONNX op executing on the
+Quasar RTL and printing a pcc.
+
+**Everything needed is in remote** (pushed 2026-09-15). Clone these exact refs —
+`main` does not carry the Quasar runtime and will not run these ops:
+
+| repo | branch | SHA |
+|---|---|---|
+| tt-forge-onnx | `quasar-arch-enablement` | `0a5d8e17` |
+| tt-mlir (submodule) | `lelanchelian/quasar-forge-onnx-bringup` | `1c9d5f74e3` |
+| tt-metal (CMake-pinned by tt-mlir) | `lelanchelian/quasar-forge-onnx-op-slicing` | `ebc942588f9` |
+
+You clone only the first. The tt-mlir submodule pointer and tt-mlir's
+`TT_METAL_VERSION` pin the other two, so `--recurse-submodules` plus a normal build
+gets all three.
 
 Marked throughout:
 - **[doc]** — from the official setup doc
@@ -237,8 +250,15 @@ enables slow dispatch; `=0` does not disable it. Unset it instead
 
 ```bash
 cd /proj_sw/user_dev/$USER
-git clone --recurse-submodules https://github.com/tenstorrent/tt-forge-onnx.git
+git clone --recurse-submodules -b quasar-arch-enablement \
+    git@github.com:tenstorrent/tt-forge-onnx.git
 cd tt-forge-onnx
+
+# confirm you are on the Quasar refs BEFORE building -- this is the whole point
+git log --oneline -1                          # -> 0a5d8e17 Quasar bring-up: ...
+git -C third_party/tt-mlir log --oneline -1   # -> 1c9d5f74e3 Pin tt-metal to ...
+grep TT_METAL_VERSION third_party/tt-mlir/third_party/CMakeLists.txt
+                                              # -> ebc942588f98...
 
 # toolchain venv (once)
 cmake -B env/build env
@@ -248,6 +268,13 @@ source env/activate
 cmake -G Ninja -B build -DCMAKE_CXX_COMPILER=clang++-17 -DCMAKE_C_COMPILER=clang-17
 cmake --build build
 ```
+
+**[verified]** Those three checks are not ceremony. `main` compiles fine and then
+fails at runtime with `DataMovementKernel is not supported on Quasar`, or returns
+silently wrong numbers — the Quasar dispatch lives entirely in the tt-mlir runtime.
+The build also **force-checks-out submodules to their pinned SHAs**, silently
+reverting local edits under `third_party/`, which is why this work is on pushed
+branches and pinned rather than left in a working tree.
 
 This builds forge, tt-mlir and tt-metal, and installs `_C.so` into the toolchain
 venv (`forge/csrc/CMakeLists.txt:132-134` copies it and symlinks
@@ -303,6 +330,7 @@ source env/activate
 source ./scripts/quasar_sim_env.sh        # must be SOURCED, not executed or piped
 
 cd "$TT_METAL_HOME"                       # REQUIRED — see below
+# the harness ships with the repo at add_rs/ -- 77 op cases, nothing extra to fetch
 python /proj_sw/user_dev/$USER/tt-forge-onnx/add_rs/probe_exec_one_op.py relu
 ```
 
@@ -494,7 +522,7 @@ sed -i 's/^EMULATOR_TIMEOUT=5000/EMULATOR_TIMEOUT=${EMULATOR_TIMEOUT:-5000}/' \
 ssh-copy-id soc-l-04
 
 cd /proj_sw/user_dev/$USER
-git clone --recurse-submodules https://github.com/tenstorrent/tt-forge-onnx.git
+git clone --recurse-submodules -b quasar-arch-enablement git@github.com:tenstorrent/tt-forge-onnx.git
 cd tt-forge-onnx
 cmake -B env/build env && cmake --build env/build
 source env/activate
