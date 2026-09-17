@@ -120,7 +120,7 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
     context.loadAllAvailableDialects();
 
     // Generate MLIR from the Forge graph.
-    mlir::OwningOpRef<mlir::ModuleOp> mlir_module = lower_to_mlir(module, context);
+    mlir::OwningOpRef<mlir::ModuleOp> mlir_module = lower_to_mlir(module, context, mlir_config);
 
     // Run MLIR pipeline.
     run_mlir_passes<output>(mlir_module, mlir_config);

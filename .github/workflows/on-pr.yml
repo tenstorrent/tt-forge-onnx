@@ -128,6 +128,20 @@ jobs:
       runs-on: '[{"runs-on": "n150"}, {"runs-on": "n300"}]'
       enable-verbose-output: ${{ needs.generate-test-models-config.outputs.enable_verbose == 'true' }}
 
+  # Compiles for wormhole_b0, blackhole and quasar with no accelerator attached.
+  # Needs only the build, not a hardware runner, so it does not consume the
+  # n150/n300 pool -- and it is the only PR coverage for architectures we have no
+  # runner for (quasar).
+  test-compile-arch:
+    needs:
+      - docker-build
+      - build
+    uses: ./.github/workflows/test-compile-arch-sub.yml
+    secrets: inherit
+    with:
+      docker-image: ${{ needs.docker-build.outputs.docker-image }}
+      run_id: ${{ github.run_id }}
+
   check-all-green:
     if: always()
     needs:
@@ -139,6 +153,7 @@ jobs:
       - build
       - test
       - test-models
+      - test-compile-arch
     runs-on: Ubuntu-latest
     steps:
     - name: Check if the needed jobs succeeded or failed

@@ -27,8 +27,8 @@ def get_device_arch() -> str:
     Return the hardware architecture of the connected TT device.
 
     Returns:
-        str: ``"wormhole"``, ``"blackhole"``, or ``""`` when no device is
-        present or the arch cannot be determined.
+        str: ``"wormhole"``, ``"blackhole"``, ``"quasar"``, or ``""`` when no
+        device is present or the arch cannot be determined.
     """
     try:
         from forge._C.runtime.experimental import TTSystem
@@ -37,7 +37,7 @@ def get_device_arch() -> str:
         if not system.devices:
             return ""
         arch_name = str(system.devices[0].arch).lower()
-        for family in ("wormhole", "blackhole"):
+        for family in ("wormhole", "blackhole", "quasar"):
             if family in arch_name:
                 return family
         return ""
@@ -71,12 +71,13 @@ def get_device_type(arch: str, device_count: int) -> str:
     wormhole       2             ``n300``
     blackhole      1             ``p150``
     blackhole      2             ``p300``
+    quasar         *any*         ``quasar``
     *any*          8             ``llmbox``
     *any*          32            ``galaxy``
     =============  ============  ===========
 
     Args:
-        arch (str): Coarse arch string (``"wormhole"`` or ``"blackhole"``).
+        arch (str): Coarse arch string (``"wormhole"``, ``"blackhole"`` or ``"quasar"``).
         device_count (int): Number of chips from the system descriptor.
 
     Returns:
@@ -96,6 +97,10 @@ def get_device_type(arch: str, device_count: int) -> str:
             return "p150"
         if device_count == 2:
             return "p300"
+    if arch == "quasar":
+        # No product label exists for Quasar yet; bring-up runs on emulation or
+        # on the craq-sim/ttsim virtual device.
+        return "quasar"
     return "unknown"
 
 

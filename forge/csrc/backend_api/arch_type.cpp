@@ -15,6 +15,7 @@ std::string to_string_arch(ARCH arch)
     {
         case ARCH::WORMHOLE_B0: return "WORMHOLE_B0";
         case ARCH::BLACKHOLE: return "BLACKHOLE";
+        case ARCH::QUASAR: return "QUASAR";
         default: throw std::runtime_error("Unsupported ARCH enum: " + std::to_string(static_cast<int>(arch)));
     }
 }
@@ -31,6 +32,10 @@ ARCH to_arch_type(const std::string& arch_string)
     else if (arch_string_lower == "BLACKHOLE")
     {
         return ARCH::BLACKHOLE;
+    }
+    else if (arch_string_lower == "QUASAR")
+    {
+        return ARCH::QUASAR;
     }
     else
     {
