@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
-import requests
 from PIL import Image
 
 import pytest
@@ -20,6 +19,7 @@ import forge
 from forge.verify.verify import verify
 from forge.verify.value_checkers import AutomaticValueChecker
 from forge.verify.config import VerifyConfig
+from third_party.tt_forge_models.tools.utils import get_file
 
 from forge.forge_property_utils import Framework, Source, Task, ModelArch, record_model_properties
 
@@ -73,9 +73,8 @@ def test_chineseclip_vision(variant):
     processor = ChineseCLIPProcessor.from_pretrained(variant)
 
     # Load sample
-    image = Image.open(
-        requests.get("https://clip-cn-beijing.oss-cn-beijing.aliyuncs.com/pokemon.jpeg", stream=True).raw
-    )
+    input_image = get_file("http://images.cocodataset.org/val2017/000000039769.jpg")
+    image = Image.open(str(input_image))
 
     inputs = processor(images=image, return_tensors="pd")
     inputs = [inputs["pixel_values"]]
@@ -106,10 +105,12 @@ def test_chineseclip(variant):
     processor = ChineseCLIPProcessor.from_pretrained(variant)
 
     # Load sample
-    text = ["椅子", "玫瑰", "小火龙", "皮卡丘"]
-    image = Image.open(
-        requests.get("https://clip-cn-beijing.oss-cn-beijing.aliyuncs.com/pokemon.jpeg", stream=True).raw
-    )
+    # Prompts describe the COCO sample image (two cats on a couch), so the
+    # similarities printed below stay meaningful: "猫" should score highest and the
+    # rest act as distractors.
+    text = ["猫", "狗", "玫瑰", "椅子"]
+    input_image = get_file("http://images.cocodataset.org/val2017/000000039769.jpg")
+    image = Image.open(str(input_image))
     inputs = processor(images=image, text=text, return_tensors="pd", padding=True)
     inputs = [inputs["input_ids"], inputs["pixel_values"]]
 
