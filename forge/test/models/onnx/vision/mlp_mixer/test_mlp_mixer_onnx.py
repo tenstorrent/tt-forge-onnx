@@ -30,10 +30,7 @@ varaints = [
         marks=pytest.mark.pr_models_regression,
     ),
     pytest.param(ModelVariant.MIXER_S32_224),
-    pytest.param(
-        ModelVariant.MIXER_B16_224_GOOG_IN21K,
-        marks=[pytest.mark.xfail],
-    ),
+    pytest.param(ModelVariant.MIXER_B16_224_GOOG_IN21K),
 ]
 
 
