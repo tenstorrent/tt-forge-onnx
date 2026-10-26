@@ -7,6 +7,11 @@ include(ExternalProject)
 # Usage: cmake -DTT_RUNTIME_ENABLE_PERF_TRACE=ON ...
 option(TT_RUNTIME_ENABLE_PERF_TRACE "Enable Tracy profiling in tt-metal/tt-mlir" OFF)
 
+# A user-managed tt-metal checkout (on persistent storage, say). When set, tt-mlir
+# symlinks third_party/tt-metal/src/tt-metal to it instead of cloning tt-metal at
+# its pinned version into the build tree.
+set(TTMLIR_TTMETAL_SOURCE_DIR "" CACHE PATH "Path to a user-managed tt-metal checkout handed to tt-mlir")
+
 set(METAL_LIB_DIR "${CMAKE_SOURCE_DIR}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal/build/lib")
 
 set(TTMLIR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-mlir")
@@ -38,6 +43,7 @@ ExternalProject_Add(
         -DTTMLIR_ENABLE_EXPLORER=OFF
         -DTT_USE_SYSTEM_SFPI=OFF
         -DTT_RUNTIME_ENABLE_PERF_TRACE=${TT_RUNTIME_ENABLE_PERF_TRACE}
+        -DTTMLIR_TTMETAL_SOURCE_DIR=${TTMLIR_TTMETAL_SOURCE_DIR}
         -DTT_METAL_RUNTIME_ROOT=${TTMLIR_SOURCE_DIR}/third_party/tt-metal/src/tt-metal
 )
 
