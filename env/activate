@@ -11,7 +11,8 @@
 export UV_INDEX_STRATEGY=unsafe-best-match
 
 # Set TTFORGE_TOOLCHAIN_DIR to a default value if not already set
-export TTFORGE_TOOLCHAIN_DIR="${TTFORGE_TOOLCHAIN_DIR:-/opt/ttforge-toolchain}"
+# Toolchains live in the working directory (they survive a container recreation, /opt does not).
+export TTFORGE_TOOLCHAIN_DIR="${TTFORGE_TOOLCHAIN_DIR:-/proj_sw/user_dev/pchandrasekaran/new/Forge4/tt-forge-onnx/toolchains/ttforge-toolchain}"
 
 # Set PYTHON_VERSION
 export TTFORGE_PYTHON_VERSION="${TTFORGE_PYTHON_VERSION:-python3.12}"
@@ -21,7 +22,7 @@ export TTFORGE_VENV_DIR="${TTFORGE_VENV_DIR:-${TTFORGE_TOOLCHAIN_DIR}/venv}"
 
 [ -f $TTFORGE_VENV_DIR/bin/activate ] && source $TTFORGE_VENV_DIR/bin/activate
 
-export TTMLIR_TOOLCHAIN_DIR="${TTMLIR_TOOLCHAIN_DIR:-/opt/ttmlir-toolchain}"
+export TTMLIR_TOOLCHAIN_DIR="${TTMLIR_TOOLCHAIN_DIR:-/proj_sw/user_dev/pchandrasekaran/new/Forge4/tt-forge-onnx/toolchains/ttmlir-toolchain}"
 
 export TTMLIR_VENV_DIR="${TTMLIR_VENV_DIR:-${TTMLIR_TOOLCHAIN_DIR}/venv}"
 
@@ -32,3 +33,14 @@ export ARCH_NAME="${ARCH_NAME:-wormhole_b0}"
 # This one is needed so that when building `tt-mlir` from `tt-forge` project, the `tt-mlir` project can
 # find the flatbuffer compiler binary (`flatc`) in the toolchain directory.
 export PATH="$TTMLIR_TOOLCHAIN_DIR/bin:$PATH"
+
+# forge/_C.so loads libTTMLIRRuntime.so which has a DT_NEEDED entry for
+# libpython3.12.so.1.0.  The toolchain venv is backed by a uv-managed Python
+# whose lib directory is not on the system linker path, so we add it here.
+# The directory is queried from the venv interpreter to avoid hardcoding paths.
+_TTFORGE_PY312_LIBDIR=$("$TTFORGE_VENV_DIR/bin/python3" -c \
+    "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))" 2>/dev/null)
+if [ -n "$_TTFORGE_PY312_LIBDIR" ]; then
+    export LD_LIBRARY_PATH="$_TTFORGE_PY312_LIBDIR:${LD_LIBRARY_PATH:-}"
+fi
+unset _TTFORGE_PY312_LIBDIR
