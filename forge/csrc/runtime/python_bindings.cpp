@@ -22,6 +22,10 @@ void RuntimeModule(py::module &m_runtime)
         .def("store", &runtime::Binary::store)
         .def("as_json", &runtime::Binary::asJson);
     m_runtime.def("run_program", &tt::run_program);
+    // Load a stored flatbuffer so a compiled model can be replayed in a
+    // separate process (e.g. under TT_METAL_WATCHER, which cannot coexist with
+    // the op-model's mock device in the compiling process).
+    m_runtime.def("load_binary_from_file", &tt::load_binary_from_file);
 
     py::class_<Tensor>(m_runtime, "Tensor")
         .def(py::init<torch::Tensor &>())
