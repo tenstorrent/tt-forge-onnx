@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "runtime/state.hpp"
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+
 #include <utils/logger.hpp>
 
 #include "tt/runtime/runtime.h"
@@ -64,6 +68,9 @@ void ModelState::run_program(ProgramType program_type, std::vector<tt::Tensor> a
     // NOTE: there is an ordering requirement for the activation inputs and the persistent inputs, i.e.
     // in the input list (`inputs` vector here), the activation inputs come first. Unfortunately, there isn't any
     // mechanism which enforces this, yet. It's an informal contract between the compiler and the runtime.
+    static const bool host_timing = std::getenv("FORGE_HOST_TIMING") != nullptr;
+    using clk = std::chrono::steady_clock;
+    const auto ht0 = clk::now();
     size_t input_idx = 0;
     for (auto tensor : act_inputs)
     {
@@ -72,6 +79,7 @@ void ModelState::run_program(ProgramType program_type, std::vector<tt::Tensor> a
         inputs.emplace_back(tensor);
         input_idx++;
     }
+    const auto ht1 = clk::now();
 
     // Convert each persistent to the expected layout.
     for (auto& persistent_input : program_state.persistent_inputs)
@@ -81,8 +89,18 @@ void ModelState::run_program(ProgramType program_type, std::vector<tt::Tensor> a
         inputs.emplace_back(persistent_input);
         input_idx++;
     }
+    const auto ht2 = clk::now();
 
     program_state.outputs = ::tt::run_program(binary, pg_id, inputs);
+    if (host_timing)
+    {
+        const auto ht3 = clk::now();
+        auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        std::fprintf(
+            stderr,
+            "[HOST_TIMING] forge run_program: act_to_layout=%.2f ms (n=%zu) persistent_to_layout=%.2f ms (n=%zu) submit=%.2f ms\n",
+            ms(ht0, ht1), act_inputs.size(), ms(ht1, ht2), program_state.persistent_inputs.size(), ms(ht2, ht3));
+    }
 }
 
 };  // namespace tt

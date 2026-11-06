@@ -310,6 +310,9 @@ class CompiledModel:
         # for ONNX models where ONNXRuntime cannot run CPUExecutionProvider in bfloat16), cast
         # all floating-point input tensors to the target dtype before runtime dispatch.
         # Integer / boolean tensors are left unchanged.
+        import os as _os, time as _time
+        _ht = _os.environ.get("FORGE_HOST_TIMING") is not None
+        _t0 = _time.perf_counter()
         if self.df_override_dtype is not None:
             if isinstance(self.df_override_dtype, DataFormat):
                 df_override_dtype = forge_dataformat_to_pytorch_dtype(self.df_override_dtype)
@@ -351,9 +354,12 @@ class CompiledModel:
         )
 
         self.inputs = inputs_runtime
+        _t1 = _time.perf_counter()
         self.runtime_model_state.run_program(ProgramType.Forward, self.inputs)
+        _t2 = _time.perf_counter()
 
         all_outputs = self.runtime_model_state.get_outputs(ProgramType.Forward)
+        _t3 = _time.perf_counter()
 
         self.intermediates = []
 
@@ -375,6 +381,9 @@ class CompiledModel:
                 # would capture the idx by reference, and all the lambdas would have the same idx value.
                 output.register_hook(lambda grad, idx=idx: self.tie_grad_fn(idx, grad))
 
+        if _ht:
+            _t4 = _time.perf_counter()
+            print(f"[HOST_TIMING] forge __call__: prep_inputs={(_t1-_t0)*1e3:.2f} ms run_program={(_t2-_t1)*1e3:.2f} ms get_outputs={(_t3-_t2)*1e3:.2f} ms to_torch={(_t4-_t3)*1e3:.2f} ms total={(_t4-_t0)*1e3:.2f} ms", flush=True)
         return model_outputs
 
     def forward(self, *inputs: AnyTensor) -> List[torch.Tensor]:
