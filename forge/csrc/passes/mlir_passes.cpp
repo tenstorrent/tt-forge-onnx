@@ -117,6 +117,42 @@ void run_mlir_passes(mlir::OwningOpRef<mlir::ModuleOp> &mlir_module, const std::
         throw std::runtime_error("Failed to add the pipeline to the pass manager!");
     }
 
+    // Per-pass IR printing, for attributing an op in the final IR to the pass
+    // that introduced it.
+    //
+    // FORGE_MLIR_PRINT_IR_AFTER_ALL=1 prints the module after every pass that
+    // changed it, to FORGE_MLIR_PRINT_IR_DIR/pass_ir.log (or stderr when the
+    // directory is unset). Module-scope only and without debug info, because
+    // the point is to diff consecutive dumps, not to read any one of them.
+    std::unique_ptr<llvm::raw_fd_ostream> passIrStream;
+    if (std::getenv("FORGE_MLIR_PRINT_IR_AFTER_ALL"))
+    {
+        llvm::raw_ostream *os = &llvm::errs();
+        if (const char *dir = std::getenv("FORGE_MLIR_PRINT_IR_DIR"))
+        {
+            std::error_code ec;
+            std::string path = std::string(dir) + "/pass_ir.log";
+            passIrStream = std::make_unique<llvm::raw_fd_ostream>(path, ec);
+            if (!ec)
+            {
+                os = passIrStream.get();
+            }
+            else
+            {
+                log_error(LogMLIRCompiler, "Could not open {} for pass IR printing: {}", path, ec.message());
+            }
+        }
+        pm.getContext()->disableMultithreading();
+        pm.enableIRPrinting(
+            /*shouldPrintBeforePass=*/[](mlir::Pass *, mlir::Operation *) { return false; },
+            /*shouldPrintAfterPass=*/[](mlir::Pass *, mlir::Operation *) { return true; },
+            /*printModuleScope=*/true,
+            /*printAfterOnlyOnChange=*/true,
+            /*printAfterOnlyOnFailure=*/false,
+            *os,
+            mlir::OpPrintingFlags().useLocalScope());
+    }
+
     // Run the pass manager.
     if (mlir::failed(pm.run(mlir_module.get())))
     {

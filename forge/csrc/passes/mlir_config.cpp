@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "mlir_config.hpp"
 
+#include <cstdlib>
 #include <sstream>
 
 #include "nlohmann/json.hpp"
@@ -275,6 +276,18 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     // -----------------------------------------------------------------------
     if (!mlir_config->custom_config.empty())
         options << " " << mlir_config->custom_config;
+
+    // -----------------------------------------------------------------------
+    // Debug passthrough
+    //
+    // FORGE_MLIR_EXTRA_PIPELINE_OPTIONS is appended verbatim to the pipeline
+    // option string. It exists so that pipeline options which the MLIRConfig
+    // does not model -- the optimizer's decision traces, for instance -- can be
+    // switched on for a single run without editing a model's config. Appended
+    // last so it overrides anything set above.
+    // -----------------------------------------------------------------------
+    if (const char* extra = std::getenv("FORGE_MLIR_EXTRA_PIPELINE_OPTIONS"))
+        options << " " << extra;
 
     return options.str();
 }
