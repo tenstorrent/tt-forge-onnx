@@ -30,7 +30,7 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter)
+add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-unused-parameter -Wno-deprecated-literal-operator -Wno-deprecated-declarations)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     add_compile_options(-DDEBUG)
