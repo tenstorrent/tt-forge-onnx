@@ -4,6 +4,8 @@
 
 #include <optional>
 
+#include "mlir_config.hpp"
+
 namespace mlir
 {
 class ModuleOp;
@@ -14,16 +16,8 @@ class OwningOpRef;
 namespace tt::passes
 {
 
-struct MLIRConfig;
-
-enum class MLIROutputKind
-{
-    Flatbuffer,
-    Cpp,
-    SharedObject,
-};
-
 /// Public API for running MLIR passes (pipeline) depending on the desired output.
+/// MLIROutputKind is defined in mlir_config.hpp.
 template <MLIROutputKind output>
 void run_mlir_passes(mlir::OwningOpRef<mlir::ModuleOp> &mlir_module, const std::optional<MLIRConfig> &mlir_config);
 
