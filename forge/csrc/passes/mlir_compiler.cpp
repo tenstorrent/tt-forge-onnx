@@ -153,25 +153,39 @@ auto run_mlir_compiler_generic(tt::ForgeGraphModule& module, const std::optional
     rsoTTNN.flush();
     log_info(LogMLIRCompiler, "TTNN module:\n{}", moduleStrTTNN);
 
+    // Dump the TTNN module for every output kind, not just Flatbuffer. The two
+    // pipelines do not lower identically -- the EmitC path has to materialise
+    // into op attributes what the flatbuffer runtime is free to read off the
+    // output tensor spec at run time -- so comparing the two TTNN modules is the
+    // direct way to find where they diverge. Gating this on Flatbuffer made the
+    // EmitC side of that comparison impossible to obtain.
+    if (std::getenv("TTMLIR_DUMP_PIPELINE_IR"))
+    {
+        std::string mod_name = mlir_module->getName() ? mlir_module->getName()->str() : "module";
+        const char* dump_dir_env = std::getenv("TTMLIR_DUMP_DIR");
+        std::string base_dir = dump_dir_env ? std::string(dump_dir_env) + "/" : "./";
+        if (dump_dir_env)
+            fs::create_directories(base_dir);
+        // Name the file after the dialect the module is actually in. For
+        // Flatbuffer the pipeline ends in TTNN; for Cpp it ends in
+        // convert-ttnn-to-emitc, so what lands here is EmitC dialect and
+        // calling it "ttnn_" was actively misleading. The EmitC path's real
+        // TTNN module is written by the ttnn-dump-module pass scheduled just
+        // before that conversion (see mlir_passes.cpp), which would otherwise
+        // be clobbered by this write.
+        const char* dialect_prefix = (output == MLIROutputKind::Flatbuffer) ? "ttnn_" : "emitc_";
+        std::string ttnn_path = base_dir + dialect_prefix + mod_name + ".mlir";
+        std::ofstream ttnn_file(ttnn_path);
+        if (ttnn_file.is_open())
+        {
+            ttnn_file << moduleStrTTNN;
+            ttnn_file.close();
+            tt::log_info(LogMLIRCompiler, "Post-pipeline module dumped to: {}", ttnn_path);
+        }
+    }
+
     if constexpr (output == MLIROutputKind::Flatbuffer)
     {
-        if (std::getenv("TTMLIR_DUMP_PIPELINE_IR"))
-        {
-            std::string mod_name = mlir_module->getName() ? mlir_module->getName()->str() : "module";
-            const char* dump_dir_env = std::getenv("TTMLIR_DUMP_DIR");
-            std::string base_dir = dump_dir_env ? std::string(dump_dir_env) + "/" : "./";
-            if (dump_dir_env)
-                fs::create_directories(base_dir);
-            std::string ttnn_path = base_dir + "ttnn_" + mod_name + ".mlir";
-            std::ofstream ttnn_file(ttnn_path);
-            if (ttnn_file.is_open())
-            {
-                ttnn_file << moduleStrTTNN;
-                ttnn_file.close();
-                tt::log_info(LogMLIRCompiler, "TTNN module dumped to: {}", ttnn_path);
-            }
-        }
-
         // Generate binary from the MLIR module.
         auto binary = mlir::tt::ttnn::ttnnToFlatbuffer(mlir_module.get());
         if (binary == nullptr)

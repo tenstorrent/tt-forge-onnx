@@ -4,7 +4,10 @@
 #include "mlir_passes.hpp"
 
 // Standard headers
+#include <cstdlib>
+#include <memory>
 #include <stdexcept>
+#include <string>
 
 // Forge headers
 #include "mlir_compiler.hpp"
@@ -13,6 +16,8 @@
 
 // MLIR headers
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
+#include "llvm/Support/raw_ostream.h"
 
 // TTMLIR headers
 #include "ttmlir/Dialect/TTIR/Transforms/Passes.h"
@@ -50,6 +55,7 @@ void run_mlir_passes(mlir::OwningOpRef<mlir::ModuleOp> &mlir_module, const std::
     // Create a pass manager.
     mlir::PassManager pm(mlir_module.get()->getName());
 
+
     // Get the pipeline info for the wanted pipeline.
     static_assert(
         output == MLIROutputKind::Flatbuffer || output == MLIROutputKind::Cpp || output == MLIROutputKind::SharedObject,
@@ -79,6 +85,25 @@ void run_mlir_passes(mlir::OwningOpRef<mlir::ModuleOp> &mlir_module, const std::
     };
 
     std::string options{config_to_pipeline_options(mlir_config)};
+
+    // Ask the EmitC pipeline to dump its TTNN module before the conversion.
+    //
+    // Driven by the same TTMLIR_DUMP_PIPELINE_IR / TTMLIR_DUMP_DIR pair that
+    // dumps the flatbuffer pipeline's TTNN module in mlir_compiler.cpp, so one
+    // switch yields the TTNN IR of both backends and the two can be diffed.
+    // The EmitC path needs a pipeline option for this because its pipeline ends
+    // in convert-ttnn-to-emitc: by the time control returns here the module is
+    // EmitC dialect and the TTNN form is gone.
+    if constexpr (output == MLIROutputKind::Cpp || output == MLIROutputKind::SharedObject)
+    {
+        if (std::getenv("TTMLIR_DUMP_PIPELINE_IR"))
+        {
+            const char* dump_dir_env = std::getenv("TTMLIR_DUMP_DIR");
+            std::string base_dir = dump_dir_env ? std::string(dump_dir_env) + "/" : "./";
+            std::string mod_name = mlir_module->getName() ? mlir_module->getName()->str() : "module";
+            options += " dump-ttnn-ir-path=" + base_dir + "ttnn_" + mod_name + ".mlir";
+        }
+    }
 
     // Add target-dylib flag for SharedObject output
     if constexpr (output == MLIROutputKind::SharedObject)
