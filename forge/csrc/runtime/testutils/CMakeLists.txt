@@ -83,8 +83,15 @@ target_link_directories(emitc_utils PRIVATE
     ${_PY312_LIBDIR}
 )
 
-# Shared setup for model_inference and model_benchmark
+# Shared setup for the emitc runners. Pass NO_TRACY after the source for a runner
+# that must not depend on the profiler (no Tracy define, no tracy library).
 macro(add_emitc_runner _target _src)
+    set(_runner_no_tracy OFF)
+    foreach(_runner_arg ${ARGN})
+        if(_runner_arg STREQUAL "NO_TRACY")
+            set(_runner_no_tracy ON)
+        endif()
+    endforeach()
     add_executable(${_target} ${_EMITC_DIR}/${_src})
     add_dependencies(${_target} emitc_utils runtime_testutils ttforge_csrc tt-mlir)
     target_include_directories(${_target} PRIVATE ${_EMITC_DIR})
@@ -102,7 +109,7 @@ macro(add_emitc_runner _target _src)
     # is at its default, hence the bare TRACY_ENABLE.
     # Only when the client is really there; Tracy's macros compile to nothing
     # without TRACY_ENABLE, which is exactly the right fallback.
-    if(_TRACY_CLIENT_AVAILABLE)
+    if(_TRACY_CLIENT_AVAILABLE AND NOT _runner_no_tracy)
         target_compile_definitions(${_target} PRIVATE TRACY_ENABLE TRACY_TIMER_FALLBACK)
     endif()
     target_link_libraries(${_target} PRIVATE
@@ -110,7 +117,7 @@ macro(add_emitc_runner _target _src)
         ttforge_csrc tt_metal tt_stl
         torch_python c10 ${TORCH_LIBRARIES} Python3::Python
     )
-    if(_TRACY_CLIENT_AVAILABLE)
+    if(_TRACY_CLIENT_AVAILABLE AND NOT _runner_no_tracy)
         target_link_libraries(${_target} PRIVATE tracy)
     endif()
     target_link_options(${_target} PRIVATE -Wl,--copy-dt-needed-entries)
@@ -124,5 +131,6 @@ macro(add_emitc_runner _target _src)
     )
 endmacro()
 
-add_emitc_runner(model_inference model_inference.cpp)
-add_emitc_runner(model_benchmark model_benchmark.cpp)
+add_emitc_runner(model_inference model_inference.cpp NO_TRACY)
+add_emitc_runner(model_benchmark model_benchmark.cpp NO_TRACY)
+add_emitc_runner(model_benchmark_profile model_benchmark_profile.cpp)
