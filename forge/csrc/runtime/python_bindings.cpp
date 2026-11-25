@@ -28,6 +28,10 @@ void RuntimeModule(py::module &m_runtime)
         .def("to_torch", &Tensor::to_torch)
         .def("update_host_data", &Tensor::update_host_data)
         .def("detach_from_device", &Tensor::detach_from_device);
+    m_runtime.def(
+        "copy_tensors_to_host",
+        [](std::vector<Tensor> tensors) { copy_tensors_to_host(tensors); },
+        "Copy the device data of several tensors to host with one blocking wait instead of one per tensor.");
     py::class_<TensorPool>(m_runtime, "TensorPool")
         .def(py::init<>())
         .def("get_tensor", &TensorPool::get_tensor)

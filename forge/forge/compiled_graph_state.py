@@ -21,6 +21,7 @@ from forge._C.runtime import (
     ModelState,
     create_program_state,
     ProgramType,
+    copy_tensors_to_host,
 )
 from forge._C import run_mlir_compiler_to_cpp, run_mlir_compiler_to_shared_object
 from forge.tensor import Tensor, get_post_const_eval_tensors, to_pt_tensors, cast_unsupported_torch_dtype, AnyTensor
@@ -354,6 +355,17 @@ class CompiledModel:
         self.runtime_model_state.run_program(ProgramType.Forward, self.inputs)
 
         all_outputs = self.runtime_model_state.get_outputs(ProgramType.Forward)
+
+        # Bring every external output to host in one go: the copies are queued back to back and waited
+        # for once, instead of one blocking device->host round trip per output in to_torch() below.
+        external_names = set(self.fwd_compiled_graph_state.ordered_external_output_names)
+        copy_tensors_to_host(
+            [
+                all_outputs[idx]
+                for idx, output_name in enumerate(self.fwd_compiled_graph_state.ordered_output_names)
+                if output_name in external_names
+            ]
+        )
 
         self.intermediates = []
 

@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <optional>
+#include <utility>
 #include <variant>
 
 #include "runtime/tt_device.hpp"
@@ -113,12 +114,50 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
             host_storage = TensorHostStorage::from_desc<torch::Tensor>(desc);
         }
 
-        if (rt_tensor.has_value())
+        // Skip the device read when copy_tensors_to_host() has just filled the host storage. The flag is
+        // one-shot, so a later to_torch() on the same tensor reads from the device again.
+        if (rt_tensor.has_value() && !std::exchange(host_data_fresh, false))
         {
             update_host_data();
         }
 
         return std::get<torch::Tensor>(host_storage->storage);
+    }
+
+    bool has_runtime_tensor() const { return rt_tensor.has_value(); }
+
+    // First half of a two-phase device->host copy (see copy_tensors_to_host()): queue the copy of the
+    // runtime tensor to a runtime host tensor. With blocking = false the call returns as soon as the
+    // read is queued.
+    void start_host_copy(bool blocking)
+    {
+        if (!rt_tensor.has_value())
+        {
+            return;
+        }
+        if (!host_storage.has_value())
+        {
+            host_storage = TensorHostStorage::from_desc<torch::Tensor>(desc);
+        }
+
+        constexpr bool untilize_tensor = true;
+        auto sharded_tensor = tt::runtime::toHost(rt_tensor.value(), untilize_tensor, blocking);
+        TT_ASSERT(sharded_tensor.size() == 1, "We don't expect sharded tensors, i.e. we expect only one shard");
+        pending_host_copy = sharded_tensor[0];
+    }
+
+    // Second half: copy the landed host data into this tensor's host storage. The caller guarantees
+    // that the read queued by start_host_copy() has completed.
+    void finish_host_copy()
+    {
+        if (!pending_host_copy.has_value())
+        {
+            return;
+        }
+
+        tt::runtime::memcpy(host_storage->data_ptr(), pending_host_copy.value());
+        pending_host_copy.reset();
+        host_data_fresh = true;
     }
 
     // Converts the tensor to the given layout via tt::runtime::toLayout (LayoutConverter).
@@ -177,6 +216,11 @@ class TensorImpl : public std::enable_shared_from_this<TensorImpl>
     std::optional<TensorHostStorage> host_storage;
     runtime::TensorDesc desc;
     std::optional<runtime::Tensor> rt_tensor;
+    // Host copy queued by start_host_copy(), consumed by finish_host_copy().
+    std::optional<runtime::Tensor> pending_host_copy;
+    // Set by finish_host_copy(): host_storage already holds the device data, so the next to_torch()
+    // does not read it again.
+    bool host_data_fresh = false;
 };
 
 // Main `Tensor` class that wraps a ref-counted tensor and provides an interface to interact with it.
@@ -206,6 +250,12 @@ class Tensor
 
     void update_host_data() { impl->update_host_data(); }
 
+    bool has_runtime_tensor() const { return impl->has_runtime_tensor(); }
+
+    void start_host_copy(bool blocking) { impl->start_host_copy(blocking); }
+
+    void finish_host_copy() { impl->finish_host_copy(); }
+
     runtime::TensorDesc tensor_desc() const { return impl->tensor_desc(); }
 
     void detach_from_device() { impl->detach_from_device(); }
@@ -213,6 +263,38 @@ class Tensor
    private:
     std::shared_ptr<TensorImpl> impl;
 };
+
+// Copies the device data of `tensors` into their host storage, so that the following to_torch() calls
+// return without touching the device.
+//
+// Calling to_torch() on each tensor makes one blocking device->host round trip per tensor, so a model
+// with many outputs pays the read latency once per output. Here every copy but the last is queued
+// without blocking, and only the last one blocks. The command queue completes reads in order, and a
+// blocking read waits until no read is outstanding, so every queued copy has landed when it returns.
+// The read latency is then paid about once for the whole set.
+inline void copy_tensors_to_host(std::vector<Tensor>& tensors)
+{
+    std::vector<Tensor*> on_device;
+    on_device.reserve(tensors.size());
+    for (Tensor& tensor : tensors)
+    {
+        if (tensor.has_runtime_tensor())
+        {
+            on_device.push_back(&tensor);
+        }
+    }
+
+    for (size_t i = 0; i < on_device.size(); ++i)
+    {
+        const bool last = i + 1 == on_device.size();
+        on_device[i]->start_host_copy(/*blocking=*/last);
+    }
+
+    for (Tensor* tensor : on_device)
+    {
+        tensor->finish_host_copy();
+    }
+}
 
 // Container for named tensors.
 class TensorPool
