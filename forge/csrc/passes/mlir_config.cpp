@@ -66,6 +66,9 @@ void to_json(::nlohmann::json& j, const MLIRConfig& p)
                        {"enable_fusing_conv2d_with_multiply_pattern", p.enable_fusing_conv2d_with_multiply_pattern},
                        // Execution options
                        {"enable_trace", p.enable_trace},
+                       // Convolution rewrites
+                       {"enable_strided_conv_space_to_depth_opt", p.enable_strided_conv_space_to_depth_opt},
+                       {"enable_conv_layout_opt", p.enable_conv_layout_opt},
                        // Workaround passes
                        {"disable_workarounds", p.disable_workarounds},
                        {"enable_layout_workaround", p.enable_layout_workaround},
@@ -119,6 +122,9 @@ void from_json(const ::nlohmann::json& j, MLIRConfig& p)
     j.at("enable_fusing_conv2d_with_multiply_pattern").get_to(p.enable_fusing_conv2d_with_multiply_pattern);
     // Execution options
     j.at("enable_trace").get_to(p.enable_trace);
+    // Convolution rewrites
+    j.at("enable_strided_conv_space_to_depth_opt").get_to(p.enable_strided_conv_space_to_depth_opt);
+    j.at("enable_conv_layout_opt").get_to(p.enable_conv_layout_opt);
     // Workaround passes
     j.at("disable_workarounds").get_to(p.disable_workarounds);
     j.at("enable_layout_workaround").get_to(p.enable_layout_workaround);
@@ -175,8 +181,7 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     if (mlir_config->compute_cfg_math_fidelity.has_value())
         options << " compute-cfg-math-fidelity=" << to_pipeline_string(*mlir_config->compute_cfg_math_fidelity);
     if (mlir_config->compute_cfg_fp32_dest_acc_en.has_value())
-        options << " compute-cfg-fp32-dest-acc-en="
-                << (*mlir_config->compute_cfg_fp32_dest_acc_en ? "true" : "false");
+        options << " compute-cfg-fp32-dest-acc-en=" << (*mlir_config->compute_cfg_fp32_dest_acc_en ? "true" : "false");
 
     // -----------------------------------------------------------------------
     // Data type / quantization options
@@ -225,6 +230,14 @@ std::string config_to_pipeline_options(const std::optional<MLIRConfig>& mlir_con
     // -----------------------------------------------------------------------
     if (mlir_config->enable_trace.has_value())
         options << " enable-trace=" << *mlir_config->enable_trace;
+
+    // -----------------------------------------------------------------------
+    // Convolution rewrites
+    // -----------------------------------------------------------------------
+    if (mlir_config->enable_strided_conv_space_to_depth_opt.has_value())
+        options << " enable-strided-conv-space-to-depth-opt=" << *mlir_config->enable_strided_conv_space_to_depth_opt;
+    if (mlir_config->enable_conv_layout_opt.has_value())
+        options << " enable-conv-layout-opt=" << *mlir_config->enable_conv_layout_opt;
 
     // -----------------------------------------------------------------------
     // Workaround passes

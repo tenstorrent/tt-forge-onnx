@@ -344,6 +344,25 @@ struct MLIRConfig
     std::optional<bool> enable_trace = std::nullopt;
 
     // -------------------------------------------------------------------------
+    // Convolution rewrites
+    // -------------------------------------------------------------------------
+
+    /// Pipeline option: enable-strided-conv-space-to-depth-opt   default: false
+    /// Rewrites a stride-2 conv on a narrow-channel image (e.g. a 7x7/s2 stem
+    /// conv on 3 channels) into a channels_last pixel_unshuffle(2) feeding a
+    /// stride-1 conv on the conv's height-shard grid, avoiding the tile-padded
+    /// NCHW->NHWC permute and DRAM round trip of the plain lowering.
+    std::optional<bool> enable_strided_conv_space_to_depth_opt = std::nullopt;
+
+    /// Pipeline option: enable-conv-layout-opt   default: false
+    /// Graph and layout rewrites around convolutions: per-range bias adds folded
+    /// into a bias-less conv, row-major NCHW model outputs, L1-resident
+    /// conv -> upsample -> conv stages, row-major concat / conv inputs for narrow
+    /// channels, and conv2d blocking / double-buffering rules.  Most effective
+    /// together with optimization_level = 2.
+    std::optional<bool> enable_conv_layout_opt = std::nullopt;
+
+    // -------------------------------------------------------------------------
     // Workaround passes
     // -------------------------------------------------------------------------
 
@@ -527,6 +546,17 @@ struct MLIRConfig
     MLIRConfig& set_enable_trace(bool v)
     {
         enable_trace = v;
+        return *this;
+    }
+
+    MLIRConfig& set_enable_strided_conv_space_to_depth_opt(bool v)
+    {
+        enable_strided_conv_space_to_depth_opt = v;
+        return *this;
+    }
+    MLIRConfig& set_enable_conv_layout_opt(bool v)
+    {
+        enable_conv_layout_opt = v;
         return *this;
     }
 

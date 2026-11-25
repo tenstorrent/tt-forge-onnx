@@ -285,6 +285,15 @@ PYBIND11_MODULE(_C, m)
             [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_trace(enable); },
             py::arg("enable"))
         .def(
+            "set_enable_strided_conv_space_to_depth_opt",
+            [](tt::passes::MLIRConfig &self, bool enable)
+            { return self.set_enable_strided_conv_space_to_depth_opt(enable); },
+            py::arg("enable"))
+        .def(
+            "set_enable_conv_layout_opt",
+            [](tt::passes::MLIRConfig &self, bool enable) { return self.set_enable_conv_layout_opt(enable); },
+            py::arg("enable"))
+        .def(
             "set_disable_workarounds",
             [](tt::passes::MLIRConfig &self, bool disable) { return self.set_disable_workarounds(disable); },
             py::arg("disable"))
@@ -315,12 +324,9 @@ PYBIND11_MODULE(_C, m)
             py::arg("config"))
         .def(
             "set_output_kind",
-            [](tt::passes::MLIRConfig &self, tt::passes::MLIROutputKind kind)
-            { return self.set_output_kind(kind); },
+            [](tt::passes::MLIRConfig &self, tt::passes::MLIROutputKind kind) { return self.set_output_kind(kind); },
             py::arg("kind"))
-        .def_property_readonly(
-            "output_kind",
-            [](const tt::passes::MLIRConfig &self) { return self.output_kind; })
+        .def_property_readonly("output_kind", [](const tt::passes::MLIRConfig &self) { return self.output_kind; })
         .def(
             "to_json",
             [](tt::passes::MLIRConfig const &mlir_config)
