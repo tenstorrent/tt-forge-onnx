@@ -145,6 +145,8 @@ class CompileContext:
     target_cycles_offset: int = 0
     forge_module: Optional[ForgeGraphModule] = None
     compiled_binary: Optional[Binary] = None
+    compiled_cpp: Optional[str] = None
+    compiled_so_path: Optional[str] = None
     attach_to: Optional[CompiledModel] = None
 
     def optimizer_on_device(self):
@@ -393,7 +395,16 @@ def forge_compile_from_context(context: CompileContext) -> CompiledModel:
                 context.modules[0], context.forge_module.get_graph(GraphType.Optimizer), converted_opt_params
             )
 
-    assert context.compiled_binary is not None
+    if (
+        context.compiled_binary is None
+        and context.compiled_cpp is None
+        and context.compiled_so_path is None
+    ):
+        raise RuntimeError(
+            "Compilation produced no output: expected a flatbuffer binary, "
+            "C++ source (compiled_cpp), or shared-object path (compiled_so_path). "
+            "Check MLIROutputKind and that run_mlir_compiler ran successfully."
+        )
 
     # Pass default_df_override to CompiledModel so it is available at inference time.
     #
@@ -414,6 +425,8 @@ def forge_compile_from_context(context: CompileContext) -> CompiledModel:
         context.modules[0],
         context.attach_to,
         context.compiler_cfg.default_df_override,
+        compiled_cpp=context.compiled_cpp,
+        compiled_so_path=context.compiled_so_path,
     )
 
     if context.optimizer_on_device():
@@ -975,9 +988,22 @@ def run_mlir_compiler(context: CompileContext) -> CompileDepth:
 
     record_execution(ExecutionStage.FAILED_FORGE_MLIR_COMPILATION)
 
-    context.compiled_binary = forge._C.run_mlir_compiler(forge_module, compiler_cfg.mlir_config)
+    mlir_config = compiler_cfg.mlir_config
+    output_kind = (
+        mlir_config.output_kind
+        if mlir_config is not None
+        else forge._C.MLIROutputKind.Flatbuffer
+    )
 
-    record_flatbuffer_details(context.compiled_binary.as_json())
+    if output_kind == forge._C.MLIROutputKind.Flatbuffer:
+        context.compiled_binary = forge._C.run_mlir_compiler(forge_module, mlir_config)
+        record_flatbuffer_details(context.compiled_binary.as_json())
+    elif output_kind == forge._C.MLIROutputKind.Cpp:
+        context.compiled_cpp = forge._C.run_mlir_compiler_to_cpp(forge_module, mlir_config)
+    elif output_kind == forge._C.MLIROutputKind.SharedObject:
+        context.compiled_so_path = forge._C.run_mlir_compiler_to_shared_object(forge_module, mlir_config)
+    else:
+        raise ValueError(f"Unknown MLIROutputKind: {output_kind}")
 
     return CompileDepth.FINISH_COMPILE
 

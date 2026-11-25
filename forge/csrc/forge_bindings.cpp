@@ -176,6 +176,12 @@ PYBIND11_MODULE(_C, m)
         .value("BFInterleaved", tt::passes::MemoryLayoutAnalysisPolicy::BFInterleaved)
         .export_values();
 
+    py::enum_<tt::passes::MLIROutputKind>(m, "MLIROutputKind")
+        .value("Flatbuffer", tt::passes::MLIROutputKind::Flatbuffer)
+        .value("Cpp", tt::passes::MLIROutputKind::Cpp)
+        .value("SharedObject", tt::passes::MLIROutputKind::SharedObject)
+        .export_values();
+
     py::class_<tt::passes::MLIRConfig>(m, "MLIRConfig")
         .def(py::init<>())
         .def(
@@ -307,6 +313,14 @@ PYBIND11_MODULE(_C, m)
             "set_custom_config",
             [](tt::passes::MLIRConfig &self, const std::string &config) { return self.set_custom_config(config); },
             py::arg("config"))
+        .def(
+            "set_output_kind",
+            [](tt::passes::MLIRConfig &self, tt::passes::MLIROutputKind kind)
+            { return self.set_output_kind(kind); },
+            py::arg("kind"))
+        .def_property_readonly(
+            "output_kind",
+            [](const tt::passes::MLIRConfig &self) { return self.output_kind; })
         .def(
             "to_json",
             [](tt::passes::MLIRConfig const &mlir_config)

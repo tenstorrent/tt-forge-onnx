@@ -53,8 +53,14 @@ TTSystem detect_available_devices()
 
 TTSystem& TTSystem::get_system()
 {
-    static TTSystem system = detect_available_devices();
-    return system;
+    // Heap-allocated and intentionally never destroyed. Avoids ~TTSystem()
+    // being called as a C++ static destructor after Python's Py_Finalize() has
+    // already unloaded libtt_metal.so and freed its thread_local TLS
+    // (GraphTracker::processors). close_devices() would then crash inside
+    // Buffer::deallocate_impl() → GraphTracker::track_deallocate() (issue #7414).
+    // The TT device driver resets hardware state when the process exits.
+    static TTSystem* system = new TTSystem(detect_available_devices());
+    return *system;
 }
 
 bool TTSystem::is_initialized() { return system_is_initialized; }

@@ -32,3 +32,14 @@ export ARCH_NAME="${ARCH_NAME:-wormhole_b0}"
 # This one is needed so that when building `tt-mlir` from `tt-forge` project, the `tt-mlir` project can
 # find the flatbuffer compiler binary (`flatc`) in the toolchain directory.
 export PATH="$TTMLIR_TOOLCHAIN_DIR/bin:$PATH"
+
+# forge/_C.so loads libTTMLIRRuntime.so which has a DT_NEEDED entry for
+# libpython3.12.so.1.0.  The toolchain venv is backed by a uv-managed Python
+# whose lib directory is not on the system linker path, so we add it here.
+# The directory is queried from the venv interpreter to avoid hardcoding paths.
+_TTFORGE_PY312_LIBDIR=$("$TTFORGE_VENV_DIR/bin/python3" -c \
+    "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))" 2>/dev/null)
+if [ -n "$_TTFORGE_PY312_LIBDIR" ]; then
+    export LD_LIBRARY_PATH="$_TTFORGE_PY312_LIBDIR:${LD_LIBRARY_PATH:-}"
+fi
+unset _TTFORGE_PY312_LIBDIR
