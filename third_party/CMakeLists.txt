@@ -1,6 +1,14 @@
 ### Build tt-mlir ###
 include(ExternalProject)
 
+# Tracy profiling option. Set to ON to build tt-metal and tt-mlir with
+# TRACY_ENABLE instrumentation for device-side op timing and host call stacks.
+# Forwarded to tt-mlir, which turns it into -DTRACY_ENABLE/-DTRACY_TIMER_FALLBACK
+# compile options and passes -DENABLE_TRACY down to its own tt-metal build.
+# Requires a full rebuild of tt-mlir and tt-metal (~30-60 min).
+# Usage: cmake -DTT_RUNTIME_ENABLE_PERF_TRACE=ON ...
+option(TT_RUNTIME_ENABLE_PERF_TRACE "Enable Tracy profiling in tt-metal/tt-mlir" OFF)
+
 set(METAL_LIB_DIR "${CMAKE_SOURCE_DIR}/third_party/tt-mlir/third_party/tt-metal/src/tt-metal/build/lib")
 
 set(TTMLIR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-mlir")
@@ -29,6 +37,7 @@ ExternalProject_Add(
         -DTTMLIR_ENABLE_OPMODEL=ON
         -DTTMLIR_ENABLE_EXPLORER=OFF
         -DTT_USE_SYSTEM_SFPI=OFF
+        -DTT_RUNTIME_ENABLE_PERF_TRACE=${TT_RUNTIME_ENABLE_PERF_TRACE}
 )
 
 install(DIRECTORY ${TTMLIR_INSTALL_PREFIX}/ DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS)
